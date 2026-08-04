@@ -1,0 +1,169 @@
+<!DOCTYPE html>
+<html lang="ko">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover, maximum-scale=1" />
+  <meta name="description" content="보고서 TF 운영 · 파트·취합·일정·자료 허브" />
+  <meta name="apple-mobile-web-app-capable" content="yes" />
+  <meta name="apple-mobile-web-app-status-bar-style" content="default" />
+  <meta name="mobile-web-app-capable" content="yes" />
+  <meta name="format-detection" content="telephone=no" />
+  <meta name="theme-color" content="#f5f5f7" />
+  <title>TF Pulse — 보고서 TF 운영</title>
+  <link rel="stylesheet" href="https://cdn.jsdelivr.net/gh/orioncactus/pretendard@v1.3.9/dist/web/variable/pretendardvariable-dynamic-subset.min.css" />
+  <link rel="stylesheet" href="css/style.css" />
+</head>
+<body>
+  <div id="loginGate" class="login-gate weather-sun" hidden>
+    <div class="login-weather-badge" id="loginWeatherBadge" aria-live="polite">날씨 확인 중…</div>
+    <div class="login-weather" id="loginWeather" aria-hidden="true">
+      <div class="wx-sun">
+        <span class="wx-sun-core"></span>
+        <span class="wx-sun-ray"></span>
+      </div>
+      <div class="wx-rain"></div>
+      <div class="wx-snow"></div>
+    </div>
+    <div class="login-card">
+      <div class="login-hero">
+        <p class="login-kicker">2026년 혁신지원사업 연차평가보고서</p>
+        <h1>TF에 참여해 주셔서 감사드립니다.</h1>
+        <p class="login-prompt"><strong>내 이름을 선택하여 접속하세요</strong></p>
+      </div>
+      <div class="member-list" id="loginMemberList"></div>
+    </div>
+  </div>
+
+  <div class="app-shell" id="appShell" hidden>
+    <div class="app-chrome">
+      <header class="app-header">
+        <div class="brand">
+          <button type="button" class="home-btn" id="btnHome" title="메인으로" aria-label="메인(요약)으로 이동">
+            <span class="home-btn-icon" aria-hidden="true">⌂</span>
+            <span class="home-btn-text">홈</span>
+          </button>
+          <div class="brand-mark">TF Pulse</div>
+        </div>
+        <div class="user-chip">
+          <span class="api-dot ok" id="saveDot" title="로컬 저장"></span>
+          <span class="save-hint" id="saveHint">저장됨</span>
+          <button type="button" class="remind-bell" id="btnRemindBell" hidden title="다가오는 일정 알람" aria-label="다가오는 일정 알람">
+            <span class="remind-bell-ping" aria-hidden></span>
+            <span class="remind-bell-count" id="remindBellCount">0</span>
+          </button>
+          <button type="button" class="request-plane" id="btnRequestPlane" hidden title="관리자 공통 요청" aria-label="관리자 공통 요청">
+            <span class="request-plane-ping" aria-hidden></span>
+            <span class="request-plane-icon" aria-hidden>✈</span>
+            <span class="request-plane-count" id="requestPlaneCount">0</span>
+          </button>
+          <span class="user-role-badge" id="userRoleBadge"></span>
+          <strong class="user-name" id="userNameLabel"></strong>
+          <button type="button" class="btn btn-ghost btn-sm admin-only" id="btnExport">JSON</button>
+          <label class="btn btn-ghost btn-sm file-btn admin-only">
+            가져오기
+            <input type="file" id="btnImport" accept=".json,application/json" hidden />
+          </label>
+          <button type="button" class="btn btn-ghost btn-sm" id="btnLogout">나가기</button>
+        </div>
+      </header>
+
+      <nav class="tab-bar" id="mainNav" aria-label="주요 메뉴">
+        <button type="button" class="tab-btn active" data-view="dashboard">요약</button>
+        <button type="button" class="tab-btn" data-view="schedule">통합 일정</button>
+        <button type="button" class="tab-btn admin-only" data-view="parts">목차·할당</button>
+        <button type="button" class="tab-btn" data-view="collections">취합 현황</button>
+        <button type="button" class="tab-btn" data-view="requests">공통 요청</button>
+        <button type="button" class="tab-btn" data-view="budget">예산취합</button>
+        <button type="button" class="tab-btn" data-view="drive">드라이브</button>
+        <button type="button" class="tab-btn" data-view="resources">공통 서식</button>
+        <button type="button" class="tab-btn" data-view="food">오늘 뭐먹지</button>
+        <button type="button" class="tab-btn admin-only" data-view="members">대상자 관리</button>
+        <button type="button" class="tab-btn" data-view="guide">사용방법</button>
+      </nav>
+    </div>
+
+    <header class="page-hero">
+      <div class="page-hero-main">
+        <p class="load-kicker" id="tfName">TF 운영 허브</p>
+        <h1 class="load-title" id="viewTitle">요약</h1>
+        <p class="load-desc" id="viewDesc">TF 운영 현황을 한눈에 확인합니다.</p>
+      </div>
+      <aside class="report-deadline" aria-live="polite">
+        <p class="deadline-remain">
+          보고서 제출까지
+          <strong id="deadlineRemain">00일 00시간 00분</strong>
+          남았습니다.
+        </p>
+        <p class="deadline-base">최종 제출일 8월 3일 오후 4시 기준</p>
+      </aside>
+    </header>
+
+    <section class="view active" id="view-dashboard"></section>
+    <section class="view" id="view-parts"></section>
+    <section class="view" id="view-collections"></section>
+    <section class="view" id="view-requests"></section>
+    <section class="view" id="view-budget"></section>
+    <section class="view" id="view-schedule"></section>
+    <section class="view" id="view-drive"></section>
+    <section class="view" id="view-resources"></section>
+    <section class="view" id="view-food"></section>
+    <section class="view" id="view-members"></section>
+    <section class="view" id="view-guide"></section>
+
+    <footer class="app-footer">powered by Jay.Mun</footer>
+  </div>
+
+  <div id="remindBackdrop" class="remind-backdrop" hidden>
+    <div class="remind-card" role="dialog" aria-modal="true" aria-labelledby="remindTitle">
+      <div class="remind-head">
+        <div>
+          <p class="remind-kicker">Schedule Alert</p>
+          <h2 id="remindTitle" class="remind-title">다가오는 일정이<br />있습니다.</h2>
+        </div>
+        <button type="button" class="btn btn-sm btn-ghost" id="remindCloseTop">닫기</button>
+      </div>
+      <p class="remind-desc">마감·회의까지 남은 일수를 확인하세요. 닫아도 상단 알람에서 다시 볼 수 있습니다.</p>
+      <ul class="remind-list" id="remindList"></ul>
+      <div class="remind-footer">
+        <button type="button" class="btn btn-ghost" id="remindClose">닫기</button>
+        <button type="button" class="btn btn-ghost" id="remindSnoozeAll">모두 나중에</button>
+        <button type="button" class="btn btn-primary" id="remindDismissAll">모두 확인</button>
+      </div>
+    </div>
+  </div>
+
+  <div id="requestBackdrop" class="remind-backdrop" hidden>
+    <div class="remind-card" role="dialog" aria-modal="true" aria-labelledby="requestTitle">
+      <div class="remind-head">
+        <div>
+          <p class="remind-kicker">Admin Request</p>
+          <h2 id="requestTitle" class="remind-title">관리자 공통 요청이<br />도착했습니다.</h2>
+        </div>
+        <button type="button" class="btn btn-sm btn-ghost" id="requestCloseTop">닫기</button>
+      </div>
+      <p class="remind-desc">확인 후 처리해 주세요. 닫아도 상단 파란 알람에서 다시 볼 수 있습니다.</p>
+      <ul class="remind-list" id="requestList"></ul>
+      <div class="remind-footer">
+        <button type="button" class="btn btn-ghost" id="requestClose">닫기</button>
+        <button type="button" class="btn btn-primary" id="requestGoTab">요청 화면으로</button>
+      </div>
+    </div>
+  </div>
+
+  <dialog id="modal">
+    <form method="dialog" id="modalForm" class="modal-card">
+      <header class="modal-head">
+        <h2 id="modalTitle">항목 추가</h2>
+        <button type="button" class="icon-btn" id="modalClose" aria-label="닫기">×</button>
+      </header>
+      <div class="modal-body" id="modalBody"></div>
+      <footer class="modal-foot">
+        <button type="button" class="btn btn-ghost" id="modalCancel">취소</button>
+        <button type="submit" class="btn btn-primary" id="modalSubmit">저장</button>
+      </footer>
+    </form>
+  </dialog>
+
+  <script src="js/app.js" type="module"></script>
+</body>
+</html>

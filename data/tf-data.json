@@ -1,0 +1,918 @@
+{
+  "meta": {
+    "tfName": "2026 교육혁신 성과보고서 TF",
+    "reportTitle": "2026학년도 교육혁신 성과보고서",
+    "totalTargetPages": 80,
+    "adminName": "문정환",
+    "updatedAt": "2026-07-13T09:00:00"
+  },
+  "members": [
+    {
+      "id": "m1",
+      "name": "문정환",
+      "role": "admin",
+      "part": "총괄",
+      "contact": ""
+    },
+    {
+      "id": "m2",
+      "name": "이현호",
+      "role": "admin",
+      "part": "총괄",
+      "contact": ""
+    },
+    {
+      "id": "m3",
+      "name": "김남인",
+      "role": "member",
+      "part": "Ⅰ. 서론",
+      "contact": ""
+    },
+    {
+      "id": "m4",
+      "name": "이명선",
+      "role": "member",
+      "part": "Ⅱ. 현황분석",
+      "contact": ""
+    },
+    {
+      "id": "m5",
+      "name": "정은경",
+      "role": "member",
+      "part": "Ⅲ. 추진실적",
+      "contact": ""
+    },
+    {
+      "id": "m6",
+      "name": "박정하",
+      "role": "food",
+      "part": "Ⅳ. 성과분석",
+      "contact": ""
+    },
+    {
+      "id": "m7",
+      "name": "박종진",
+      "role": "budget",
+      "part": "예산",
+      "contact": ""
+    },
+    {
+      "id": "m8",
+      "name": "최겨레",
+      "role": "member",
+      "part": "V. 향후계획",
+      "contact": ""
+    },
+    {
+      "id": "m9",
+      "name": "권도희",
+      "role": "member",
+      "part": "",
+      "contact": ""
+    },
+    {
+      "id": "m10",
+      "name": "김유화",
+      "role": "member",
+      "part": "",
+      "contact": ""
+    },
+    {
+      "id": "m11",
+      "name": "황청일",
+      "role": "member",
+      "part": "",
+      "contact": ""
+    }
+  ],
+  "parts": [
+    {
+      "id": "p1",
+      "section": "Ⅰ",
+      "title": "서론",
+      "assigneeId": "m3",
+      "pageStart": 1,
+      "pageEnd": 8,
+      "note": "추진 배경·목적·구성"
+    },
+    {
+      "id": "p2",
+      "section": "Ⅱ",
+      "title": "현황분석",
+      "assigneeId": "m4",
+      "pageStart": 9,
+      "pageEnd": 22,
+      "note": "여건·진단·시사점"
+    },
+    {
+      "id": "p3",
+      "section": "Ⅲ",
+      "title": "추진실적",
+      "assigneeId": "m5",
+      "pageStart": 23,
+      "pageEnd": 48,
+      "note": "사업별 실적·산출물"
+    },
+    {
+      "id": "p4",
+      "section": "Ⅳ",
+      "title": "성과분석",
+      "assigneeId": "m6",
+      "pageStart": 49,
+      "pageEnd": 68,
+      "note": "정량·정성 성과"
+    },
+    {
+      "id": "p5",
+      "section": "Ⅴ",
+      "title": "향후계획",
+      "assigneeId": "m8",
+      "pageStart": 69,
+      "pageEnd": 80,
+      "note": "개선과제·로드맵"
+    }
+  ],
+  "collections": [
+    {
+      "round": 1,
+      "name": "1차 취합",
+      "dueDate": "2026-08-20",
+      "description": "초안 목차·분량 확정",
+      "submissions": [
+        {
+          "partId": "p1",
+          "pageCount": 6,
+          "status": "submitted",
+          "submittedAt": "2026-08-18",
+          "memo": ""
+        },
+        {
+          "partId": "p2",
+          "pageCount": 10,
+          "status": "submitted",
+          "submittedAt": "2026-08-19",
+          "memo": ""
+        },
+        {
+          "partId": "p3",
+          "pageCount": 0,
+          "status": "pending",
+          "submittedAt": "",
+          "memo": ""
+        },
+        {
+          "partId": "p4",
+          "pageCount": 8,
+          "status": "submitted",
+          "submittedAt": "2026-08-18",
+          "memo": "도표 보완 예정"
+        },
+        {
+          "partId": "p5",
+          "pageCount": 0,
+          "status": "pending",
+          "submittedAt": "",
+          "memo": ""
+        }
+      ]
+    },
+    {
+      "round": 2,
+      "name": "2차 취합",
+      "dueDate": "2026-09-15",
+      "description": "본문 초안 취합",
+      "submissions": [
+        {
+          "partId": "p1",
+          "pageCount": 0,
+          "status": "pending",
+          "submittedAt": "",
+          "memo": ""
+        },
+        {
+          "partId": "p2",
+          "pageCount": 0,
+          "status": "pending",
+          "submittedAt": "",
+          "memo": ""
+        },
+        {
+          "partId": "p3",
+          "pageCount": 0,
+          "status": "pending",
+          "submittedAt": "",
+          "memo": ""
+        },
+        {
+          "partId": "p4",
+          "pageCount": 0,
+          "status": "pending",
+          "submittedAt": "",
+          "memo": ""
+        },
+        {
+          "partId": "p5",
+          "pageCount": 0,
+          "status": "pending",
+          "submittedAt": "",
+          "memo": ""
+        }
+      ]
+    },
+    {
+      "round": 3,
+      "name": "3차 취합",
+      "dueDate": "2026-10-10",
+      "description": "최종 교정본 취합",
+      "submissions": [
+        {
+          "partId": "p1",
+          "pageCount": 0,
+          "status": "pending",
+          "submittedAt": "",
+          "memo": ""
+        },
+        {
+          "partId": "p2",
+          "pageCount": 0,
+          "status": "pending",
+          "submittedAt": "",
+          "memo": ""
+        },
+        {
+          "partId": "p3",
+          "pageCount": 0,
+          "status": "pending",
+          "submittedAt": "",
+          "memo": ""
+        },
+        {
+          "partId": "p4",
+          "pageCount": 0,
+          "status": "pending",
+          "submittedAt": "",
+          "memo": ""
+        },
+        {
+          "partId": "p5",
+          "pageCount": 0,
+          "status": "pending",
+          "submittedAt": "",
+          "memo": ""
+        }
+      ]
+    }
+  ],
+  "schedule": [
+    {
+      "id": "s1",
+      "title": "TF 킥오프 회의",
+      "date": "2026-07-15",
+      "endDate": "2026-07-15",
+      "type": "meeting",
+      "createdBy": "문정환",
+      "note": "역할·일정·서식 공유"
+    },
+    {
+      "id": "s2",
+      "title": "1차 취합 마감",
+      "date": "2026-08-20",
+      "endDate": "2026-08-20",
+      "type": "deadline",
+      "createdBy": "문정환",
+      "note": "초안 분량 확정"
+    },
+    {
+      "id": "s3",
+      "title": "중간 검토회의",
+      "date": "2026-09-01",
+      "endDate": "2026-09-01",
+      "type": "meeting",
+      "createdBy": "문정환",
+      "note": "중복·누락 점검"
+    },
+    {
+      "id": "s4",
+      "title": "2차 취합 마감",
+      "date": "2026-09-15",
+      "endDate": "2026-09-15",
+      "type": "deadline",
+      "createdBy": "문정환",
+      "note": ""
+    },
+    {
+      "id": "s5",
+      "title": "3차 취합 마감",
+      "date": "2026-10-10",
+      "endDate": "2026-10-10",
+      "type": "deadline",
+      "createdBy": "문정환",
+      "note": ""
+    },
+    {
+      "id": "s6",
+      "title": "최종 제출",
+      "date": "2026-10-31",
+      "endDate": "2026-10-31",
+      "type": "milestone",
+      "createdBy": "문정환",
+      "note": "교육청/교육부 제출"
+    }
+  ],
+  "driveLinks": [
+    {
+      "id": "d1",
+      "title": "TF 공유 폴더 (루트)",
+      "url": "https://drive.google.com/drive/folders/example-root",
+      "category": "공유폴더",
+      "note": "전체 문서·산출물"
+    },
+    {
+      "id": "d2",
+      "title": "파트별 원고 폴더",
+      "url": "https://drive.google.com/drive/folders/example-drafts",
+      "category": "원고",
+      "note": "담당자별 초안 업로드"
+    },
+    {
+      "id": "d3",
+      "title": "취합본·버전 이력",
+      "url": "https://drive.google.com/drive/folders/example-versions",
+      "category": "취합본",
+      "note": "1·2·3차 취합본"
+    }
+  ],
+  "resources": [
+    {
+      "id": "r1",
+      "title": "교육부 보고서 작성 지침",
+      "category": "지침",
+      "url": "https://drive.google.com/file/d/example-guideline",
+      "fileName": "교육부_보고서작성지침.pdf",
+      "uploadedAt": "2026-07-10",
+      "note": "필수 확인"
+    },
+    {
+      "id": "r2",
+      "title": "보고서 스타일 가이드",
+      "category": "스타일",
+      "url": "https://drive.google.com/file/d/example-style",
+      "fileName": "보고서_스타일가이드.pdf",
+      "uploadedAt": "2026-07-10",
+      "note": "글꼴·여백·표·그림 규칙"
+    },
+    {
+      "id": "r3",
+      "title": "공통 표지·목차 서식",
+      "category": "서식",
+      "url": "https://drive.google.com/file/d/example-template",
+      "fileName": "공통서식_표지목차.docx",
+      "uploadedAt": "2026-07-11",
+      "note": "표지·목차·머리말 통일본"
+    },
+    {
+      "id": "r4",
+      "title": "페이지 할당·담당 표 (엑셀)",
+      "category": "서식",
+      "url": "https://drive.google.com/file/d/example-assign",
+      "fileName": "페이지할당표.xlsx",
+      "uploadedAt": "2026-07-12",
+      "note": "앱 데이터와 동기화용"
+    }
+  ],
+  "budget": {
+    "total": 8250800000,
+    "note": "1차년도('25.3~'26.2) 사업비 · 만예산 테스트 데이터",
+    "yearLabel": "1차년도 ('25.3 ~ '26.2)",
+    "expensePlan": [
+      {
+        "name": "인건비",
+        "planned": 568300000
+      },
+      {
+        "name": "장학금",
+        "planned": 18500000
+      },
+      {
+        "name": "교육·연구 프로그램 개발·운영비",
+        "planned": 2229000000
+      },
+      {
+        "name": "교육·연구환경개선비",
+        "planned": 2261000000
+      },
+      {
+        "name": "실험·실습장비 및 기자재 구입·운영비",
+        "planned": 1932000000
+      },
+      {
+        "name": "그 밖의 사업운영경비",
+        "planned": 825000000
+      },
+      {
+        "name": "간접비",
+        "planned": 417000000
+      }
+    ],
+    "items": [
+      {
+        "id": "b1",
+        "no": "1",
+        "area": "1. 전략",
+        "content": "가. 교육혁신전략",
+        "task": "1) 수요대응 학사구조 개편 및 자유전공 ·Precollege",
+        "activity": "가) 수요대응 학사구조개편(자유전공 모집 확대)",
+        "dept": "기획처",
+        "workDept": "IR센터",
+        "expenseType": "교육·연구 프로그램 개발·운영비",
+        "planned": 540000,
+        "spent": 0,
+        "assigneeId": "m3",
+        "calcText": "[산업수요분석: 540,000원]\n→ 산업디지털전환모니터링 위원회 운영 회의: 30,000원 × 9인 × 2회 = 540,000원",
+        "note": "만예산 PDF 테스트 입력",
+        "title": "가) 수요대응 학사구조개편(자유전공 모집 확대)",
+        "category": "전략",
+        "partId": ""
+      },
+      {
+        "id": "b2",
+        "no": "2",
+        "area": "1. 전략",
+        "content": "가. 교육혁신전략",
+        "task": "1) 수요대응 학사구조 개편 및 자유전공 ·Precollege",
+        "activity": "나) Pre-college",
+        "dept": "입학홍보처",
+        "workDept": "입학홍보처",
+        "expenseType": "그 밖의 사업운영경비",
+        "planned": 52600000,
+        "spent": 0,
+        "assigneeId": "m4",
+        "calcText": "[진로·진학 체험: 52,600,000원]\n→ 정보통신과 등 36개과 프로그램 운영: 1,461,111원 × 36개 학과 = 52,600,000원",
+        "note": "만예산 PDF 테스트 입력",
+        "title": "나) Pre-college",
+        "category": "전략",
+        "partId": ""
+      },
+      {
+        "id": "b3",
+        "no": "3",
+        "area": "1. 전략",
+        "content": "가. 교육혁신전략",
+        "task": "2) 학생전공선택 자율권 강화 및 미래융합형 전공교육",
+        "activity": "가) 마이크로 특화(micro-specialization) 전공 다양성 강화",
+        "dept": "교무처",
+        "workDept": "교무처",
+        "expenseType": "교육·연구 프로그램 개발·운영비",
+        "planned": 3100000,
+        "spent": 0,
+        "assigneeId": "m5",
+        "calcText": "[마이크로 특화 전공 다양성 강화: 3,100,000원]\n→ 회의비 20,000×5×1 / 소단위 전공 개발·개편 1,000,000 / 소모품 2,000,000",
+        "note": "만예산 PDF 테스트 입력",
+        "title": "가) 마이크로 특화(micro-specialization) 전공 다양성 강화",
+        "category": "전략",
+        "partId": ""
+      },
+      {
+        "id": "b4",
+        "no": "4",
+        "area": "1. 전략",
+        "content": "가. 교육혁신전략",
+        "task": "2) 학생전공선택 자율권 강화 및 미래융합형 전공교육",
+        "activity": "나) 다중전공 활성화 및 전과 유연화 홍보",
+        "dept": "교무처",
+        "workDept": "교무처",
+        "expenseType": "그 밖의 사업운영경비",
+        "planned": 48000000,
+        "spent": 0,
+        "assigneeId": "m6",
+        "calcText": "[다중전공·전과 유연화 홍보: 48,000,000원]\n→ 홍보영상 7,000,000 / 광고영상 21,000,000 / 학과홍보리플렛 제작·인쇄 20,000,000",
+        "note": "만예산 PDF 테스트 입력",
+        "title": "나) 다중전공 활성화 및 전과 유연화 홍보",
+        "category": "전략",
+        "partId": ""
+      },
+      {
+        "id": "b5",
+        "no": "5",
+        "area": "1. 전략",
+        "content": "가. 교육혁신전략",
+        "task": "3) 기초소양교육·진로경력개발 내실화 기반 학생 미래설계 지원",
+        "activity": "가) 탐색교양 운영 인프라 지원",
+        "dept": "교무처",
+        "workDept": "교양교육혁신센터",
+        "expenseType": "교육·연구환경개선비",
+        "planned": 100000000,
+        "spent": 0,
+        "assigneeId": "m8",
+        "calcText": "[탐색교양 운영 인프라 지원: 100,000,000원]\n→ 체육관 기초소양학습 공간구축",
+        "note": "만예산 PDF 테스트 입력",
+        "title": "가) 탐색교양 운영 인프라 지원",
+        "category": "전략",
+        "partId": ""
+      },
+      {
+        "id": "b6",
+        "no": "6",
+        "area": "1. 전략",
+        "content": "가. 교육혁신전략",
+        "task": "4) 교육 효과성 제고를 위한 유연 학사제도 운영",
+        "activity": "나) 수업 형태 다양화(팀티칭)",
+        "dept": "교무처",
+        "workDept": "교무처",
+        "expenseType": "교육·연구 프로그램 개발·운영비",
+        "planned": 4660000,
+        "spent": 0,
+        "assigneeId": "m9",
+        "calcText": "[학사 유연성 강화: 2,000,000원]\n[수업운영(팀티칭): 2,660,000원] → 1·2학기 강좌 강사료 등",
+        "note": "만예산 PDF 테스트 입력",
+        "title": "나) 수업 형태 다양화(팀티칭)",
+        "category": "전략",
+        "partId": ""
+      },
+      {
+        "id": "b7",
+        "no": "7",
+        "area": "1. 전략",
+        "content": "나. 교육혁신의 성공적 추진을 위한 제도 기반",
+        "task": "1) 전공·진로 탐색 적용을 위한 학생 지원체계 구축",
+        "activity": "가) 전공설계 챗봇 운영",
+        "dept": "교무처",
+        "workDept": "교육혁신본부",
+        "expenseType": "실험·실습장비 및 기자재 구입·운영비",
+        "planned": 22000000,
+        "spent": 0,
+        "assigneeId": "m10",
+        "calcText": "[전공설계 챗봇 운영·상담: 22,000,000원]\n→ AI 챗봇시스템 구축",
+        "note": "만예산 PDF 테스트 입력",
+        "title": "가) 전공설계 챗봇 운영",
+        "category": "전략",
+        "partId": ""
+      },
+      {
+        "id": "b8",
+        "no": "14",
+        "area": "2. 고등직업교육",
+        "content": "가. 핵심역량 기반 교육과정 체계혁신",
+        "task": "1) 핵심역량기반 교육과정 체계 운영 및 평가",
+        "activity": "나) 핵심역량 기반 강좌운영 지원",
+        "dept": "교무처",
+        "workDept": "교무처",
+        "expenseType": "인건비",
+        "planned": 225302000,
+        "spent": 0,
+        "assigneeId": "m11",
+        "calcText": "[핵심역량 기반 강좌운영 지원: 225,302,000원]\n▶ 2025-1학기 119,282,000원 (3~6월)\n▶ 2025-2학기 106,020,000원 (9~12월)",
+        "note": "만예산 PDF 테스트 입력",
+        "title": "나) 핵심역량 기반 강좌운영 지원",
+        "category": "고등직업교육",
+        "partId": ""
+      },
+      {
+        "id": "b9",
+        "no": "15",
+        "area": "2. 고등직업교육",
+        "content": "가. 핵심역량 기반 교육과정 체계혁신",
+        "task": "1) 핵심역량기반 교육과정 체계 운영 및 평가",
+        "activity": "가) 핵심역량 기반 교육과정 개발 개편 및 평가인증",
+        "dept": "교무처",
+        "workDept": "교육혁신본부",
+        "expenseType": "교육·연구 프로그램 개발·운영비",
+        "planned": 45500000,
+        "spent": 0,
+        "assigneeId": "m3",
+        "calcText": "[교육과정 개발·개편·평가인증: 13,500,000원]\n[교육과정 평가 및 CQI 체계 운영: 27,000,000원]\n[교육과정 성과공유·확산: 5,000,000원]",
+        "note": "만예산 PDF 테스트 입력",
+        "title": "가) 핵심역량 기반 교육과정 개발 개편 및 평가인증",
+        "category": "고등직업교육",
+        "partId": ""
+      },
+      {
+        "id": "b10",
+        "no": "18",
+        "area": "2. 고등직업교육",
+        "content": "가. 핵심역량 기반 교육과정 체계혁신",
+        "task": "2) 대학핵심역량 기반 YSU 교양교육 개발 및 운영",
+        "activity": "가) 대학핵심역량기반 교양교육 체계 운영",
+        "dept": "교무처",
+        "workDept": "교양교육혁신센터",
+        "expenseType": "교육·연구 프로그램 개발·운영비",
+        "planned": 19030000,
+        "spent": 0,
+        "assigneeId": "m4",
+        "calcText": "[교양교육 체계 운영: 10,490,000원]\n[교양교육 품질관리·지속가능성: 2,280,000원]\n[티칭서클·품질관리 회의비 등]",
+        "note": "만예산 PDF 테스트 입력",
+        "title": "가) 대학핵심역량기반 교양교육 체계 운영",
+        "category": "고등직업교육",
+        "partId": ""
+      },
+      {
+        "id": "b11",
+        "no": "21",
+        "area": "2. 고등직업교육",
+        "content": "가. 핵심역량 기반 교육과정 체계혁신",
+        "task": "3) 고등직업교육 초학제 Trans-Edu 모형 창출 및 확산",
+        "activity": "가) T1~T6 직업교육혁신모형 운영",
+        "dept": "교무처",
+        "workDept": "교무처",
+        "expenseType": "교육·연구 프로그램 개발·운영비",
+        "planned": 447022200,
+        "spent": 0,
+        "assigneeId": "m5",
+        "calcText": "[T1 산학공동 교과: 76,830,450원]\n[T2 현장직무: 86,526,900원]\n[T3 글로벌 현장직무: 85,386,100원]\n[T4 자기주도 직무: 45,963,750원]\n[T5 융복합 자격증: 93,000,000원]\n[T6 학과 브랜딩: 59,315,000원]",
+        "note": "만예산 PDF 테스트 입력",
+        "title": "가) T1~T6 직업교육혁신모형 운영",
+        "category": "고등직업교육",
+        "partId": ""
+      },
+      {
+        "id": "b12",
+        "no": "28",
+        "area": "2. 고등직업교육",
+        "content": "나. 산학공동 직무특화 교육 혁신",
+        "task": "4) 직업교육 혁신을 위한 교육환경 고도화",
+        "activity": "가) 창의·융합·소통 역량 증진 교육환경 혁신",
+        "dept": "교무처",
+        "workDept": "교무처",
+        "expenseType": "교육·연구환경개선비",
+        "planned": 2021380000,
+        "spent": 0,
+        "assigneeId": "m6",
+        "calcText": "[창의·융합·소통 역량 증진 교육환경 혁신: 2,021,380,000원]\n→ 자연과학관 외 실습실·강의실 냉난방기 교체\n→ 전기과·영상콘텐츠과 미려형실습실 공간구축\n→ 연곡문화센터 컨벤션홀 보수공사",
+        "note": "만예산 PDF 테스트 입력",
+        "title": "가) 창의·융합·소통 역량 증진 교육환경 혁신",
+        "category": "고등직업교육",
+        "partId": ""
+      },
+      {
+        "id": "b13",
+        "no": "29",
+        "area": "2. 고등직업교육",
+        "content": "나. 산학공동 직무특화 교육 혁신",
+        "task": "4) 직업교육 혁신을 위한 교육환경 고도화",
+        "activity": "나) 미래지향적 기자재 혁신",
+        "dept": "교무처",
+        "workDept": "교무처",
+        "expenseType": "실험·실습장비 및 기자재 구입·운영비",
+        "planned": 1721489047,
+        "spent": 0,
+        "assigneeId": "m8",
+        "calcText": "[미래지향적 기자재 혁신: 1,721,489,047원]\n→ 1차 전기과 외 조도계·실습기자재 323,516,620원\n→ 2차 치위생과 외 137,922,600원\n→ 4차 시각디자인과 외 컴퓨터·실습기자재 310,000,000원",
+        "note": "만예산 PDF 테스트 입력",
+        "title": "나) 미래지향적 기자재 혁신",
+        "category": "고등직업교육",
+        "partId": ""
+      },
+      {
+        "id": "b14",
+        "no": "32",
+        "area": "2. 고등직업교육",
+        "content": "나. 산학공동 직무특화 교육 혁신",
+        "task": "5) YSU 학생 핵심역량 성취도 및 대학교육 성과 CQI",
+        "activity": "가) 핵심역량 성취도 평가 및 분석",
+        "dept": "교무처",
+        "workDept": "교육혁신본부",
+        "expenseType": "교육·연구 프로그램 개발·운영비",
+        "planned": 16000000,
+        "spent": 0,
+        "assigneeId": "m9",
+        "calcText": "[대학핵심역량 성취도 평가·분석: 500,000원]\n[전공핵심역량 성취도 평가·분석: 15,500,000원]\n→ 54개 학과/과정 × 전문가활용비",
+        "note": "만예산 PDF 테스트 입력",
+        "title": "가) 핵심역량 성취도 평가 및 분석",
+        "category": "고등직업교육",
+        "partId": ""
+      },
+      {
+        "id": "b15",
+        "no": "35",
+        "area": "2. 고등직업교육",
+        "content": "나. 산학공동 직무특화 교육 혁신",
+        "task": "1) AI+X 산학공동 융복합 교육 혁신 체제 운영",
+        "activity": "가) AI+X 융복합 교육과정·해커톤",
+        "dept": "산학협력처",
+        "workDept": "지산학협력혁신센터",
+        "expenseType": "교육·연구 프로그램 개발·운영비",
+        "planned": 9800000,
+        "spent": 0,
+        "assigneeId": "m10",
+        "calcText": "[AI+X 융복합 교육과정 인증체계: 3,800,000원]\n→ 산업체멘토링비 300,000×10강좌\n[연성 work-on. AI+X 해커톤시리즈: 6,000,000원]",
+        "note": "만예산 PDF 테스트 입력",
+        "title": "가) AI+X 융복합 교육과정·해커톤",
+        "category": "고등직업교육",
+        "partId": ""
+      },
+      {
+        "id": "b16",
+        "no": "36",
+        "area": "2. 고등직업교육",
+        "content": "나. 산학공동 직무특화 교육 혁신",
+        "task": "2) Co-PBL 교과목 운영 고도화",
+        "activity": "가) YSU co-PBL·글로벌 캡스톤디자인",
+        "dept": "산학협력처",
+        "workDept": "현장실습지원센터",
+        "expenseType": "교육·연구 프로그램 개발·운영비",
+        "planned": 134900000,
+        "spent": 0,
+        "assigneeId": "m11",
+        "calcText": "[YSU co-PBL 교과운영: 129,400,000원]\n→ 캡스톤디자인 104,400,000원 등\n[글로벌 캡스톤디자인 운영: 5,500,000원]",
+        "note": "만예산 PDF 테스트 입력",
+        "title": "가) YSU co-PBL·글로벌 캡스톤디자인",
+        "category": "고등직업교육",
+        "partId": ""
+      },
+      {
+        "id": "b17",
+        "no": "64",
+        "area": "2. 고등직업교육",
+        "content": "라. 학생상담·진로로드",
+        "task": "1) 심리·정서 (GrowU+ Mental Care)",
+        "activity": "가) 캠퍼스 내비 마음톡 진단",
+        "dept": "학생취업처",
+        "workDept": "마음건강상담센터",
+        "expenseType": "교육·연구 프로그램 개발·운영비",
+        "planned": 10430000,
+        "spent": 0,
+        "assigneeId": "m3",
+        "calcText": "[캠퍼스 내비 마음톡 진단: 10,430,000원]\n→ 진단·상담 프로그램 운영비",
+        "note": "만예산 PDF 테스트 입력",
+        "title": "가) 캠퍼스 내비 마음톡 진단",
+        "category": "고등직업교육",
+        "partId": ""
+      },
+      {
+        "id": "b18",
+        "no": "90",
+        "area": "2. 고등직업교육",
+        "content": "마. 학생취업·창업로드",
+        "task": "1) 실전취업 (GrowU+ Job Care)",
+        "activity": "가) 취업맞춤 스텝업",
+        "dept": "학생취업처",
+        "workDept": "학생취업처",
+        "expenseType": "장학금",
+        "planned": 18500000,
+        "spent": 0,
+        "assigneeId": "m4",
+        "calcText": "[취업맞춤 스텝업 장학금·지원: 18,500,000원]\n→ 학생 장학금 및 취업지원 프로그램",
+        "note": "만예산 PDF 테스트 입력",
+        "title": "가) 취업맞춤 스텝업",
+        "category": "고등직업교육",
+        "partId": ""
+      },
+      {
+        "id": "b19",
+        "no": "111",
+        "area": "2. 고등직업교육",
+        "content": "바. 학생글로벌 성장지원",
+        "task": "2) 글로벌인재양성 (Gem Global Pathway Track)",
+        "activity": "가) Gem Global pre-Internship",
+        "dept": "국제교류원",
+        "workDept": "국제교류원",
+        "expenseType": "교육·연구 프로그램 개발·운영비",
+        "planned": 135965812,
+        "spent": 0,
+        "assigneeId": "m5",
+        "calcText": "[Gem Global pre-Internship: 135,965,812원]\n→ 글로벌 인턴십·연수 프로그램 운영",
+        "note": "만예산 PDF 테스트 입력",
+        "title": "가) Gem Global pre-Internship",
+        "category": "고등직업교육",
+        "partId": ""
+      },
+      {
+        "id": "b20",
+        "no": "159",
+        "area": "5. 사업관리 및 운영",
+        "content": "가. 성과관리",
+        "task": "1) 성과관리",
+        "activity": "가) 성과관리",
+        "dept": "기획처",
+        "workDept": "기획처",
+        "expenseType": "간접비",
+        "planned": 166655430,
+        "spent": 0,
+        "assigneeId": "m6",
+        "calcText": "[성과관리·사업운영 간접비: 166,655,430원]\n→ 성과관리 체계 운영 및 간접경비",
+        "note": "만예산 PDF 테스트 입력",
+        "title": "가) 성과관리",
+        "category": "사업관리 및 운영",
+        "partId": ""
+      },
+      {
+        "id": "b21",
+        "no": "162",
+        "area": "5. 사업관리 및 운영",
+        "content": "다. 재정관리",
+        "task": "1) 재정 추진 및 관리",
+        "activity": "나) 재정수행 전담직원 운영지원",
+        "dept": "기획처",
+        "workDept": "기획처",
+        "expenseType": "인건비",
+        "planned": 325268620,
+        "spent": 0,
+        "assigneeId": "m8",
+        "calcText": "[재정수행 전담직원 운영지원: 325,268,620원]\n→ 전담인력 인건비",
+        "note": "만예산 PDF 테스트 입력",
+        "title": "나) 재정수행 전담직원 운영지원",
+        "category": "사업관리 및 운영",
+        "partId": ""
+      },
+      {
+        "id": "b22",
+        "no": "163",
+        "area": "5. 사업관리 및 운영",
+        "content": "다. 재정관리",
+        "task": "1) 재정 추진 및 관리",
+        "activity": "다) 사업 간접비",
+        "dept": "기획처",
+        "workDept": "기획처",
+        "expenseType": "간접비",
+        "planned": 250344570,
+        "spent": 0,
+        "assigneeId": "m9",
+        "calcText": "[당해연도 사업 간접비: 250,344,570원]\n→ 사업관리·운영 간접경비 (테스트)",
+        "note": "만예산 PDF 테스트 입력",
+        "title": "다) 사업 간접비",
+        "category": "사업관리 및 운영",
+        "partId": ""
+      }
+    ],
+    "details": []
+  },
+  "requests": [
+    {
+      "id": "req_seed_1",
+      "groupId": "g_seed_1",
+      "title": "1차 취합본 드라이브 업로드",
+      "memo": "담당 파트 초안을 공유폴더에 올려 주세요.",
+      "requester": "문정환",
+      "recipient": "김남인",
+      "dueDate": "2026-08-20",
+      "status": "대기",
+      "createdAt": "2026-07-13"
+    },
+    {
+      "id": "req_seed_2",
+      "groupId": "g_seed_1",
+      "title": "1차 취합본 드라이브 업로드",
+      "memo": "담당 파트 초안을 공유폴더에 올려 주세요.",
+      "requester": "문정환",
+      "recipient": "이명선",
+      "dueDate": "2026-08-20",
+      "status": "대기",
+      "createdAt": "2026-07-13"
+    },
+    {
+      "id": "req_seed_3",
+      "groupId": "g_seed_1",
+      "title": "1차 취합본 드라이브 업로드",
+      "memo": "담당 파트 초안을 공유폴더에 올려 주세요.",
+      "requester": "문정환",
+      "recipient": "정은경",
+      "dueDate": "2026-08-20",
+      "status": "대기",
+      "createdAt": "2026-07-13"
+    },
+    {
+      "id": "req_seed_4",
+      "groupId": "g_seed_1",
+      "title": "1차 취합본 드라이브 업로드",
+      "memo": "담당 파트 초안을 공유폴더에 올려 주세요.",
+      "requester": "문정환",
+      "recipient": "박정하",
+      "dueDate": "2026-08-20",
+      "status": "대기",
+      "createdAt": "2026-07-13"
+    },
+    {
+      "id": "req_seed_5",
+      "groupId": "g_seed_1",
+      "title": "1차 취합본 드라이브 업로드",
+      "memo": "담당 파트 초안을 공유폴더에 올려 주세요.",
+      "requester": "문정환",
+      "recipient": "박종진",
+      "dueDate": "2026-08-20",
+      "status": "대기",
+      "createdAt": "2026-07-13"
+    },
+    {
+      "id": "req_seed_6",
+      "groupId": "g_seed_2",
+      "title": "스타일 가이드 확인 후 회신",
+      "memo": "공통 서식 탭의 스타일 가이드를 읽고 확인 완료로 표시해 주세요.",
+      "requester": "문정환",
+      "recipient": "김남인",
+      "dueDate": "2026-07-20",
+      "status": "대기",
+      "createdAt": "2026-07-13"
+    },
+    {
+      "id": "req_seed_7",
+      "groupId": "g_seed_2",
+      "title": "스타일 가이드 확인 후 회신",
+      "memo": "공통 서식 탭의 스타일 가이드를 읽고 확인 완료로 표시해 주세요.",
+      "requester": "문정환",
+      "recipient": "이명선",
+      "dueDate": "2026-07-20",
+      "status": "대기",
+      "createdAt": "2026-07-13"
+    }
+  ]
+}

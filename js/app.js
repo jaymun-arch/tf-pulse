@@ -1,0 +1,4578 @@
+const STORAGE_KEY = "tf-ops-data-v9";
+const USER_KEY = "tf-ops-user-v1";
+const REMIND_KEY = "tf-ops-schedule-remind-v1";
+const REMIND_BEFORE_DAYS = 14;
+
+const BUDGET_CATALOG = {
+  areas: ["1. 전략", "2. 고등직업교육", "3. 산학지역", "4. 자율", "5. 사업관리 및 운영"],
+  contents: [
+    "가. 교육혁신전략",
+    "나. 교육혁신의 성공적 추진을 위한 제도 기반",
+    "가. 핵심역량 기반 교육과정 체계혁신",
+    "나. 산학공동 직무특화 교육 혁신",
+    "다. 미래역량 기반 교수학습 혁신",
+    "라. 학생상담·진로로드",
+    "마. 학생취업·창업로드",
+    "바. 학생글로벌 성장지원",
+    "가. 지산학연계 교육과정 운영",
+    "나. 지산학협력 체계와 기업성장 지원",
+    "다. 지역기반 평생직업교육 강화",
+    "가. 공유협력 강화",
+    "나. 사회적 가치실현",
+    "가. 성과관리",
+    "나. 성과확산 및 공유",
+    "다. 재정관리",
+  ],
+  expenseTypes: [
+    "인건비",
+    "장학금",
+    "교육·연구 프로그램 개발·운영비",
+    "교육·연구환경개선비",
+    "실험·실습장비 및 기자재 구입·운영비",
+    "그 밖의 사업운영경비",
+    "간접비",
+  ],
+  depts: ["기획처", "교무처", "학생취업처", "입학홍보처", "산학협력처", "국제교류원", "평생교육원", "도서관"],
+  workDepts: [
+    "IR센터",
+    "교무처",
+    "교육혁신본부",
+    "교양교육혁신센터",
+    "교수학습혁신센터",
+    "학생취업처",
+    "마음건강상담센터",
+    "입학홍보처",
+    "창업지원센터",
+    "현장실습지원센터",
+    "지산학협력혁신센터",
+    "산학협력처",
+    "국제교류원",
+    "평생교육원",
+    "도서관",
+    "기획처",
+    "ESG봉사단",
+    "대학인권센터",
+  ],
+};
+
+const VIEW_META = {
+  dashboard: { title: "요약", desc: "파트 할당·취합·예산·일정을 한눈에 확인합니다." },
+  parts: { title: "목차·할당", desc: "관리자 마스터: 사업보고서 목차와 페이지 할당을 세팅합니다." },
+  collections: { title: "취합 현황", desc: "1·2·3차 취합 시점별 작성 페이지와 제출 상태를 확인·입력합니다." },
+  requests: { title: "공통 요청", desc: "관리자 공통 요청을 보내거나, 받은 요청을 확인하고 완료 처리합니다." },
+  budget: { title: "예산취합", desc: "혁신지원사업 예산 항목을 편성·입력·취합합니다." },
+  schedule: { title: "통합 일정", desc: "TF 일정을 한눈에 보고 일정을 추가합니다." },
+  drive: { title: "드라이브", desc: "주요 문서가 있는 구글드라이브 링크를 확인합니다." },
+  resources: { title: "공통 서식", desc: "교육부 지침·스타일 가이드·공통 서식을 한곳에 모읍니다." },
+  food: { title: "오늘 뭐먹지", desc: "보고서 쓰다 배고플 때, 돌림판으로 메뉴를 정해 보세요." },
+  members: { title: "대상자 관리", desc: "관리자 마스터: 보고서 작성 참여 대상자를 등록·관리합니다." },
+  guide: {
+    title: "사용방법.",
+    desc: "시스템의 방향과 메뉴별 사용법을 짧게 정리했습니다. 처음이라면 아래를 읽고 요약 탭부터 시작해 보세요.",
+  },
+};
+
+let state = null;
+let activeRound = 1;
+let modalHandler = null;
+let sessionUser = null;
+
+const $ = (sel, root = document) => root.querySelector(sel);
+const $$ = (sel, root = document) => [...root.querySelectorAll(sel)];
+
+function uid(prefix = "id") {
+  return `${prefix}_${Date.now().toString(36)}_${Math.random().toString(36).slice(2, 7)}`;
+}
+
+function today() {
+  return new Date().toISOString().slice(0, 10);
+}
+
+function pagesOf(part) {
+  return Math.max(0, (part.pageEnd ?? 0) - (part.pageStart ?? 0) + 1);
+}
+
+function memberById(id) {
+  return state.members.find((m) => m.id === id);
+}
+
+function memberByName(name) {
+  return state.members.find((m) => m.name === name);
+}
+
+function currentMember() {
+  return sessionUser ? memberByName(sessionUser) : null;
+}
+
+function isAdmin() {
+  return currentMember()?.role === "admin";
+}
+
+function isBudgetManager() {
+  return currentMember()?.role === "budget";
+}
+
+function isFoodManager() {
+  return currentMember()?.role === "food";
+}
+
+function canManageBudget() {
+  return isAdmin() || isBudgetManager();
+}
+
+function roleLabel(role) {
+  return {
+    admin: "관리자",
+    budget: "예산담당자",
+    food: "식사담당",
+    member: "대상자",
+  }[role] || "대상자";
+}
+
+function myPartIds() {
+  const me = currentMember();
+  if (!me) return [];
+  return state.parts.filter((p) => p.assigneeId === me.id).map((p) => p.id);
+}
+
+function canEditSubmission(partId) {
+  return isAdmin() || myPartIds().includes(partId);
+}
+
+function partById(id) {
+  return state.parts.find((p) => p.id === id);
+}
+
+function allocatedTotal() {
+  return state.parts.reduce((sum, p) => sum + pagesOf(p), 0);
+}
+
+function collectionSummary(round) {
+  const col = state.collections.find((c) => c.round === round);
+  if (!col) return { submitted: 0, pending: 0, pages: 0, totalParts: 0 };
+  const submitted = col.submissions.filter((s) => s.status === "submitted").length;
+  const pages = col.submissions.reduce((sum, s) => sum + (Number(s.pageCount) || 0), 0);
+  return {
+    submitted,
+    pending: col.submissions.length - submitted,
+    pages,
+    totalParts: col.submissions.length,
+  };
+}
+
+function areaCategory(area) {
+  if (!area) return "기타";
+  const parts = String(area).split(". ");
+  return parts.length > 1 ? parts.slice(1).join(". ") : area;
+}
+
+function normalizeBudgetItem(raw = {}) {
+  const activity = (raw.activity || raw.title || "").trim();
+  const area = (raw.area || "").trim();
+  const item = {
+    id: raw.id || uid("b"),
+    no: String(raw.no ?? ""),
+    area,
+    content: (raw.content || "").trim(),
+    task: (raw.task || "").trim(),
+    activity,
+    dept: (raw.dept || "").trim(),
+    workDept: (raw.workDept || "").trim(),
+    planned: Number(raw.planned) || 0,
+    spent: Number(raw.spent) || 0,
+    assigneeId: raw.assigneeId || "",
+    calcText: (raw.calcText || "").trim(),
+    note: (raw.note || "").trim(),
+    expenseType: (raw.expenseType || "").trim(),
+    title: activity || (raw.title || "").trim() || "항목",
+    category: (raw.category || "").trim() || areaCategory(area),
+    partId: raw.partId || "",
+  };
+  return item;
+}
+
+function ensureBudget() {
+  if (!state.budget || typeof state.budget !== "object") {
+    state.budget = { total: 0, note: "", items: [], details: [], expensePlan: [] };
+  }
+  if (!Array.isArray(state.budget.items)) state.budget.items = [];
+  if (!Array.isArray(state.budget.details)) state.budget.details = [];
+  if (!Array.isArray(state.budget.expensePlan)) state.budget.expensePlan = [];
+  state.budget.items = state.budget.items.map((i) => normalizeBudgetItem(i));
+  state.budget.total = Number(state.budget.total) || 0;
+  state.budget.note = state.budget.note || "";
+  state.budget.yearLabel = state.budget.yearLabel || "당해연도";
+  if (!state.budget.expensePlan.length) {
+    state.budget.expensePlan = BUDGET_CATALOG.expenseTypes.map((name) => ({ name, planned: 0 }));
+  }
+}
+
+function budgetExpenseStatus() {
+  ensureBudget();
+  const entered = {};
+  state.budget.items.forEach((item) => {
+    const key = item.expenseType || "미분류";
+    if (!entered[key]) entered[key] = { planned: 0, count: 0, filled: 0 };
+    entered[key].planned += Number(item.planned) || 0;
+    entered[key].count += 1;
+    if ((item.calcText || "").trim()) entered[key].filled += 1;
+  });
+
+  const total = Number(state.budget.total) || 0;
+  const names = [
+    ...BUDGET_CATALOG.expenseTypes,
+    ...Object.keys(entered).filter((k) => !BUDGET_CATALOG.expenseTypes.includes(k)),
+  ];
+  const rows = names.map((name) => {
+    const ent = entered[name] || { planned: 0, count: 0, filled: 0 };
+    return {
+      name,
+      entered: ent.planned,
+      count: ent.count,
+      filled: ent.filled,
+      shareEntered: 0,
+      shareOfTotal: 0,
+    };
+  });
+  const enteredTotal = rows.reduce((s, r) => s + r.entered, 0);
+  const remain = Math.max(0, total - enteredTotal);
+  const enteredPct = total ? Math.round((enteredTotal / total) * 1000) / 10 : 0;
+  const remainPct = total ? Math.round((remain / total) * 1000) / 10 : 0;
+  rows.forEach((r) => {
+    r.shareEntered = enteredTotal ? (r.entered / enteredTotal) * 100 : 0;
+    r.shareOfTotal = total ? (r.entered / total) * 100 : 0;
+  });
+  return { rows, total, enteredTotal, remain, enteredPct, remainPct };
+}
+
+function budgetItemLabel(item) {
+  if (!item) return "";
+  const no = item.no ? `${item.no}. ` : "";
+  return `${no}${item.activity || item.title || "항목"}`;
+}
+
+function budgetTipHtml(text, className, innerHtml = "") {
+  const full = (text || "").trim();
+  const body = innerHtml || escapeHtml(full || "-");
+  if (!full || full === "-") {
+    return `<div class="${className}">${body}</div>`;
+  }
+  return `<div class="${className} budget-tip" data-budget-tip="${escapeAttr(full)}" tabindex="0">${body}</div>`;
+}
+
+function ensureBudgetTipFloat() {
+  let floatEl = $("#budgetTipFloat");
+  if (floatEl) return floatEl;
+  floatEl = document.createElement("div");
+  floatEl.id = "budgetTipFloat";
+  floatEl.className = "budget-tip-float";
+  floatEl.setAttribute("role", "tooltip");
+  document.body.appendChild(floatEl);
+  return floatEl;
+}
+
+function hideBudgetTip() {
+  const floatEl = $("#budgetTipFloat");
+  if (!floatEl) return;
+  floatEl.classList.remove("is-open");
+  floatEl.textContent = "";
+}
+
+function showBudgetTip(anchor) {
+  const text = (anchor.getAttribute("data-budget-tip") || "").trim();
+  if (!text) return;
+  const floatEl = ensureBudgetTipFloat();
+  floatEl.textContent = text;
+  floatEl.classList.add("is-open");
+
+  const place = () => {
+    const gap = 8;
+    const rect = anchor.getBoundingClientRect();
+    const tipRect = floatEl.getBoundingClientRect();
+    let left = rect.left;
+    let top = rect.bottom + gap;
+    if (left + tipRect.width > window.innerWidth - 12) {
+      left = Math.max(12, window.innerWidth - tipRect.width - 12);
+    }
+    if (top + tipRect.height > window.innerHeight - 12) {
+      top = Math.max(12, rect.top - tipRect.height - gap);
+      floatEl.classList.add("is-above");
+    } else {
+      floatEl.classList.remove("is-above");
+    }
+    floatEl.style.left = `${Math.max(12, left)}px`;
+    floatEl.style.top = `${top}px`;
+  };
+  place();
+  requestAnimationFrame(place);
+}
+
+function bindBudgetTips(root) {
+  ensureBudgetTipFloat();
+  root.querySelectorAll("[data-budget-tip]").forEach((el) => {
+    el.addEventListener("mouseenter", () => showBudgetTip(el));
+    el.addEventListener("mouseleave", hideBudgetTip);
+    el.addEventListener("focus", () => showBudgetTip(el));
+    el.addEventListener("blur", hideBudgetTip);
+  });
+  root.querySelector(".budget-table-wrap")?.addEventListener("scroll", hideBudgetTip, { passive: true });
+}
+
+function datalistOptions(id, values) {
+  return `<datalist id="${id}">${values.map((v) => `<option value="${escapeAttr(v)}"></option>`).join("")}</datalist>`;
+}
+
+function inputAssignees() {
+  return state.members.filter((m) => m.role === "member" || m.role === "food");
+}
+
+function canEditBudgetItem(item) {
+  if (!item) return false;
+  if (canManageBudget()) return true;
+  const me = currentMember();
+  return Boolean(me && item.assigneeId === me.id);
+}
+
+function ensureRequests() {
+  if (!Array.isArray(state.requests)) state.requests = [];
+}
+
+function formatWon(n) {
+  const v = Number(n) || 0;
+  return `${v.toLocaleString("ko-KR")}원`;
+}
+
+function budgetSummary() {
+  ensureBudget();
+  const planned = state.budget.items.reduce((sum, i) => sum + (Number(i.planned) || 0), 0);
+  const spent = state.budget.items.reduce((sum, i) => sum + (Number(i.spent) || 0), 0);
+  const total = Number(state.budget.total) || 0;
+  return {
+    total,
+    planned,
+    spent,
+    remainTotal: total - spent,
+    remainPlanned: planned - spent,
+    unallocated: total - planned,
+  };
+}
+
+function markDirty(dirty = true) {
+  const hint = $("#saveHint");
+  const dot = $("#saveDot");
+  if (hint) {
+    if (dirty) {
+      hint.textContent = "저장 중…";
+      hint.classList.add("dirty");
+    } else {
+      hint.textContent = "저장됨";
+      hint.classList.remove("dirty");
+    }
+  }
+  if (dot) {
+    dot.classList.toggle("ok", !dirty);
+    dot.classList.toggle("dirty", dirty);
+  }
+}
+
+function persist() {
+  state.meta.updatedAt = new Date().toISOString();
+  localStorage.setItem(STORAGE_KEY, JSON.stringify(state));
+  markDirty(false);
+}
+
+function saveAndRender(view) {
+  markDirty(true);
+  persist();
+  if (view) renderView(view);
+  else renderAll();
+}
+
+async function loadSeed() {
+  if (window.__TF_SEED__ && typeof window.__TF_SEED__ === "object") {
+    return structuredClone
+      ? structuredClone(window.__TF_SEED__)
+      : JSON.parse(JSON.stringify(window.__TF_SEED__));
+  }
+  try {
+    const res = await fetch("./data/tf-data.json", { cache: "no-store" });
+    if (!res.ok) throw new Error("샘플 JSON을 불러오지 못했습니다.");
+    return res.json();
+  } catch (err) {
+    if (window.__TF_SEED__) {
+      return JSON.parse(JSON.stringify(window.__TF_SEED__));
+    }
+    throw err;
+  }
+}
+
+async function initState() {
+  const cached = localStorage.getItem(STORAGE_KEY);
+  if (cached) {
+    try {
+      state = JSON.parse(cached);
+      if (!state.budget) {
+        const seed = await loadSeed();
+        state.budget = seed.budget;
+      }
+      if (!state.requests) {
+        const seed = await loadSeed();
+        state.requests = seed.requests || [];
+      }
+      ensureBudget();
+      ensureRequests();
+      ensureFoodPolls();
+      ensureFoodCatalog();
+      ensureFoodHistory();
+      persist();
+      return;
+    } catch {
+      /* fall through */
+    }
+  }
+  state = await loadSeed();
+  ensureBudget();
+  ensureRequests();
+  ensureFoodPolls();
+  ensureFoodCatalog();
+  ensureFoodHistory();
+  persist();
+}
+
+function setView(name) {
+  if (!isAdmin() && (name === "parts" || name === "members")) {
+    name = "dashboard";
+  }
+  $$(".tab-btn").forEach((btn) => btn.classList.toggle("active", btn.dataset.view === name));
+  $$(".view").forEach((el) => el.classList.toggle("active", el.id === `view-${name}`));
+  const meta = VIEW_META[name];
+  let desc = meta.desc;
+  if (!isAdmin() && name === "collections") {
+    desc = "본인 담당 파트의 작성 페이지·제출 상태를 입력합니다.";
+  }
+  if (!isAdmin() && name === "dashboard") {
+    desc = isBudgetManager()
+      ? "예산 배정·세부산출 통계를 확인합니다."
+      : "나에게 할당된 파트와 진행 현황을 확인합니다.";
+  }
+  if (name === "budget") {
+    if (isBudgetManager()) desc = "혁신지원사업 예산 항목을 취합·통계로 관리합니다.";
+    else if (!isAdmin()) desc = "배정된 예산 항목의 산출내역을 선택·입력 후 저장합니다.";
+  }
+  $("#viewTitle").textContent = meta.title;
+  $("#viewDesc").textContent = desc;
+  renderView(name);
+}
+
+function currentUserName() {
+  return sessionUser || state.meta.adminName || "사용자";
+}
+
+function applyRoleUi() {
+  const admin = isAdmin();
+  const budgetMgr = isBudgetManager();
+  const foodMgr = isFoodManager();
+  document.body.classList.toggle("is-admin", admin);
+  document.body.classList.toggle("is-budget", budgetMgr);
+  document.body.classList.toggle("is-food", foodMgr);
+  document.body.classList.toggle("is-member", !admin && !budgetMgr && !foodMgr);
+  const badge = $("#userRoleBadge");
+  const label = $("#userNameLabel");
+  if (badge) {
+    badge.textContent = roleLabel(currentMember()?.role);
+    badge.classList.toggle("is-admin", admin);
+    badge.classList.toggle("is-budget", budgetMgr);
+    badge.classList.toggle("is-food", foodMgr);
+  }
+  if (label) label.textContent = sessionUser || "";
+}
+
+function weatherKindFromCode(code) {
+  const n = Number(code);
+  if ([71, 73, 75, 77, 85, 86].includes(n)) return "snow";
+  if (
+    [51, 53, 55, 56, 57, 61, 63, 65, 66, 67, 80, 81, 82, 95, 96, 99].includes(n)
+  ) {
+    return "rain";
+  }
+  return "sun";
+}
+
+async function applyLoginWeather() {
+  const gate = $("#loginGate");
+  if (!gate) return;
+  const badge = $("#loginWeatherBadge");
+  const setKind = (kind, note = "") => {
+    gate.classList.remove("weather-sun", "weather-rain", "weather-snow");
+    gate.classList.add(`weather-${kind}`);
+    gate.dataset.weather = kind;
+    const labels = { sun: "맑음", rain: "비", snow: "눈" };
+    const icons = { sun: "☀", rain: "🌧", snow: "❄" };
+    const label = labels[kind] || kind;
+    gate.title = `로그인 배경 · 현재 날씨: ${label}`;
+    if (badge) {
+      badge.textContent = `${icons[kind] || "☁"} ${label}${note ? ` · ${note}` : " · 안양"}`;
+    }
+  };
+  try {
+    // 안양 인근 (Open-Meteo, API 키 불필요)
+    const url =
+      "https://api.open-meteo.com/v1/forecast?latitude=37.3943&longitude=126.9568&current=weather_code&timezone=Asia%2FSeoul";
+    const res = await fetch(url, { cache: "no-store" });
+    if (!res.ok) throw new Error("weather fetch failed");
+    const data = await res.json();
+    setKind(weatherKindFromCode(data?.current?.weather_code));
+  } catch {
+    // 네트워크 실패 시 계절 추정
+    const month = new Date().getMonth() + 1;
+    if (month === 12 || month <= 2) setKind("snow", "추정");
+    else if (month >= 6 && month <= 9) setKind("rain", "추정");
+    else setKind("sun", "추정");
+  }
+}
+
+function showLoginGate() {
+  $("#loginGate").hidden = false;
+  $("#appShell").hidden = true;
+  applyLoginWeather();
+  const list = $("#loginMemberList");
+  list.innerHTML = state.members
+    .map(
+      (m) => `
+      <button type="button" class="member-btn ${m.role === "admin" ? "is-admin" : ""} ${m.role === "budget" ? "is-budget" : ""} ${m.role === "food" ? "is-food" : ""}" data-login="${escapeAttr(m.name)}">
+        <span class="member-name">${escapeHtml(m.name)}</span>
+        <span class="role">${roleLabel(m.role)}</span>
+      </button>`
+    )
+    .join("");
+  list.querySelectorAll("[data-login]").forEach((btn) => {
+    btn.addEventListener("click", () => enterAs(btn.dataset.login));
+  });
+}
+
+function enterAs(name) {
+  const member = memberByName(name);
+  if (!member) return;
+  sessionUser = name;
+  localStorage.setItem(USER_KEY, name);
+  $("#loginGate").hidden = true;
+  $("#appShell").hidden = false;
+  applyRoleUi();
+  renderAll();
+  setView("dashboard");
+  window.setTimeout(() => {
+    openRemindPopup(false);
+    openRequestPopup(false);
+  }, 280);
+}
+
+function logout() {
+  sessionUser = null;
+  localStorage.removeItem(USER_KEY);
+  showLoginGate();
+}
+
+function fillUserSelect() {
+  /* legacy no-op — 이름 선택은 로그인 게이트에서 처리 */
+}
+
+function escapeHtml(str = "") {
+  return String(str)
+    .replaceAll("&", "&amp;")
+    .replaceAll("<", "&lt;")
+    .replaceAll(">", "&gt;")
+    .replaceAll('"', "&quot;");
+}
+
+function escapeAttr(str = "") {
+  return escapeHtml(str)
+    .replaceAll("'", "&#39;")
+    .replaceAll("\n", "&#10;")
+    .replaceAll("\r", "");
+}
+
+function monthLabel(year, month) {
+  return `${year}년 ${month + 1}월`;
+}
+
+function eventsOnDate(isoDate) {
+  return state.schedule.filter((s) => {
+    const start = s.date;
+    const end = s.endDate || s.date;
+    return isoDate >= start && isoDate <= end;
+  });
+}
+
+function buildMonthCalendarHtml(refDate = new Date()) {
+  const year = refDate.getFullYear();
+  const month = refDate.getMonth();
+  const todayIso = today();
+  const first = new Date(year, month, 1);
+  const startPad = first.getDay(); // 0 Sun
+  const daysInMonth = new Date(year, month + 1, 0).getDate();
+  const weekdays = ["일", "월", "화", "수", "목", "금", "토"];
+
+  const cells = [];
+  for (let i = 0; i < startPad; i++) cells.push(`<div class="cal-cell is-empty"></div>`);
+  for (let d = 1; d <= daysInMonth; d++) {
+    const iso = `${year}-${String(month + 1).padStart(2, "0")}-${String(d).padStart(2, "0")}`;
+    const events = eventsOnDate(iso);
+    const isToday = iso === todayIso;
+    const dow = new Date(year, month, d).getDay();
+    cells.push(`
+      <div class="cal-cell ${isToday ? "is-today" : ""} ${events.length ? "has-event" : ""}">
+        <div class="cal-day ${dow === 0 ? "is-sun" : ""} ${dow === 6 ? "is-sat" : ""}">${d}</div>
+        <div class="cal-events">
+          ${events
+            .slice(0, 3)
+            .map(
+              (e) =>
+                `<span class="cal-dot ${escapeAttr(e.type)}" title="${escapeAttr(e.title)}">${escapeHtml(e.title)}</span>`
+            )
+            .join("")}
+          ${events.length > 3 ? `<span class="cal-more">+${events.length - 3}</span>` : ""}
+        </div>
+      </div>`);
+  }
+
+  return `
+    <div class="month-cal">
+      <div class="month-cal-head">
+        <strong>${monthLabel(year, month)}</strong>
+        <span class="muted">이번 달 일정</span>
+      </div>
+      <div class="cal-weekdays">
+        ${weekdays.map((w, i) => `<span class="${i === 0 ? "is-sun" : i === 6 ? "is-sat" : ""}">${w}</span>`).join("")}
+      </div>
+      <div class="cal-grid">${cells.join("")}</div>
+    </div>`;
+}
+
+/* ---------- Schedule remind popup ---------- */
+
+function loadRemindState() {
+  try {
+    return JSON.parse(localStorage.getItem(REMIND_KEY) || "{}");
+  } catch {
+    return {};
+  }
+}
+
+function saveRemindState(map) {
+  localStorage.setItem(REMIND_KEY, JSON.stringify(map));
+}
+
+function daysUntil(isoDate) {
+  const t0 = new Date(`${today()}T00:00:00`);
+  const t1 = new Date(`${isoDate}T00:00:00`);
+  return Math.round((t1 - t0) / 86400000);
+}
+
+function timingLabel(days) {
+  if (days < 0) return `${Math.abs(days)}일 지남`;
+  if (days === 0) return "오늘";
+  if (days === 1) return "내일";
+  return `${days}일 남음`;
+}
+
+function timingClass(days) {
+  if (days < 0) return "is-overdue";
+  if (days <= 2) return "is-urgent";
+  if (days <= 7) return "is-warn";
+  return "is-soon";
+}
+
+function getUpcomingReminders({ includeDismissed = false } = {}) {
+  const map = loadRemindState();
+  const todayIso = today();
+  return [...state.schedule]
+    .map((s) => {
+      const days = daysUntil(s.date);
+      return { ...s, daysUntil: days };
+    })
+    .filter((s) => s.daysUntil >= -1 && s.daysUntil <= REMIND_BEFORE_DAYS)
+    .filter((s) => {
+      if (includeDismissed) return true;
+      if (map[`dismiss:${s.id}`]) return false;
+      if (map[`snooze:${s.id}`] === todayIso) return false;
+      return true;
+    })
+    .sort((a, b) => a.daysUntil - b.daysUntil || a.date.localeCompare(b.date));
+}
+
+function updateRemindBell() {
+  const bell = $("#btnRemindBell");
+  const countEl = $("#remindBellCount");
+  if (!bell || !sessionUser) return;
+  const pending = getUpcomingReminders();
+  const all = getUpcomingReminders({ includeDismissed: true });
+  const count = pending.length || all.length;
+  if (count > 0) {
+    bell.hidden = false;
+    bell.classList.toggle("has-pending", pending.length > 0);
+    countEl.textContent = String(pending.length || all.length);
+  } else {
+    bell.hidden = true;
+  }
+}
+
+function renderRemindList(items) {
+  const list = $("#remindList");
+  if (!items.length) {
+    list.innerHTML = `<li class="empty">표시할 일정이 없습니다.</li>`;
+    return;
+  }
+  list.innerHTML = items
+    .map(
+      (s) => `
+    <li class="remind-item">
+      <div class="remind-item-main">
+        <div class="remind-timing ${timingClass(s.daysUntil)}">${timingLabel(s.daysUntil)}</div>
+        <div class="remind-item-title">「${escapeHtml(s.title)}」 일정이 ${
+          s.daysUntil < 0
+            ? `${Math.abs(s.daysUntil)}일 지났습니다.`
+            : s.daysUntil === 0
+              ? "오늘입니다."
+              : `${s.daysUntil}일 남았습니다.`
+        }</div>
+        <div class="remind-item-meta">
+          ${escapeHtml(s.date)}${s.endDate && s.endDate !== s.date ? ` ~ ${escapeHtml(s.endDate)}` : ""}
+          · ${typeLabel(s.type)}
+          ${s.note ? ` · ${escapeHtml(s.note)}` : ""}
+        </div>
+      </div>
+      <div class="remind-item-actions">
+        <button type="button" class="btn btn-sm btn-ghost" data-snooze="${s.id}">오늘 다시</button>
+        <button type="button" class="btn btn-sm btn-primary" data-dismiss="${s.id}">확인</button>
+      </div>
+    </li>`
+    )
+    .join("");
+
+  list.querySelectorAll("[data-snooze]").forEach((btn) =>
+    btn.addEventListener("click", () => {
+      snoozeReminder(btn.dataset.snooze);
+      openRemindPopup(false);
+    })
+  );
+  list.querySelectorAll("[data-dismiss]").forEach((btn) =>
+    btn.addEventListener("click", () => {
+      dismissReminder(btn.dataset.dismiss);
+      openRemindPopup(false);
+    })
+  );
+}
+
+function dismissReminder(id) {
+  const map = loadRemindState();
+  map[`dismiss:${id}`] = new Date().toISOString();
+  saveRemindState(map);
+  updateRemindBell();
+}
+
+function snoozeReminder(id) {
+  const map = loadRemindState();
+  map[`snooze:${id}`] = today();
+  saveRemindState(map);
+  updateRemindBell();
+}
+
+function openRemindPopup(browseAll = false) {
+  const pending = getUpcomingReminders();
+  const all = getUpcomingReminders({ includeDismissed: true });
+  const items = browseAll ? all : pending;
+  if (!items.length) {
+    closeRemindPopup();
+    updateRemindBell();
+    return;
+  }
+  renderRemindList(items);
+  $("#remindBackdrop").hidden = false;
+  updateRemindBell();
+}
+
+function closeRemindPopup() {
+  $("#remindBackdrop").hidden = true;
+  updateRemindBell();
+}
+
+function myPendingRequests() {
+  ensureRequests();
+  if (!sessionUser) return [];
+  return state.requests.filter(
+    (r) => r.recipient === sessionUser && r.status !== "완료"
+  );
+}
+
+function updateRequestPlane() {
+  const btn = $("#btnRequestPlane");
+  const countEl = $("#requestPlaneCount");
+  if (!btn || !sessionUser) return;
+  const pending = myPendingRequests();
+  if (pending.length > 0) {
+    btn.hidden = false;
+    countEl.textContent = String(pending.length);
+  } else {
+    btn.hidden = true;
+  }
+}
+
+function renderRequestPopupList(items) {
+  const list = $("#requestList");
+  if (!items.length) {
+    list.innerHTML = `<li class="empty">확인할 요청이 없습니다.</li>`;
+    return;
+  }
+  list.innerHTML = items
+    .map((r) => {
+      const days = r.dueDate ? daysUntil(r.dueDate) : null;
+      return `
+      <li class="remind-item">
+        <div class="remind-item-main">
+          ${
+            days != null
+              ? `<div class="remind-timing ${timingClass(days)}">${timingLabel(days)}</div>`
+              : `<div class="remind-timing is-soon">요청</div>`
+          }
+          <div class="remind-item-title">${escapeHtml(r.title)}</div>
+          <div class="remind-item-meta">
+            요청자 ${escapeHtml(r.requester || "관리자")}
+            ${r.dueDate ? ` · 마감 ${escapeHtml(r.dueDate)}` : ""}
+            ${r.memo ? ` · ${escapeHtml(r.memo)}` : ""}
+          </div>
+        </div>
+        <div class="remind-item-actions">
+          <button type="button" class="btn btn-sm btn-primary" data-done-req="${r.id}">완료</button>
+        </div>
+      </li>`;
+    })
+    .join("");
+
+  list.querySelectorAll("[data-done-req]").forEach((btn) => {
+    btn.addEventListener("click", () => {
+      completeRequest(btn.dataset.doneReq);
+      const left = myPendingRequests();
+      if (left.length) renderRequestPopupList(left);
+      else closeRequestPopup();
+      updateRequestPlane();
+    });
+  });
+}
+
+function completeRequest(id) {
+  ensureRequests();
+  const row = state.requests.find((r) => r.id === id);
+  if (!row) return;
+  if (!isAdmin() && row.recipient !== sessionUser) return;
+  row.status = "완료";
+  row.completedAt = today();
+  persist();
+  updateRequestPlane();
+  if ($(".tab-btn.active")?.dataset.view === "requests") renderRequests();
+}
+
+function openRequestPopup(force = false) {
+  const pending = myPendingRequests();
+  if (!pending.length && !force) {
+    updateRequestPlane();
+    return;
+  }
+  if (!pending.length) {
+    closeRequestPopup();
+    return;
+  }
+  renderRequestPopupList(pending);
+  $("#requestBackdrop").hidden = false;
+  updateRequestPlane();
+}
+
+function closeRequestPopup() {
+  $("#requestBackdrop").hidden = true;
+  updateRequestPlane();
+}
+
+/* ---------- Renderers ---------- */
+
+function renderDashboard() {
+  const el = $("#view-dashboard");
+  const c1 = collectionSummary(1);
+  const c2 = collectionSummary(2);
+  const c3 = collectionSummary(3);
+  const target = state.meta.totalTargetPages || allocatedTotal();
+  const bud = budgetSummary();
+  const allocPct = bud.total ? Math.min(100, Math.round((bud.planned / bud.total) * 100)) : 0;
+  const mine = myPartIds();
+  const myParts = state.parts.filter((p) => mine.includes(p.id));
+  const admin = isAdmin();
+  ensureBudget();
+  const me = currentMember();
+  const myBudgetList = state.budget.items.filter((i) => me && i.assigneeId === me.id);
+  const myBudgetPlanned = myBudgetList.reduce((s, i) => s + (Number(i.planned) || 0), 0);
+  const myBudgetFilled = myBudgetList.filter((i) => (i.calcText || "").trim()).length;
+  const myBudgetPct = myBudgetList.length
+    ? Math.round((myBudgetFilled / myBudgetList.length) * 100)
+    : 0;
+
+  const latestRound = Math.max(...state.collections.map((c) => c.round));
+  const latestCol = state.collections.find((c) => c.round === latestRound);
+  const mySubs = (latestCol?.submissions || []).filter((s) => mine.includes(s.partId));
+  const myPages = mySubs.reduce((sum, s) => sum + (Number(s.pageCount) || 0), 0);
+  const mySubmitted = mySubs.filter((s) => s.status === "submitted").length;
+  const monthEvents = state.schedule.filter((s) => {
+    const now = new Date();
+    const y = now.getFullYear();
+    const m = String(now.getMonth() + 1).padStart(2, "0");
+    const prefix = `${y}-${m}`;
+    return (s.date || "").startsWith(prefix) || (s.endDate || "").startsWith(prefix);
+  });
+
+  el.innerHTML = `
+    ${
+      admin
+        ? `<div class="panel" style="margin-bottom:10px">
+        <div class="panel-head">
+          <div>
+            <h2 class="panel-title">관리자 마스터</h2>
+            <p class="muted">사업보고서 목차·페이지 할당·작성 대상자를 세팅합니다.</p>
+          </div>
+          <div class="row">
+            <button class="btn btn-primary btn-sm" data-goto="parts">목차·할당 세팅</button>
+            <button class="btn btn-sm" data-goto="members">대상자 관리</button>
+            <button class="btn btn-sm" data-goto="requests">공통 요청</button>
+            <button class="btn btn-sm" id="editMeta">보고서 기본정보</button>
+          </div>
+        </div>
+      </div>`
+        : `<div class="panel" style="margin-bottom:10px">
+        <div class="panel-head">
+          <div>
+            <h2 class="panel-title panel-title-mine"><span class="mine-name">${escapeHtml(sessionUser)}</span>님 담당 현황</h2>
+            <p class="muted">할당된 파트의 진행만 입력할 수 있습니다.</p>
+          </div>
+          <button class="btn btn-primary btn-sm" data-goto="collections">내 취합 입력</button>
+          <button class="btn btn-sm" data-goto="requests">받은 요청</button>
+        </div>
+        <div class="metrics" style="margin:0;grid-template-columns:repeat(2,1fr)">
+          <div class="stat accent">
+            <div class="label">내 담당 파트</div>
+            <div class="value">${myParts.length}</div>
+            <div class="sub">${myParts.map((p) => `${p.section}.${p.title}`).join(" · ") || "미할당"}</div>
+          </div>
+          <div class="stat">
+            <div class="label">${escapeHtml(latestCol?.name || "취합")} 내 작성</div>
+            <div class="value">${myPages}<small>p</small></div>
+            <div class="sub">제출 ${mySubmitted}/${mySubs.length || 0}</div>
+          </div>
+        </div>
+      </div>`
+    }
+
+    <div class="panel" style="margin-bottom:10px">
+      <div class="panel-head">
+        <h2 class="panel-title">대학 전체 예산 취합</h2>
+        <button class="btn btn-sm" data-goto="budget">예산 탭</button>
+      </div>
+      <div class="metrics" style="margin:0">
+        <div class="stat accent">
+          <div class="label">총 예산액</div>
+          <div class="value" style="font-size:1.05rem">${formatWon(bud.total)}</div>
+          <div class="sub">${escapeHtml(state.budget.note || "혁신지원사업")}</div>
+        </div>
+        <div class="stat">
+          <div class="label">편성예산 합계</div>
+          <div class="value" style="font-size:1.05rem">${formatWon(bud.planned)}</div>
+          <div class="sub">편성률 ${allocPct}% · ${state.budget.items.length}항목</div>
+        </div>
+        <div class="stat">
+          <div class="label">미배정 예산</div>
+          <div class="value" style="font-size:1.05rem">${formatWon(bud.unallocated)}</div>
+          <div class="sub">총예산 − 편성합계</div>
+        </div>
+        <div class="stat">
+          <div class="label">산출 입력 완료</div>
+          <div class="value">${state.budget.items.filter((i) => (i.calcText || "").trim()).length}<small>/${state.budget.items.length}</small></div>
+          <div class="sub">대학 전체 취합</div>
+        </div>
+      </div>
+    </div>
+
+    <div class="panel" style="margin-bottom:10px">
+      <div class="panel-head">
+        <div>
+          <h2 class="panel-title">내 사용예정 예산 입력 현황</h2>
+          <p class="muted" style="margin:4px 0 0">나에게 배정된 항목의 편성·산출 입력 상태입니다.</p>
+        </div>
+        <button class="btn btn-primary btn-sm" data-goto="budget">예산 입력</button>
+      </div>
+      <div class="metrics" style="margin:0 0 12px;grid-template-columns:repeat(3,1fr)">
+        <div class="stat accent">
+          <div class="label">내 배정 항목</div>
+          <div class="value">${myBudgetList.length}</div>
+          <div class="sub">입력담당 지정</div>
+        </div>
+        <div class="stat">
+          <div class="label">사용예정 금액</div>
+          <div class="value" style="font-size:1.05rem">${formatWon(myBudgetPlanned)}</div>
+          <div class="sub">편성금액 합계</div>
+        </div>
+        <div class="stat">
+          <div class="label">산출 입력</div>
+          <div class="value">${myBudgetFilled}<small>/${myBudgetList.length || 0}</small></div>
+          <div class="sub">완료율 ${myBudgetPct}%</div>
+        </div>
+      </div>
+      <div class="bar-list">
+        ${
+          myBudgetList.length
+            ? myBudgetList
+                .map((item) => {
+                  const filled = Boolean((item.calcText || "").trim());
+                  const planned = Number(item.planned) || 0;
+                  const pct = myBudgetPlanned
+                    ? Math.min(100, Math.round((planned / myBudgetPlanned) * 100))
+                    : 0;
+                  const calc = (item.calcText || "").trim();
+                  return `
+                <div class="bar-item">
+                  <div class="meta">
+                    <strong>${escapeHtml(item.no ? `${item.no}. ` : "")}${escapeHtml(item.activity || item.title || "항목")}</strong>
+                    <span>${filled ? "입력완료" : "미입력"} · ${formatWon(planned)}</span>
+                  </div>
+                  <div class="progress"><span style="width:${filled ? Math.max(pct, 12) : 0}%"></span></div>
+                  <div class="budget-dash-calc ${filled ? "" : "is-empty"}">${
+                    filled
+                      ? escapeHtml(calc.length > 120 ? `${calc.slice(0, 120)}…` : calc)
+                      : "세부 산출내역을 입력해 주세요."
+                  }</div>
+                </div>`;
+                })
+                .join("")
+            : `<div class="empty">배정된 사용예정 예산이 없습니다. 관리자가 입력담당자로 지정하면 여기에 표시됩니다.</div>`
+        }
+      </div>
+    </div>
+
+    <div class="metrics" style="margin-bottom:10px">
+      <div class="stat accent">
+        <div class="label">목표 총 페이지</div>
+        <div class="value">${target}</div>
+        <div class="sub">할당 합계 ${allocatedTotal()}p</div>
+      </div>
+      <div class="stat">
+        <div class="label">1차 취합</div>
+        <div class="value">${c1.pages}<small>p</small></div>
+        <div class="sub">${c1.submitted}/${c1.totalParts} 파트 제출</div>
+      </div>
+      <div class="stat">
+        <div class="label">2차 취합</div>
+        <div class="value">${c2.pages}<small>p</small></div>
+        <div class="sub">${c2.submitted}/${c2.totalParts} 파트 제출</div>
+      </div>
+      <div class="stat">
+        <div class="label">3차 취합</div>
+        <div class="value">${c3.pages}<small>p</small></div>
+        <div class="sub">${c3.submitted}/${c3.totalParts} 파트 제출</div>
+      </div>
+    </div>
+
+    <div class="grid grid-2">
+      <div class="panel">
+        <div class="panel-head"><h2 class="panel-title">${admin ? "파트별 페이지 할당" : "내 파트·페이지"}</h2></div>
+        <div class="bar-list">
+          ${(admin ? state.parts : myParts.length ? myParts : state.parts)
+            .map((p) => {
+              const m = memberById(p.assigneeId);
+              const pages = pagesOf(p);
+              const pct = target ? Math.min(100, Math.round((pages / target) * 100)) : 0;
+              const mineMark = mine.includes(p.id) ? " · 내 담당" : "";
+              return `
+                <div class="bar-item">
+                  <div class="meta">
+                    <strong>${escapeHtml(p.section)}. ${escapeHtml(p.title)}</strong>
+                    <span>${escapeHtml(m?.name || "미지정")} · ${pages}p (${p.pageStart}–${p.pageEnd})${mineMark}</span>
+                  </div>
+                  <div class="progress"><span style="width:${pct}%"></span></div>
+                </div>`;
+            })
+            .join("") || `<div class="empty">할당된 파트가 없습니다.</div>`}
+        </div>
+      </div>
+      <div class="panel">
+        <div class="panel-head">
+          <h2 class="panel-title">이번 달 일정</h2>
+          <span class="badge">${monthEvents.length}건</span>
+        </div>
+        ${buildMonthCalendarHtml(new Date())}
+        <div class="row" style="margin-top:12px">
+          <button class="btn btn-sm" data-goto="schedule">일정 전체</button>
+          <button class="btn btn-sm" data-goto="collections">취합 현황</button>
+          <button class="btn btn-sm" data-goto="drive">드라이브</button>
+          <button class="btn btn-sm" data-goto="resources">공통 서식</button>
+        </div>
+      </div>
+    </div>
+  `;
+
+  el.querySelectorAll("[data-goto]").forEach((btn) => {
+    btn.addEventListener("click", () => setView(btn.dataset.goto));
+  });
+  $("#editMeta")?.addEventListener("click", () => openMetaModal());
+}
+
+function renderParts() {
+  if (!isAdmin()) {
+    setView("dashboard");
+    return;
+  }
+  const el = $("#view-parts");
+  el.innerHTML = `
+    <div class="panel">
+      <div class="panel-head">
+        <div>
+          <h2 class="panel-title">사업보고서 목차 · 페이지 할당</h2>
+          <p class="muted">관리자 마스터 권한으로 보고서 레이아웃을 세팅합니다.</p>
+        </div>
+        <div class="row">
+          <button class="btn btn-sm" id="editMeta">기본정보</button>
+          <button class="btn btn-primary" id="addPart">파트 추가</button>
+        </div>
+      </div>
+      <p class="muted" style="margin-top:-0.2rem;margin-bottom:0.8rem">
+        목표 ${state.meta.totalTargetPages || 0}p · 현재 할당 ${allocatedTotal()}p · ${escapeHtml(state.meta.reportTitle || "")}
+      </p>
+      <div class="table-wrap">
+        <table>
+          <thead>
+            <tr>
+              <th>구분</th>
+              <th>제목</th>
+              <th>담당자</th>
+              <th>시작</th>
+              <th>끝</th>
+              <th>할당량</th>
+              <th>비고</th>
+              <th></th>
+            </tr>
+          </thead>
+          <tbody>
+            ${state.parts
+              .map((p) => {
+                const m = memberById(p.assigneeId);
+                return `
+                <tr data-id="${p.id}">
+                  <td><strong>${escapeHtml(p.section)}</strong></td>
+                  <td>${escapeHtml(p.title)}</td>
+                  <td>${escapeHtml(m?.name || "미지정")}</td>
+                  <td class="page-range">${p.pageStart}</td>
+                  <td class="page-range">${p.pageEnd}</td>
+                  <td><span class="badge">${pagesOf(p)}p</span></td>
+                  <td class="muted">${escapeHtml(p.note || "")}</td>
+                  <td>
+                    <div class="row">
+                      <button class="btn btn-sm" data-edit="${p.id}">수정</button>
+                      <button class="btn btn-sm btn-danger" data-del="${p.id}">삭제</button>
+                    </div>
+                  </td>
+                </tr>`;
+              })
+              .join("")}
+          </tbody>
+        </table>
+      </div>
+    </div>
+  `;
+
+  $("#editMeta")?.addEventListener("click", () => openMetaModal());
+  $("#addPart")?.addEventListener("click", () => openPartModal());
+  el.querySelectorAll("[data-edit]").forEach((btn) =>
+    btn.addEventListener("click", () => openPartModal(btn.dataset.edit))
+  );
+  el.querySelectorAll("[data-del]").forEach((btn) =>
+    btn.addEventListener("click", () => {
+      if (!confirm("이 파트를 삭제할까요? 취합 데이터에서도 제거됩니다.")) return;
+      const id = btn.dataset.del;
+      state.parts = state.parts.filter((p) => p.id !== id);
+      state.collections.forEach((c) => {
+        c.submissions = c.submissions.filter((s) => s.partId !== id);
+      });
+      saveAndRender("parts");
+    })
+  );
+}
+
+function normalizeCheckImages(sub) {
+  if (!Array.isArray(sub.checkImages)) sub.checkImages = [];
+  sub.checkImages = sub.checkImages.filter(Boolean).slice(0, 3);
+  return sub.checkImages;
+}
+
+function normalizeCheckFiles(sub) {
+  if (!Array.isArray(sub.checkFiles)) sub.checkFiles = [];
+  sub.checkFiles = sub.checkFiles.filter((f) => f && f.name && f.dataUrl).slice(0, 3);
+  return sub.checkFiles;
+}
+
+function formatFileSize(bytes) {
+  const n = Number(bytes) || 0;
+  if (n < 1024) return `${n}B`;
+  if (n < 1024 * 1024) return `${(n / 1024).toFixed(1)}KB`;
+  return `${(n / (1024 * 1024)).toFixed(1)}MB`;
+}
+
+function fileToCompressedDataUrl(file) {
+  return new Promise((resolve, reject) => {
+    if (!file || !file.type?.startsWith("image/")) {
+      reject(new Error("이미지만 가능합니다."));
+      return;
+    }
+    const reader = new FileReader();
+    reader.onerror = () => reject(new Error("파일을 읽지 못했습니다."));
+    reader.onload = () => {
+      const img = new Image();
+      img.onload = () => {
+        const maxW = 1280;
+        const scale = Math.min(1, maxW / img.width);
+        const w = Math.round(img.width * scale);
+        const h = Math.round(img.height * scale);
+        const canvas = document.createElement("canvas");
+        canvas.width = w;
+        canvas.height = h;
+        const ctx = canvas.getContext("2d");
+        ctx.drawImage(img, 0, 0, w, h);
+        resolve(canvas.toDataURL("image/jpeg", 0.78));
+      };
+      img.onerror = () => reject(new Error("이미지 변환 실패"));
+      img.src = reader.result;
+    };
+    reader.readAsDataURL(file);
+  });
+}
+
+function readFileAsDataUrl(file) {
+  return new Promise((resolve, reject) => {
+    const reader = new FileReader();
+    reader.onerror = () => reject(new Error("파일을 읽지 못했습니다."));
+    reader.onload = () => resolve(reader.result);
+    reader.readAsDataURL(file);
+  });
+}
+
+function isHangulFileName(name = "") {
+  return /\.(hwp|hwpx)$/i.test(name);
+}
+
+function checkRequestSummary(sub) {
+  const files = normalizeCheckFiles(sub).filter((f) => isHangulFileName(f.name));
+  if (files.length) return `한글 ${files.length}개`;
+  if (sub.altSubmit) return "별도제출";
+  return "미업로드";
+}
+
+function openCheckRequestModal(partId, editable = true) {
+  const col = state.collections.find((c) => c.round === activeRound);
+  const sub = col?.submissions.find((s) => s.partId === partId);
+  if (!sub) return;
+  const part = partById(partId);
+  let files = normalizeCheckFiles(sub)
+    .filter((f) => isHangulFileName(f.name))
+    .map((f) => ({ ...f }));
+  let altSubmit = Boolean(sub.altSubmit);
+  const MAX_FILE_BYTES = 30 * 1024 * 1024;
+
+  const renderFiles = () => {
+    const host = $("#checkFileList");
+    if (!host) return;
+    if (!files.length) {
+      host.innerHTML = `<div class="empty" style="padding:12px">아직 업로드된 한글 파일이 없습니다.</div>`;
+      return;
+    }
+    host.innerHTML = files
+      .map(
+        (f, i) => `
+        <div class="check-file-item">
+          <div class="check-file-meta">
+            <strong>${escapeHtml(f.name)}</strong>
+            <span class="muted">${escapeHtml(formatFileSize(f.size))}</span>
+          </div>
+          <div class="row">
+            <a class="btn btn-sm" href="${f.dataUrl}" download="${escapeAttr(f.name)}">다운</a>
+            ${
+              editable
+                ? `<button type="button" class="btn btn-sm btn-danger" data-del-file="${i}">삭제</button>`
+                : ""
+            }
+          </div>
+        </div>`
+      )
+      .join("");
+    host.querySelectorAll("[data-del-file]").forEach((btn) => {
+      btn.addEventListener("click", () => {
+        files.splice(Number(btn.dataset.delFile), 1);
+        renderFiles();
+        updateFileCount();
+      });
+    });
+  };
+
+  const updateFileCount = () => {
+    const el = $("#checkFileCount");
+    if (el) el.textContent = `${files.length}/3`;
+  };
+
+  const addDocFiles = async (fileList) => {
+    if (!editable) return;
+    for (const file of [...fileList]) {
+      if (!isHangulFileName(file.name)) {
+        alert(`"${file.name}"은(는) 한글 파일(.hwp, .hwpx)만 업로드할 수 있습니다.`);
+        continue;
+      }
+      if (files.length >= 3) {
+        alert("한글 파일은 최대 3개까지 업로드할 수 있습니다.");
+        break;
+      }
+      if (file.size > MAX_FILE_BYTES) {
+        alert(`"${file.name}"은(는) 30MB를 초과합니다.`);
+        continue;
+      }
+      try {
+        const dataUrl = await readFileAsDataUrl(file);
+        files.push({
+          id: uid("cf"),
+          name: file.name,
+          type: file.type || "application/octet-stream",
+          size: file.size,
+          dataUrl,
+        });
+      } catch (err) {
+        alert(err.message || "파일 업로드에 실패했습니다.");
+      }
+    }
+    renderFiles();
+    updateFileCount();
+  };
+
+  openModal({
+    title: `한글 파일 업로드 · ${part ? `${part.section}. ${part.title}` : partId}`,
+    bodyHtml: `
+      <div class="check-tabs" role="tablist">
+        <button type="button" class="check-tab active" data-check-tab="file">한글 파일 업로드</button>
+      </div>
+      <div class="check-pane active" data-check-pane="file">
+        <div class="check-paste ${editable ? "" : "is-readonly"}" id="checkFileZone">
+          <strong>작성한 한글 파일을 업로드하세요</strong>
+          <span class="muted">.hwp / .hwpx · 개당 30MB · 최대 3개 · <span id="checkFileCount">${files.length}/3</span></span>
+          ${
+            editable
+              ? `<input type="file" id="checkDocFile" multiple hidden accept=".hwp,.hwpx,application/x-hwp,application/haansofthwp" />
+                 <button type="button" class="btn btn-sm" id="checkDocPick">한글 파일 선택</button>`
+              : ""
+          }
+        </div>
+        <div class="check-file-list" id="checkFileList"></div>
+        <label class="alt-submit-check ${editable ? "" : "is-readonly"}">
+          <input type="checkbox" id="altSubmitCheck" name="altSubmit" ${altSubmit ? "checked" : ""} ${editable ? "" : "disabled"} />
+          <span>한글 파일 없이 <strong>별도제출</strong>로 처리합니다</span>
+        </label>
+        <p class="muted" style="margin:8px 0 0">별도제출을 체크하면 파일 없이도 저장·제출할 수 있습니다.</p>
+      </div>
+    `,
+    onSubmit: () => {
+      if (!editable) return true;
+      const checked = Boolean($("#altSubmitCheck")?.checked);
+      if (!files.length && !checked) {
+        alert("한글 파일을 업로드하거나 별도제출을 선택해 주세요.");
+        return false;
+      }
+      sub.checkFiles = files.slice(0, 3);
+      sub.altSubmit = checked;
+      sub.checkImages = [];
+      saveAndRender("collections");
+      return true;
+    },
+  });
+
+  const submitBtn = $("#modalSubmit");
+  if (submitBtn) {
+    submitBtn.textContent = editable ? "저장" : "닫기";
+    if (!editable) submitBtn.classList.add("btn-ghost");
+  }
+
+  renderFiles();
+  $("#checkDocPick")?.addEventListener("click", () => $("#checkDocFile")?.click());
+  $("#checkDocFile")?.addEventListener("change", (e) => {
+    addDocFiles(e.target.files || []);
+    e.target.value = "";
+  });
+}
+
+function renderCollections() {
+  const el = $("#view-collections");
+  if (!state.collections.find((c) => c.round === activeRound)) activeRound = state.collections[0]?.round || 1;
+  const col = state.collections.find((c) => c.round === activeRound);
+  const summary = collectionSummary(activeRound);
+  const target = allocatedTotal() || state.meta.totalTargetPages || 1;
+  const pct = Math.min(100, Math.round((summary.pages / target) * 100));
+
+  el.innerHTML = `
+    <div class="round-tabs">
+      ${state.collections
+        .map((c) => {
+          const s = collectionSummary(c.round);
+          return `<button class="round-tab ${c.round === activeRound ? "active" : ""}" data-round="${c.round}">
+            ${escapeHtml(c.name)} · ${s.pages}p
+          </button>`;
+        })
+        .join("")}
+      <button class="btn btn-sm admin-only" id="addRound" style="margin-left:auto">차수 추가</button>
+    </div>
+
+    ${
+      col
+        ? `
+      <div class="metrics" style="grid-template-columns:repeat(3,1fr)">
+        <div class="stat accent">
+          <div class="label">${escapeHtml(col.name)} 작성 페이지</div>
+          <div class="value">${summary.pages}</div>
+          <div class="sub">목표 대비 ${pct}% · 마감 ${escapeHtml(col.dueDate || "-")}</div>
+        </div>
+        <div class="stat">
+          <div class="label">제출 완료</div>
+          <div class="value">${summary.submitted}</div>
+          <div class="sub">대기 ${summary.pending} / 전체 ${summary.totalParts}</div>
+        </div>
+        <div class="stat">
+          <div class="label">진행률</div>
+          <div class="value">${pct}%</div>
+          <div class="sub"><div class="progress" style="margin-top:6px"><span style="width:${pct}%"></span></div></div>
+        </div>
+      </div>
+
+      ${
+        !isAdmin()
+          ? `<p class="muted" style="margin:0 0 10px">본인 담당 파트만 작성 페이지를 입력할 수 있습니다. 한글 파일 업로드(또는 별도제출) 후 <strong>제출</strong>을 누르면 상태·제출일이 자동 반영됩니다.</p>`
+          : ""
+      }
+
+      <div class="panel">
+        <div class="panel-head">
+          <div>
+            <h2>${escapeHtml(col.name)} 파트별 현황</h2>
+            <p class="muted">${escapeHtml(col.description || "")}</p>
+          </div>
+          <button class="btn btn-sm admin-only" id="editRoundMeta">차수 정보 수정</button>
+        </div>
+        <div class="table-wrap">
+          <table>
+            <thead>
+              <tr>
+                <th>파트</th>
+                <th>담당</th>
+                <th>할당</th>
+                <th>작성 페이지</th>
+                <th>상태</th>
+                <th>제출일</th>
+                <th>한글 파일</th>
+                <th></th>
+              </tr>
+            </thead>
+            <tbody>
+              ${col.submissions
+                .map((s) => {
+                  const p = partById(s.partId);
+                  const m = p ? memberById(p.assigneeId) : null;
+                  const alloc = p ? pagesOf(p) : 0;
+                  const editable = canEditSubmission(s.partId);
+                  const isMine = myPartIds().includes(s.partId);
+                  const hasFile =
+                    normalizeCheckFiles(s).some((f) => isHangulFileName(f.name)) || Boolean(s.altSubmit);
+                  const statusLabel = s.status === "submitted" ? "제출" : "대기";
+                  const submitter = s.submittedBy || (s.status === "submitted" ? m?.name : "");
+                  const tags = [
+                    editable && !isAdmin() ? '<span class="badge admin">내 담당</span>' : "",
+                    s.partDone || s.status === "submitted"
+                      ? isMine
+                        ? '<span class="badge ok">내 파트 작성완료</span>'
+                        : '<span class="badge ok">작성완료</span>'
+                      : "",
+                    submitter
+                      ? `<span class="badge meeting">제출: ${escapeHtml(submitter)}</span>`
+                      : "",
+                  ]
+                    .filter(Boolean)
+                    .join(" ");
+                  return `
+                  <tr class="${editable ? "" : "row-locked"}">
+                    <td>
+                      <strong>${escapeHtml(p ? `${p.section}. ${p.title}` : s.partId)}</strong>
+                      ${tags ? `<div class="part-tags">${tags}</div>` : ""}
+                    </td>
+                    <td>${escapeHtml(m?.name || "-")}</td>
+                    <td>${alloc}p</td>
+                    <td>
+                      <input class="inline-input" type="number" min="0" value="${Number(s.pageCount) || 0}" data-pages="${s.partId}" ${editable ? "" : "disabled"} />
+                    </td>
+                    <td><span class="badge ${s.status === "submitted" ? "ok" : "pending"}">${statusLabel}</span></td>
+                    <td class="muted">${escapeHtml(s.submittedAt || "-")}</td>
+                    <td>
+                      <button type="button" class="btn btn-sm check-open-btn ${hasFile ? "has-check" : ""}" data-check="${s.partId}" data-editable="${editable ? "1" : "0"}">
+                        ${escapeHtml(checkRequestSummary(s))}
+                      </button>
+                    </td>
+                    <td>${editable ? `<button class="btn btn-sm btn-primary" data-save-sub="${s.partId}">제출</button>` : `<span class="muted">조회</span>`}</td>
+                  </tr>`;
+                })
+                .join("")}
+            </tbody>
+          </table>
+        </div>
+      </div>`
+        : `<div class="empty">취합 차수가 없습니다.</div>`
+    }
+  `;
+
+  el.querySelectorAll("[data-round]").forEach((btn) => {
+    btn.addEventListener("click", () => {
+      activeRound = Number(btn.dataset.round);
+      renderCollections();
+    });
+  });
+
+  $("#addRound")?.addEventListener("click", () => {
+    if (!isAdmin()) return;
+    const next = Math.max(0, ...state.collections.map((c) => c.round)) + 1;
+    state.collections.push({
+      round: next,
+      name: `${next}차 취합`,
+      dueDate: "",
+      description: "",
+      submissions: state.parts.map((p) => ({
+        partId: p.id,
+        pageCount: 0,
+        status: "pending",
+        submittedAt: "",
+        memo: "",
+        checkImages: [],
+        checkFiles: [],
+        partDone: false,
+      })),
+    });
+    activeRound = next;
+    saveAndRender("collections");
+  });
+
+  $("#editRoundMeta")?.addEventListener("click", () => {
+    if (!isAdmin()) return;
+    openRoundModal(activeRound);
+  });
+
+  el.querySelectorAll("[data-check]").forEach((btn) => {
+    btn.addEventListener("click", () => {
+      openCheckRequestModal(btn.dataset.check, btn.dataset.editable === "1");
+    });
+  });
+
+  el.querySelectorAll("[data-save-sub]").forEach((btn) => {
+    btn.addEventListener("click", () => {
+      const partId = btn.dataset.saveSub;
+      if (!canEditSubmission(partId)) return;
+      const colRef = state.collections.find((c) => c.round === activeRound);
+      const sub = colRef.submissions.find((s) => s.partId === partId);
+      const pagesInput = el.querySelector(`[data-pages="${partId}"]`);
+      const hasHwp = normalizeCheckFiles(sub).some((f) => isHangulFileName(f.name));
+      if (!hasHwp && !sub.altSubmit) {
+        alert("한글 파일을 업로드하거나, 업로드 화면에서 별도제출을 선택한 뒤 저장해 주세요.");
+        openCheckRequestModal(partId, true);
+        return;
+      }
+      sub.pageCount = Number(pagesInput.value) || 0;
+      sub.status = "submitted";
+      sub.submittedAt = today();
+      sub.partDone = true;
+      sub.submittedBy = sessionUser || memberById(partById(partId)?.assigneeId)?.name || "";
+      saveAndRender("collections");
+    });
+  });
+}
+
+function isSchedulePast(item) {
+  const end = (item.endDate || item.date || "").slice(0, 10);
+  if (!end) return false;
+  return end < today();
+}
+
+function renderSchedule() {
+  const el = $("#view-schedule");
+  const items = [...state.schedule].sort((a, b) => a.date.localeCompare(b.date));
+  const admin = isAdmin();
+
+  el.innerHTML = `
+    <div class="panel">
+      <div class="panel-head">
+        <h2>통합 일정</h2>
+        <button class="btn btn-primary" id="addSchedule">일정 추가</button>
+      </div>
+      <div class="table-wrap">
+        <table>
+          <thead>
+            <tr>
+              <th>날짜</th>
+              <th>유형</th>
+              <th>제목</th>
+              <th>등록자</th>
+              <th>비고</th>
+              <th></th>
+            </tr>
+          </thead>
+          <tbody>
+            ${
+              items.length
+                ? items
+                    .map((s) => {
+                      const canManage = admin || s.createdBy === sessionUser;
+                      const past = isSchedulePast(s);
+                      return `
+              <tr class="${past ? "schedule-row-past" : ""}">
+                <td class="page-range">${escapeHtml(s.date)}${s.endDate && s.endDate !== s.date ? `<br><span class="muted">~ ${escapeHtml(s.endDate)}</span>` : ""}${past ? `<div class="schedule-past-tag">지남</div>` : ""}</td>
+                <td><span class="badge ${escapeAttr(s.type)}">${typeLabel(s.type)}</span></td>
+                <td><strong>${escapeHtml(s.title)}</strong></td>
+                <td>${escapeHtml(s.createdBy || "-")}</td>
+                <td class="muted">${escapeHtml(s.note || "")}</td>
+                <td>
+                  ${
+                    canManage
+                      ? `<div class="row">
+                    <button class="btn btn-sm" data-edit="${s.id}">수정</button>
+                    <button class="btn btn-sm btn-danger" data-del="${s.id}">삭제</button>
+                  </div>`
+                      : `<span class="muted">조회</span>`
+                  }
+                </td>
+              </tr>`;
+                    })
+                    .join("")
+                : `<tr><td colspan="6"><div class="empty">등록된 일정이 없습니다.</div></td></tr>`
+            }
+          </tbody>
+        </table>
+      </div>
+    </div>
+  `;
+
+  $("#addSchedule")?.addEventListener("click", () => openScheduleModal());
+  el.querySelectorAll("[data-edit]").forEach((btn) =>
+    btn.addEventListener("click", () => openScheduleModal(btn.dataset.edit))
+  );
+  el.querySelectorAll("[data-del]").forEach((btn) =>
+    btn.addEventListener("click", () => {
+      if (!confirm("이 일정을 삭제할까요?")) return;
+      state.schedule = state.schedule.filter((s) => s.id !== btn.dataset.del);
+      saveAndRender("schedule");
+    })
+  );
+}
+
+function renderDrive() {
+  const el = $("#view-drive");
+  el.innerHTML = `
+    <div class="panel">
+      <div class="panel-head">
+        <h2>구글드라이브 바로가기</h2>
+        <button class="btn btn-primary admin-only" id="addDrive">링크 등록</button>
+      </div>
+      <div class="grid grid-3">
+        ${
+          state.driveLinks.length
+            ? state.driveLinks
+                .map(
+                  (d) => `
+            <div class="link-card">
+              <span class="badge">${escapeHtml(d.category || "링크")}</span>
+              <a href="${escapeAttr(d.url)}" target="_blank" rel="noopener noreferrer">${escapeHtml(d.title)}</a>
+              <p class="muted">${escapeHtml(d.note || "")}</p>
+              <div class="card-meta">
+                <a class="btn btn-sm btn-primary" href="${escapeAttr(d.url)}" target="_blank" rel="noopener noreferrer">열기</a>
+                <div class="row admin-only">
+                  <button class="btn btn-sm" data-edit="${d.id}">수정</button>
+                  <button class="btn btn-sm btn-danger" data-del="${d.id}">삭제</button>
+                </div>
+              </div>
+            </div>`
+                )
+                .join("")
+            : `<div class="empty" style="grid-column:1/-1">등록된 드라이브 링크가 없습니다.</div>`
+        }
+      </div>
+    </div>
+  `;
+
+  $("#addDrive")?.addEventListener("click", () => openDriveModal());
+  el.querySelectorAll("[data-edit]").forEach((btn) =>
+    btn.addEventListener("click", () => openDriveModal(btn.dataset.edit))
+  );
+  el.querySelectorAll("[data-del]").forEach((btn) =>
+    btn.addEventListener("click", () => {
+      if (!confirm("이 링크를 삭제할까요?")) return;
+      state.driveLinks = state.driveLinks.filter((d) => d.id !== btn.dataset.del);
+      saveAndRender("drive");
+    })
+  );
+}
+
+function renderResources() {
+  const el = $("#view-resources");
+  el.innerHTML = `
+    <div class="panel">
+      <div class="panel-head">
+        <h2>공통 서식 · 지침 · 스타일 가이드</h2>
+        <button class="btn btn-primary admin-only" id="addResource">자료 등록</button>
+      </div>
+      <p class="muted" style="margin-top:-0.35rem;margin-bottom:1rem">
+        카톡방·드라이브 검색 없이, 초반 셋업에 필요한 공통 자료를 여기에 모아 두세요. (파일은 구글드라이브 URL 또는 공개 링크로 등록)
+      </p>
+      <div class="grid grid-2">
+        ${
+          state.resources.length
+            ? state.resources
+                .map(
+                  (r) => `
+            <div class="resource-card">
+              <div class="row">
+                <span class="badge">${escapeHtml(r.category || "자료")}</span>
+                <span class="muted">${escapeHtml(r.uploadedAt || "")}</span>
+              </div>
+              <a href="${escapeAttr(r.url)}" target="_blank" rel="noopener noreferrer">${escapeHtml(r.title)}</a>
+              <p class="muted">${escapeHtml(r.fileName || "")}${r.note ? ` · ${escapeHtml(r.note)}` : ""}</p>
+              <div class="card-meta">
+                <a class="btn btn-sm btn-primary" href="${escapeAttr(r.url)}" target="_blank" rel="noopener noreferrer">바로 열기</a>
+                <div class="row admin-only">
+                  <button class="btn btn-sm" data-edit="${r.id}">수정</button>
+                  <button class="btn btn-sm btn-danger" data-del="${r.id}">삭제</button>
+                </div>
+              </div>
+            </div>`
+                )
+                .join("")
+            : `<div class="empty" style="grid-column:1/-1">등록된 공통 자료가 없습니다.</div>`
+        }
+      </div>
+    </div>
+  `;
+
+  $("#addResource")?.addEventListener("click", () => openResourceModal());
+  el.querySelectorAll("[data-edit]").forEach((btn) =>
+    btn.addEventListener("click", () => openResourceModal(btn.dataset.edit))
+  );
+  el.querySelectorAll("[data-del]").forEach((btn) =>
+    btn.addEventListener("click", () => {
+      if (!confirm("이 자료를 삭제할까요?")) return;
+      state.resources = state.resources.filter((r) => r.id !== btn.dataset.del);
+      saveAndRender("resources");
+    })
+  );
+}
+
+function renderMembers() {
+  if (!isAdmin()) {
+    setView("dashboard");
+    return;
+  }
+  const el = $("#view-members");
+  el.innerHTML = `
+    <div class="panel">
+      <div class="panel-head">
+        <div>
+          <h2 class="panel-title">작성 대상자 관리</h2>
+          <p class="muted">관리자 화면에서 보고서 작성 참여 대상자를 등록합니다.</p>
+        </div>
+        <div class="row">
+          <button class="btn btn-ghost btn-sm" id="btnReset">샘플 복원</button>
+          <button class="btn btn-primary" id="addMember">대상자 추가</button>
+        </div>
+      </div>
+      <div class="table-wrap">
+        <table>
+          <thead>
+            <tr>
+              <th>이름</th>
+              <th>역할</th>
+              <th>담당 파트</th>
+              <th>연락</th>
+              <th></th>
+            </tr>
+          </thead>
+          <tbody>
+            ${state.members
+              .map(
+                (m) => `
+              <tr>
+                <td><strong>${escapeHtml(m.name)}</strong></td>
+                <td><span class="badge ${m.role === "admin" ? "admin" : m.role === "budget" ? "meeting" : m.role === "food" ? "ok" : ""}">${roleLabel(m.role)}</span></td>
+                <td>${escapeHtml(m.part || "-")}</td>
+                <td class="muted">${escapeHtml(m.contact || "-")}</td>
+                <td>
+                  <div class="row">
+                    <button class="btn btn-sm" data-edit="${m.id}">수정</button>
+                    <button class="btn btn-sm btn-danger" data-del="${m.id}">삭제</button>
+                  </div>
+                </td>
+              </tr>`
+              )
+              .join("")}
+          </tbody>
+        </table>
+      </div>
+    </div>
+  `;
+
+  $("#addMember")?.addEventListener("click", () => openMemberModal());
+  el.querySelectorAll("[data-edit]").forEach((btn) =>
+    btn.addEventListener("click", () => openMemberModal(btn.dataset.edit))
+  );
+  el.querySelectorAll("[data-del]").forEach((btn) =>
+    btn.addEventListener("click", () => {
+      if (!confirm("이 구성원을 삭제할까요?")) return;
+      state.members = state.members.filter((m) => m.id !== btn.dataset.del);
+      saveAndRender("members");
+    })
+  );
+}
+
+function detailsOfItem(itemId) {
+  ensureBudget();
+  return state.budget.details.filter((d) => d.itemId === itemId);
+}
+
+function detailSumOfItem(itemId) {
+  return detailsOfItem(itemId).reduce((sum, d) => sum + (Number(d.amount) || 0), 0);
+}
+
+function syncItemSpentFromDetails(itemId) {
+  const item = state.budget.items.find((i) => i.id === itemId);
+  if (!item) return;
+  const details = detailsOfItem(itemId);
+  if (details.length) item.spent = detailSumOfItem(itemId);
+}
+
+function myRelatedBudgetItems() {
+  ensureBudget();
+  if (canManageBudget()) return state.budget.items;
+  const me = currentMember();
+  if (!me) return [];
+  return state.budget.items.filter((i) => i.assigneeId === me.id);
+}
+
+function budgetDetailStats() {
+  ensureBudget();
+  const byMember = {};
+  const byArea = {};
+  const byItem = {};
+  state.budget.items.forEach((item) => {
+    const assignee = item.assigneeId ? memberById(item.assigneeId) : null;
+    const who = assignee?.name || "미지정";
+    const planned = Number(item.planned) || 0;
+    if (!byMember[who]) byMember[who] = 0;
+    byMember[who] += planned;
+    const area = item.area || item.category || "기타";
+    if (!byArea[area]) byArea[area] = { planned: 0, filled: 0 };
+    byArea[area].planned += planned;
+    if ((item.calcText || "").trim()) byArea[area].filled += 1;
+    const key = budgetItemLabel(item);
+    byItem[key] = planned;
+  });
+  const filled = state.budget.items.filter((i) => (i.calcText || "").trim()).length;
+  return {
+    byMember,
+    byArea,
+    byItem,
+    filled,
+    total: state.budget.items.reduce((s, i) => s + (Number(i.planned) || 0), 0),
+  };
+}
+
+function csvEscape(value) {
+  const s = String(value ?? "");
+  return `"${s.replace(/"/g, '""')}"`;
+}
+
+function downloadBudgetExcel({ mineOnly = false } = {}) {
+  ensureBudget();
+  if (mineOnly) {
+    if (!currentMember()) return;
+  } else if (!canManageBudget()) {
+    return;
+  }
+  const items = mineOnly ? myRelatedBudgetItems() : state.budget.items;
+  const lines = [];
+  if (!mineOnly) {
+    const expenseStatus = budgetExpenseStatus();
+    lines.push(["[예산 입력 요약]"].map(csvEscape).join(","));
+    lines.push(
+      [
+        "사업비총액",
+        "현재입력합계",
+        "입력비율(%)",
+        "사용처확인필요",
+        "확인필요비율(%)",
+      ]
+        .map(csvEscape)
+        .join(",")
+    );
+    lines.push(
+      [
+        expenseStatus.total,
+        expenseStatus.enteredTotal,
+        expenseStatus.enteredPct,
+        expenseStatus.remain,
+        expenseStatus.remainPct,
+      ]
+        .map(csvEscape)
+        .join(",")
+    );
+    lines.push("");
+    lines.push(["[사업비 비목별 입력 현황]"].map(csvEscape).join(","));
+    lines.push(["비목", "현재입력액", "입력비중(%)", "총액대비(%)", "산출완료", "항목수"].map(csvEscape).join(","));
+    expenseStatus.rows
+      .filter((row) => row.entered > 0 || row.count > 0)
+      .forEach((row) => {
+        lines.push(
+          [
+            row.name,
+            row.entered,
+            row.shareEntered.toFixed(1),
+            row.shareOfTotal.toFixed(1),
+            row.filled,
+            row.count,
+          ]
+            .map(csvEscape)
+            .join(",")
+        );
+      });
+    lines.push("");
+  } else {
+    lines.push([`[${sessionUser || "내"} 예산 항목]`].map(csvEscape).join(","));
+  }
+  lines.push(
+    [
+      "연번",
+      "영역",
+      "세부내용명",
+      "세부과제명",
+      "세부프로그램(Activity)",
+      "비목",
+      "담당부서",
+      "실무부서",
+      "편성금액",
+      "세부 산출내역",
+      "입력담당자",
+      "메모",
+    ]
+      .map(csvEscape)
+      .join(",")
+  );
+  items.forEach((item) => {
+    const assignee = item.assigneeId ? memberById(item.assigneeId) : null;
+    lines.push(
+      [
+        item.no,
+        item.area,
+        item.content,
+        item.task,
+        item.activity || item.title,
+        item.expenseType || "",
+        item.dept,
+        item.workDept,
+        Number(item.planned) || 0,
+        item.calcText || "",
+        assignee?.name || "",
+        item.note || "",
+      ]
+        .map(csvEscape)
+        .join(",")
+    );
+  });
+
+  const blob = new Blob(["\uFEFF" + lines.join("\n")], {
+    type: "application/vnd.ms-excel;charset=utf-8;",
+  });
+  const a = document.createElement("a");
+  a.href = URL.createObjectURL(blob);
+  a.download = mineOnly ? `내예산항목_${today()}.xls` : `예산_입력현황_${today()}.xls`;
+  a.click();
+  URL.revokeObjectURL(a.href);
+}
+
+function sendBudgetInputRequest(itemId, { silent = false } = {}) {
+  if (!canManageBudget() && !isAdmin()) return false;
+  ensureRequests();
+  const item = state.budget.items.find((i) => i.id === itemId);
+  if (!item?.assigneeId) {
+    if (!silent) alert("입력담당자를 먼저 지정해 주세요.");
+    return false;
+  }
+  const assignee = memberById(item.assigneeId);
+  if (!assignee || assignee.role === "admin" || assignee.role === "budget") {
+    if (!silent) alert("대상자(입력담당자)만 지정할 수 있습니다.");
+    return false;
+  }
+  const exists = state.requests.some(
+    (r) =>
+      r.recipient === assignee.name &&
+      r.status === "대기" &&
+      r.title === "예산을 입력하세요" &&
+      (r.memo || "").includes(item.id)
+  );
+  if (exists) {
+    if (!silent) alert("이미 대기 중인 예산 입력 요청이 있습니다.");
+    return false;
+  }
+  state.requests.push({
+    id: uid("req"),
+    groupId: uid("g"),
+    title: "예산을 입력하세요",
+    memo: `예산 탭에서 「${budgetItemLabel(item)}」 항목을 선택·입력 후 저장해 주세요. (편성 ${formatWon(item.planned)}) [#${item.id}]`,
+    requester: sessionUser || state.meta.adminName || "관리자",
+    recipient: assignee.name,
+    dueDate: "",
+    status: "대기",
+    createdAt: today(),
+  });
+  if (!silent) {
+    persist();
+    updateRequestPlane();
+    alert(`${assignee.name}님에게 「예산을 입력하세요」 요청을 보냈습니다.`);
+  }
+  return true;
+}
+
+function renderBudget() {
+  ensureBudget();
+  const el = $("#view-budget");
+  const sum = budgetSummary();
+  const detailStats = budgetDetailStats();
+  const manage = canManageBudget();
+  const admin = isAdmin();
+  const myItems = myRelatedBudgetItems();
+  const visibleItems = manage ? state.budget.items : myItems;
+  const expenseStatus = budgetExpenseStatus();
+  const yearLabel = state.budget.yearLabel || "당해연도";
+  const enteredPctLabel = Number.isInteger(expenseStatus.enteredPct)
+    ? `${expenseStatus.enteredPct}`
+    : Number(expenseStatus.enteredPct || 0).toFixed(1);
+  const remainPctLabel = Number.isInteger(expenseStatus.remainPct)
+    ? `${expenseStatus.remainPct}`
+    : Number(expenseStatus.remainPct || 0).toFixed(1);
+
+  const myPlanned = myItems.reduce((s, i) => s + (Number(i.planned) || 0), 0);
+  const myFilled = myItems.filter((i) => (i.calcText || "").trim()).length;
+
+  const byAssignee = {};
+  state.budget.items.forEach((item) => {
+    const m = item.assigneeId ? memberById(item.assigneeId) : null;
+    const key = m?.name || "미지정";
+    if (!byAssignee[key]) byAssignee[key] = { planned: 0, count: 0, filled: 0 };
+    byAssignee[key].planned += Number(item.planned) || 0;
+    byAssignee[key].count += 1;
+    if ((item.calcText || "").trim()) byAssignee[key].filled += 1;
+  });
+
+  el.innerHTML = `
+    ${
+      !manage
+        ? `<div class="panel" style="margin-bottom:10px">
+      <div class="panel-head">
+        <div>
+          <h2 class="panel-title">내 배정 예산</h2>
+          <p class="muted" style="margin:4px 0 0">나에게 지정된 항목만 입력·저장할 수 있습니다.</p>
+        </div>
+      </div>
+      <div class="metrics" style="margin:0;grid-template-columns:repeat(3,1fr)">
+        <div class="stat accent">
+          <div class="label">내 배정 항목</div>
+          <div class="value">${myItems.length}</div>
+          <div class="sub">입력 담당</div>
+        </div>
+        <div class="stat">
+          <div class="label">내 편성금액</div>
+          <div class="value" style="font-size:1.05rem">${formatWon(myPlanned)}</div>
+          <div class="sub">배정 합계</div>
+        </div>
+        <div class="stat">
+          <div class="label">산출 입력</div>
+          <div class="value">${myFilled}<small>/${myItems.length || 0}</small></div>
+          <div class="sub">${myItems.length ? Math.round((myFilled / myItems.length) * 100) : 0}% 완료</div>
+        </div>
+      </div>
+    </div>`
+        : ""
+    }
+
+    <div class="metrics">
+      <div class="stat accent">
+        <div class="label">사업비 총액</div>
+        <div class="value" style="font-size:1.1rem">${formatWon(sum.total)}</div>
+        <div class="sub">${escapeHtml(yearLabel)}</div>
+      </div>
+      <div class="stat">
+        <div class="label">현재 입력 합계</div>
+        <div class="value" style="font-size:1.1rem">${formatWon(expenseStatus.enteredTotal)}</div>
+        <div class="sub">총액 대비 ${enteredPctLabel}% · ${state.budget.items.length}항목</div>
+      </div>
+      <div class="stat">
+        <div class="label">사용처 확인 필요</div>
+        <div class="value" style="font-size:1.1rem">${formatWon(expenseStatus.remain)}</div>
+        <div class="sub">총액 대비 ${remainPctLabel}%</div>
+      </div>
+      <div class="stat">
+        <div class="label">산출 입력 완료</div>
+        <div class="value" style="font-size:1.1rem">${detailStats.filled}/${state.budget.items.length}</div>
+        <div class="sub">담당자 지정 ${state.budget.items.filter((i) => i.assigneeId).length}건</div>
+      </div>
+    </div>
+
+    <div class="panel budget-summary-banner" style="margin-bottom:10px">
+      <p class="budget-summary-text">
+        사업비 총액 대비 <strong>${enteredPctLabel}%</strong>가 입력되었고,
+        <strong>${formatWon(expenseStatus.remain)}(${remainPctLabel}%)</strong>의 사용처가 더 확인이 필요합니다.
+      </p>
+      <div class="progress budget-summary-progress" title="입력 ${enteredPctLabel}%">
+        <span style="width:${Math.min(100, expenseStatus.enteredPct)}%"></span>
+      </div>
+    </div>
+
+    <div class="panel" style="margin-bottom:10px">
+      <div class="panel-head">
+        <div>
+          <h2 class="panel-title">사업비 비목별 입력 현황</h2>
+          <p class="muted" style="margin:4px 0 0">${escapeHtml(yearLabel)} 기준 · 총액 대비 현재 입력 현황만 표시</p>
+        </div>
+        <div class="row">
+          ${manage ? `<button class="btn btn-sm budget-manage-only" id="downloadBudgetExcel">엑셀 다운로드</button>` : ""}
+          ${admin ? `<button class="btn btn-sm" id="bulkBudgetUpload">일괄 수정·업로드</button>` : ""}
+          ${manage ? `<button class="btn btn-sm budget-manage-only" id="editBudgetTotal">총액·비고 수정</button>` : ""}
+          ${manage ? `<button class="btn btn-primary budget-manage-only" id="addBudgetItem">항목 추가</button>` : ""}
+        </div>
+      </div>
+      <div class="table-wrap">
+        <table class="budget-bimok-table">
+          <thead>
+            <tr>
+              <th>비목</th>
+              <th>현재 입력액</th>
+              <th>입력 비중</th>
+              <th>총액 대비</th>
+              <th>산출 입력</th>
+              <th>진행</th>
+            </tr>
+          </thead>
+          <tbody>
+            ${expenseStatus.rows
+              .filter((row) => row.entered > 0 || row.count > 0)
+              .map((row) => {
+                const pct = Math.min(100, Math.round(row.shareOfTotal));
+                return `<tr>
+                  <td><strong>${escapeHtml(row.name)}</strong></td>
+                  <td class="page-range">${formatWon(row.entered)}</td>
+                  <td class="page-range">${row.entered ? `${row.shareEntered.toFixed(1)}%` : "-"}</td>
+                  <td class="page-range">${row.entered ? `${row.shareOfTotal.toFixed(1)}%` : "-"}</td>
+                  <td class="page-range">${row.filled}/${row.count}</td>
+                  <td style="min-width:120px">
+                    <div class="progress" title="총액 대비 ${pct}%"><span style="width:${pct}%"></span></div>
+                    <div class="muted" style="font-size:0.75rem;margin-top:4px">${pct}%</div>
+                  </td>
+                </tr>`;
+              })
+              .join("")}
+            <tr class="budget-bimok-total">
+              <td><strong>입력 합계</strong></td>
+              <td class="page-range"><strong>${formatWon(expenseStatus.enteredTotal)}</strong></td>
+              <td class="page-range"><strong>${expenseStatus.enteredTotal ? "100%" : "-"}</strong></td>
+              <td class="page-range"><strong>${enteredPctLabel}%</strong></td>
+              <td class="page-range"><strong>${detailStats.filled}/${state.budget.items.length}</strong></td>
+              <td></td>
+            </tr>
+            <tr>
+              <td><strong class="muted">사용처 확인 필요</strong></td>
+              <td class="page-range"><strong>${formatWon(expenseStatus.remain)}</strong></td>
+              <td class="page-range">-</td>
+              <td class="page-range"><strong>${remainPctLabel}%</strong></td>
+              <td class="page-range">-</td>
+              <td></td>
+            </tr>
+          </tbody>
+        </table>
+      </div>
+    </div>
+
+    ${!manage ? `<p class="muted" style="margin:0 0 10px">배정된 항목에서 값을 <strong>선택·직접 입력</strong>한 뒤 <strong>저장</strong>해 주세요.</p>` : ""}
+
+    <div class="panel" style="margin-bottom:10px">
+      <div class="panel-head"><h2 class="panel-title">담당자별 입력 현황</h2></div>
+      ${
+        Object.keys(byAssignee).length
+          ? `<div class="bar-list">${Object.entries(byAssignee)
+              .sort((a, b) => b[1].planned - a[1].planned)
+              .map(([name, v]) => {
+                const pct = expenseStatus.enteredTotal
+                  ? Math.min(100, Math.round((v.planned / expenseStatus.enteredTotal) * 100))
+                  : 0;
+                return `<div class="bar-item">
+                  <div class="meta"><strong>${escapeHtml(name)}</strong>
+                    <span>${formatWon(v.planned)} · 산출 ${v.filled}/${v.count}</span></div>
+                  <div class="progress"><span style="width:${pct}%"></span></div>
+                </div>`;
+              })
+              .join("")}</div>`
+          : `<div class="empty">담당자 배정 전입니다.</div>`
+      }
+    </div>
+
+    <div class="panel" style="margin-bottom:10px">
+      <div class="panel-head">
+        <h2 class="panel-title">${manage ? "예산 항목 상세" : "내 예산 항목"}</h2>
+        <div class="row">
+          <button class="btn btn-sm" id="downloadBudgetExcel2">${manage ? "엑셀 다운로드" : "내 항목 엑셀 다운로드"}</button>
+        </div>
+      </div>
+      <div class="table-wrap budget-table-wrap">
+        <table class="budget-table">
+          <thead>
+            <tr>
+              <th>연번</th>
+              <th>영역</th>
+              <th>세부내용명</th>
+              <th>세부과제명</th>
+              <th class="budget-activity-col">세부프로그램</th>
+              <th>비목</th>
+              <th class="budget-amount-col">편성금액</th>
+              <th class="budget-calc-col">세부 산출내역</th>
+              <th>입력담당자</th>
+              <th class="budget-actions-col"></th>
+            </tr>
+          </thead>
+          <tbody>
+            ${
+              visibleItems.length
+                ? visibleItems
+                    .map((item) => {
+                      const assignee = item.assigneeId ? memberById(item.assigneeId) : null;
+                      const canEdit = canEditBudgetItem(item);
+                      const calcPreview = (item.calcText || "").trim();
+                      return `
+                      <tr>
+                        <td class="budget-no-col">${escapeHtml(item.no || "-")}</td>
+                        <td class="budget-area-col"><span class="badge">${escapeHtml(item.area || item.category || "-")}</span></td>
+                        <td class="muted budget-content-col"><div class="budget-wrap">${escapeHtml(item.content || "-")}</div></td>
+                        <td class="muted budget-task-col"><div class="budget-wrap">${escapeHtml(item.task || "-")}</div></td>
+                        <td class="budget-activity-col budget-key-cell"><div class="budget-wrap">${escapeHtml(item.activity || item.title || "-")}</div></td>
+                        <td class="budget-bimok-col"><div class="budget-wrap">${escapeHtml(item.expenseType || "-")}</div></td>
+                        <td class="page-range budget-amount-col budget-key-cell">${formatWon(item.planned)}</td>
+                        <td class="budget-calc-col budget-key-cell">${
+                          calcPreview
+                            ? `<div class="budget-wrap budget-calc-text">${escapeHtml(calcPreview)}</div>`
+                            : `<span class="muted">미입력</span>`
+                        }</td>
+                        <td class="budget-assignee-col">${escapeHtml(assignee?.name || "미지정")}</td>
+                        <td class="budget-actions-col">
+                          <div class="row">
+                            ${canEdit ? `<button class="btn btn-sm btn-primary" data-entry="${item.id}">입력</button>` : ""}
+                            ${
+                              manage
+                                ? `<button class="btn btn-sm budget-manage-only" data-edit="${item.id}">수정</button>
+                                   <button class="btn btn-sm budget-manage-only" data-ask="${item.id}">요청</button>
+                                   <button class="btn btn-sm btn-danger budget-manage-only" data-del="${item.id}">삭제</button>`
+                                : ""
+                            }
+                          </div>
+                        </td>
+                      </tr>`;
+                    })
+                    .join("")
+                : `<tr><td colspan="10"><div class="empty">${
+                    manage
+                      ? "항목을 추가하거나 일괄 업로드한 뒤, 입력담당자를 지정하세요."
+                      : "배정된 예산 항목이 없습니다. 관리자 지정 후 「예산을 입력하세요」 요청을 확인하세요."
+                  }</div></td></tr>`
+            }
+          </tbody>
+        </table>
+      </div>
+    </div>
+  `;
+
+  $("#editBudgetTotal")?.addEventListener("click", () => openBudgetTotalModal());
+  $("#addBudgetItem")?.addEventListener("click", () => openBudgetItemModal());
+  $("#bulkBudgetUpload")?.addEventListener("click", () => openBudgetBulkUploadModal());
+  $("#downloadBudgetExcel")?.addEventListener("click", () => downloadBudgetExcel());
+  $("#downloadBudgetExcel2")?.addEventListener("click", () =>
+    downloadBudgetExcel({ mineOnly: !manage })
+  );
+  el.querySelectorAll("[data-edit]").forEach((btn) =>
+    btn.addEventListener("click", () => openBudgetItemModal(btn.dataset.edit))
+  );
+  el.querySelectorAll("[data-entry]").forEach((btn) =>
+    btn.addEventListener("click", () => openBudgetEntryModal(btn.dataset.entry))
+  );
+  el.querySelectorAll("[data-del]").forEach((btn) =>
+    btn.addEventListener("click", () => {
+      if (!canManageBudget()) return;
+      if (!confirm("이 예산 항목을 삭제할까요?")) return;
+      const id = btn.dataset.del;
+      state.budget.items = state.budget.items.filter((i) => i.id !== id);
+      state.budget.details = state.budget.details.filter((d) => d.itemId !== id);
+      saveAndRender("budget");
+    })
+  );
+  el.querySelectorAll("[data-ask]").forEach((btn) =>
+    btn.addEventListener("click", () => sendBudgetInputRequest(btn.dataset.ask))
+  );
+  bindBudgetTips(el);
+}
+
+function typeLabel(type) {
+  return { meeting: "회의", deadline: "마감", milestone: "마일스톤", other: "기타" }[type] || type;
+}
+
+function renderRequests() {
+  ensureRequests();
+  const el = $("#view-requests");
+  const admin = isAdmin();
+  const mine = state.requests.filter((r) => r.recipient === sessionUser);
+  const sentGroups = new Map();
+  if (admin) {
+    state.requests.forEach((r) => {
+      const key = r.groupId || r.id;
+      if (!sentGroups.has(key)) {
+        sentGroups.set(key, {
+          groupId: key,
+          title: r.title,
+          memo: r.memo,
+          dueDate: r.dueDate,
+          requester: r.requester,
+          rows: [],
+        });
+      }
+      sentGroups.get(key).rows.push(r);
+    });
+  }
+
+  el.innerHTML = `
+    ${
+      admin
+        ? `<div class="panel" style="margin-bottom:10px">
+        <div class="panel-head">
+          <div>
+            <h2 class="panel-title">공통 요청 보내기</h2>
+            <p class="muted">대상자에게 일괄 요청하면 상단 파란 알람으로 리마인드됩니다.</p>
+          </div>
+          <button class="btn btn-primary" id="addRequest">요청 등록</button>
+        </div>
+      </div>
+      <div class="panel">
+        <div class="panel-head"><h2 class="panel-title">보낸 요청</h2></div>
+        <div class="table-wrap">
+          <table>
+            <thead>
+              <tr>
+                <th>제목</th>
+                <th>마감</th>
+                <th>진행</th>
+                <th>대상</th>
+                <th></th>
+              </tr>
+            </thead>
+            <tbody>
+              ${
+                [...sentGroups.values()].length
+                  ? [...sentGroups.values()]
+                      .map((g) => {
+                        const done = g.rows.filter((r) => r.status === "완료").length;
+                        return `<tr>
+                          <td>
+                            <strong>${escapeHtml(g.title)}</strong>
+                            <div class="muted">${escapeHtml(g.memo || "")}</div>
+                          </td>
+                          <td>${escapeHtml(g.dueDate || "-")}</td>
+                          <td><span class="badge ${done === g.rows.length ? "ok" : "warn"}">${done}/${g.rows.length}</span></td>
+                          <td class="muted">${g.rows.map((r) => escapeHtml(r.recipient)).join(", ")}</td>
+                          <td><button class="btn btn-sm btn-danger" data-del-group="${escapeAttr(g.groupId)}">삭제</button></td>
+                        </tr>`;
+                      })
+                      .join("")
+                  : `<tr><td colspan="5"><div class="empty">보낸 요청이 없습니다.</div></td></tr>`
+              }
+            </tbody>
+          </table>
+        </div>
+      </div>`
+        : `<div class="panel">
+        <div class="panel-head">
+          <div>
+            <h2 class="panel-title">받은 공통 요청</h2>
+            <p class="muted">관리자가 보낸 요청입니다. 처리 후 완료로 표시하세요.</p>
+          </div>
+        </div>
+        <div class="table-wrap">
+          <table>
+            <thead>
+              <tr>
+                <th>제목</th>
+                <th>요청자</th>
+                <th>마감</th>
+                <th>상태</th>
+                <th></th>
+              </tr>
+            </thead>
+            <tbody>
+              ${
+                mine.length
+                  ? mine
+                      .map(
+                        (r) => `<tr>
+                        <td>
+                          <strong>${escapeHtml(r.title)}</strong>
+                          <div class="muted">${escapeHtml(r.memo || "")}</div>
+                        </td>
+                        <td>${escapeHtml(r.requester || "-")}</td>
+                        <td>${escapeHtml(r.dueDate || "-")}</td>
+                        <td><span class="badge ${r.status === "완료" ? "ok" : "warn"}">${escapeHtml(r.status)}</span></td>
+                        <td>
+                          ${
+                            r.status === "완료"
+                              ? `<span class="muted">완료됨</span>`
+                              : `<button class="btn btn-sm btn-primary" data-done-req="${r.id}">완료</button>`
+                          }
+                        </td>
+                      </tr>`
+                      )
+                      .join("")
+                  : `<tr><td colspan="5"><div class="empty">받은 요청이 없습니다.</div></td></tr>`
+              }
+            </tbody>
+          </table>
+        </div>
+      </div>`
+    }
+  `;
+
+  $("#addRequest")?.addEventListener("click", () => openRequestModal());
+  el.querySelectorAll("[data-done-req]").forEach((btn) =>
+    btn.addEventListener("click", () => {
+      completeRequest(btn.dataset.doneReq);
+      saveAndRender("requests");
+    })
+  );
+  el.querySelectorAll("[data-del-group]").forEach((btn) =>
+    btn.addEventListener("click", () => {
+      if (!isAdmin()) return;
+      if (!confirm("이 요청을 모든 대상자에게서 삭제할까요?")) return;
+      const gid = btn.dataset.delGroup;
+      state.requests = state.requests.filter((r) => (r.groupId || r.id) !== gid);
+      saveAndRender("requests");
+      updateRequestPlane();
+    })
+  );
+}
+
+function openRequestModal() {
+  if (!isAdmin()) return;
+  const targets = state.members.filter((m) => m.role === "member" || m.role === "food");
+  openModal({
+    title: "공통 요청 등록",
+    bodyHtml: `
+      <div class="form-grid">
+        <label class="field">제목
+          <input name="title" required placeholder="예: 1차 취합본 드라이브 업로드" />
+        </label>
+        <label class="field">마감일
+          <input name="dueDate" type="date" value="${today()}" />
+        </label>
+        <label class="field">요청 내용
+          <textarea name="memo" rows="3" placeholder="대상자에게 전달할 내용을 적어 주세요"></textarea>
+        </label>
+        <div class="field">
+          <span>대상자 (미선택 시 전체 대상자)</span>
+          <div class="recipient-checks" style="display:flex;flex-wrap:wrap;gap:6px;margin-top:6px">
+            ${targets
+              .map(
+                (m) => `
+              <label class="badge" style="cursor:pointer;padding:6px 10px">
+                <input type="checkbox" name="recipients" value="${escapeAttr(m.name)}" checked style="margin-right:4px" />
+                ${escapeHtml(m.name)}
+              </label>`
+              )
+              .join("")}
+          </div>
+        </div>
+      </div>
+    `,
+    onSubmit: (fd) => {
+      const title = fd.get("title").trim();
+      const memo = (fd.get("memo") || "").toString().trim();
+      const dueDate = fd.get("dueDate") || "";
+      let recipients = fd.getAll("recipients");
+      if (!recipients.length) recipients = targets.map((m) => m.name);
+      if (!title || !recipients.length) {
+        alert("제목과 대상자를 확인해 주세요.");
+        return false;
+      }
+      const groupId = uid("g");
+      const stamp = today();
+      recipients.forEach((name) => {
+        state.requests.push({
+          id: uid("req"),
+          groupId,
+          title,
+          memo,
+          requester: sessionUser,
+          recipient: name,
+          dueDate,
+          status: "대기",
+          createdAt: stamp,
+        });
+      });
+      saveAndRender("requests");
+      updateRequestPlane();
+      return true;
+    },
+  });
+}
+
+/* ---------- 오늘 뭐먹지 ---------- */
+
+const FOOD_MENUS = {
+  lunch: {
+    label: "점심",
+    items: ["김치찌개", "비빔밥", "제육볶음", "돈까스", "칼국수", "짜장면"],
+  },
+  dinner: {
+    label: "저녁",
+    items: ["삼겹살", "치킨", "피자", "족발", "찜닭", "마라탕"],
+  },
+  snack: {
+    label: "간식",
+    items: ["떡볶이", "붕어빵", "카페·빵", "아이스크림"],
+  },
+  late: {
+    label: "야식",
+    items: ["야식라면", "치킨", "족발·보쌈", "피자", "곱창", "떡볶이"],
+  },
+};
+
+/** 안양 3동 인근 · 배민 고평점 기준 샘플 (메뉴당 2~3곳) */
+const FOOD_TRIED_KEY = 'tf-ops-food-tried-v1';
+
+const FOOD_PLACES = [
+  // 김치찌개
+  { id: 'p_kimchi1', name: '본가김치찌개(안양3동)', meals: ['lunch'], tags: ['김치찌개'], taste: 5, speed: 4, menus: ['김치찌개정식', '계란말이', '공기밥'], tip: '안양3동 배민 한식 상위권. 국물 진함.' },
+  { id: 'p_kimchi2', name: '찌개마을 범계점', meals: ['lunch'], tags: ['김치찌개'], taste: 4, speed: 5, menus: ['김치찌개', '된장찌개', '제육추가'], tip: '배달 빠름. 점심 피크에도 비교적 정시.' },
+  { id: 'p_kimchi3', name: '열정김치찌개', meals: ['lunch'], tags: ['김치찌개'], taste: 4, speed: 4, menus: ['직화김치찌개', '라면사리'], tip: '맵기 조절 가능. TF 점심 단골 후보.' },
+  // 비빔밥
+  { id: 'p_bibim1', name: '돌솥비빔당(안양)', meals: ['lunch'], tags: ['비빔밥'], taste: 5, speed: 4, menus: ['돌솥비빔밥', '야채비빔밥', '육회비빔밥'], tip: '배민 평점 높은 비빔밥 전문.' },
+  { id: 'p_bibim2', name: '한그릇비빔', meals: ['lunch'], tags: ['비빔밥'], taste: 4, speed: 5, menus: ['열무비빔밥', '참치비빔밥'], tip: '포장·배달 모두 깔끔.' },
+  { id: 'p_bibim3', name: '나물향비빔밥', meals: ['lunch'], tags: ['비빔밥'], taste: 4, speed: 3, menus: ['나물비빔밥', '고추장비빔밥'], tip: '건강한 맛. 양 적당.' },
+  // 제육
+  { id: 'p_jeyuk1', name: '제육의정석 안양점', meals: ['lunch'], tags: ['제육볶음'], taste: 5, speed: 4, menus: ['제육덮밥', '제육정식', '계란찜'], tip: '안양3동 근처 배달 많음. 양념 진함.' },
+  { id: 'p_jeyuk2', name: '매콤제육하우스', meals: ['lunch'], tags: ['제육볶음'], taste: 4, speed: 5, menus: ['제육볶음', '쌈채소세트'], tip: '스피드 좋음. 점심 추천.' },
+  { id: 'p_jeyuk3', name: '고기의신 제육', meals: ['lunch'], tags: ['제육볶음'], taste: 4, speed: 3, menus: ['직화제육', '된장찌개'], tip: '불맛 강함. 배민 리뷰 다수.' },
+  // 돈까스
+  { id: 'p_don1', name: '안양왕돈까스', meals: ['lunch'], tags: ['돈까스'], taste: 5, speed: 4, menus: ['등심돈까스', '치즈돈까스'], tip: '바삭함 유지. 3동 인근 인기.' },
+  { id: 'p_don2', name: '카츠공방 평촌', meals: ['lunch'], tags: ['돈까스'], taste: 4, speed: 4, menus: ['히레까스', '커리돈까스'], tip: '평점 안정적. 소스 별미.' },
+  { id: 'p_don3', name: '경양식돈까스집', meals: ['lunch'], tags: ['돈까스'], taste: 4, speed: 5, menus: ['경양식돈까스', '함박스테이크'], tip: '배달 빠름. 가성비.' },
+  // 칼국수
+  { id: 'p_kal1', name: '바지락칼국수골목', meals: ['lunch'], tags: ['칼국수'], taste: 5, speed: 3, menus: ['바지락칼국수', '왕만두'], tip: '국물 시원. 배민 한식 상위.' },
+  { id: 'p_kal2', name: '면면칼국수 안양', meals: ['lunch'], tags: ['칼국수'], taste: 4, speed: 4, menus: ['들깨칼국수', '김치칼국수'], tip: '든든한 한 끼. 비 오는 날 특효.' },
+  { id: 'p_kal3', name: '손칼국수명가', meals: ['lunch'], tags: ['칼국수'], taste: 4, speed: 5, menus: ['손칼국수', '보쌈정식'], tip: '배달 스피드 좋음.' },
+  // 짜장면
+  { id: 'p_jja1', name: '중국요리 영흥관', meals: ['lunch', 'dinner', 'late'], tags: ['짜장면'], taste: 3, speed: 5, menus: ['짜장면', '고기짬뽕밥', '탕수육'], tip: '안양3동 배달 단골. 양 많고 빠름.' },
+  { id: 'p_jja2', name: '홍콩반점0410 안양점', meals: ['lunch'], tags: ['짜장면'], taste: 4, speed: 5, menus: ['짜장면', '짬뽕', '탕수육'], tip: '배민 중식 평점 상위. 스피드 강점.' },
+  { id: 'p_jja3', name: '현지맛짜장', meals: ['lunch'], tags: ['짜장면'], taste: 4, speed: 4, menus: ['간짜장', '삼선짬뽕'], tip: '불맛 나는 짜장. 리뷰 좋음.' },
+  // 삼겹살
+  { id: 'p_sam1', name: '삼겹의품격(안양)', meals: ['dinner'], tags: ['삼겹살'], taste: 5, speed: 3, menus: ['삼겹살', '목살', '된장찌개'], tip: '저녁 배민 고기 상위. 두툼함.' },
+  { id: 'p_sam2', name: '돼지야저녁', meals: ['dinner'], tags: ['삼겹살'], taste: 4, speed: 4, menus: ['삼겹살세트', '항정살'], tip: '배달 포장 깔끔.' },
+  { id: 'p_sam3', name: '고기굽는집 3동', meals: ['dinner'], tags: ['삼겹살'], taste: 4, speed: 2, menus: ['삼겹살', '비빔면'], tip: '맛 우선. 배달은 다소 여유.' },
+  // 치킨
+  { id: 'p_chi1', name: 'BBQ 안양호계점', meals: ['dinner', 'late'], tags: ['치킨'], taste: 5, speed: 4, menus: ['황금올리브', '양념치킨'], tip: '안양 인근 배민 치킨 상위권.' },
+  { id: 'p_chi2', name: '교촌치킨 안양3동', meals: ['dinner', 'late'], tags: ['치킨'], taste: 4, speed: 4, menus: ['허니콤보', '레드콤보'], tip: '야근 단골. 순살 옵션.' },
+  { id: 'p_chi3', name: '굽네치킨 평촌', meals: ['dinner', 'late'], tags: ['치킨'], taste: 4, speed: 5, menus: ['고추바사삭', '갈비천왕'], tip: '배달 빠름. 오븐구이.' },
+  // 피자
+  { id: 'p_piz1', name: '도미노피자 안양점', meals: ['dinner', 'late', 'snack'], tags: ['피자'], taste: 4, speed: 5, menus: ['페퍼로니', '슈퍼슈프림'], tip: '배민 피자 스피드·평점 안정.' },
+  { id: 'p_piz2', name: '피자헛 범계', meals: ['dinner', 'late'], tags: ['피자'], taste: 4, speed: 4, menus: ['미트미트', '슈퍼슈프림'], tip: '세트 구성 좋음.' },
+  { id: 'p_piz3', name: '반올림피자 안양', meals: ['dinner', 'late', 'snack'], tags: ['피자'], taste: 5, speed: 4, menus: ['불고기피자', '포테이토'], tip: '가성비·평점 높은 로컬 인기.' },
+  // 족발
+  { id: 'p_jok1', name: '가장맛있는족발 안양', meals: ['dinner', 'late'], tags: ['족발', '족발·보쌈'], taste: 5, speed: 3, menus: ['앞다리족발', '보쌈', '막국수'], tip: '배민 족발 상위. 야식 강추.' },
+  { id: 'p_jok2', name: '원할머니보쌈 평촌', meals: ['dinner', 'late'], tags: ['족발', '족발·보쌈'], taste: 4, speed: 4, menus: ['보쌈정식', '족발세트'], tip: '양 푸짐. 배달 무난.' },
+  { id: 'p_jok3', name: '장충동왕족발 3동', meals: ['dinner', 'late'], tags: ['족발', '족발·보쌈'], taste: 4, speed: 3, menus: ['왕족발', '쟁반국수'], tip: '야근 야식 단골 후보.' },
+  // 찜닭
+  { id: 'p_jjim1', name: '둘둘치킨아님 안동찜닭', meals: ['dinner', 'late'], tags: ['찜닭'], taste: 5, speed: 3, menus: ['안동찜닭', '순살찜닭'], tip: '안양 인근 찜닭 평점 상위.' },
+  { id: 'p_jjim2', name: '찜닭의신 범계', meals: ['dinner'], tags: ['찜닭'], taste: 4, speed: 4, menus: ['찜닭', '당면사리', '떡사리'], tip: '매운맛 단계 조절.' },
+  { id: 'p_jjim3', name: '청년찜닭 안양', meals: ['dinner', 'late'], tags: ['찜닭'], taste: 4, speed: 4, menus: ['치즈찜닭', '순살'], tip: 'TF 여럿이 먹기 좋음.' },
+  // 마라탕
+  { id: 'p_ma1', name: '마라탕전문점 신야', meals: ['dinner', 'late'], tags: ['마라탕'], taste: 5, speed: 4, menus: ['마라탕', '마라샹궈'], tip: '배민 중식/아시안 상위. 맵기 조절.' },
+  { id: 'p_ma2', name: '양꼬치&마라 안양', meals: ['dinner', 'late'], tags: ['마라탕'], taste: 4, speed: 4, menus: ['마라탕', '꿔바로우'], tip: '야식도 가능. 리뷰 많음.' },
+  { id: 'p_ma3', name: '마라공방 평촌', meals: ['dinner'], tags: ['마라탕'], taste: 4, speed: 5, menus: ['마라탕', '빙수'], tip: '배달 스피드 좋음.' },
+  // 떡볶이
+  { id: 'p_tteok1', name: '신전떡볶이 안양3동', meals: ['snack', 'late', 'lunch'], tags: ['떡볶이'], taste: 4, speed: 5, menus: ['떡볶이', '튀김세트', '라볶이'], tip: '간식·야식 배민 단골.' },
+  { id: 'p_tteok2', name: '엽기떡볶이 평촌', meals: ['snack', 'late'], tags: ['떡볶이'], taste: 4, speed: 4, menus: ['엽기떡볶이', '주먹김밥'], tip: '매운맛. 평점 안정.' },
+  { id: 'p_tteok3', name: '국대떡볶이 안양', meals: ['snack', 'late'], tags: ['떡볶이'], taste: 5, speed: 4, menus: ['국대떡볶이', '튀김'], tip: '로컬 고평점. 양 좋음.' },
+  // 붕어빵
+  { id: 'p_bung1', name: '호호붕어빵 안양역', meals: ['snack'], tags: ['붕어빵'], taste: 5, speed: 5, menus: ['붕어빵', '계란빵'], tip: '따뜻한 간식. 픽업 추천.' },
+  { id: 'p_bung2', name: '겨울간식카트(3동)', meals: ['snack'], tags: ['붕어빵'], taste: 4, speed: 5, menus: ['붕어빵', '호떡'], tip: '근처 포장 빠름.' },
+  { id: 'p_bung3', name: '달달붕어빵', meals: ['snack'], tags: ['붕어빵'], taste: 4, speed: 4, menus: ['슈크림붕어빵', '피자붕어빵'], tip: '배민 간식 리뷰 좋음.' },
+  // 카페빵
+  { id: 'p_cafe1', name: '메가커피 안양3동', meals: ['snack'], tags: ['카페·빵'], taste: 4, speed: 5, menus: ['아메리카노', '쿠키'], tip: '보고서 쓰며 먹기 좋음. 배달 빠름.' },
+  { id: 'p_cafe2', name: '파리바게뜨 호계', meals: ['snack'], tags: ['카페·빵'], taste: 4, speed: 4, menus: ['크루아상', '샌드위치'], tip: '빵·디저트. 평점 무난.' },
+  { id: 'p_cafe3', name: '컴포즈커피 범계', meals: ['snack'], tags: ['카페·빵'], taste: 3, speed: 5, menus: ['아메리카노', '스콘'], tip: '가성비 커피. 스피드.' },
+  // 아이스크림
+  { id: 'p_ice1', name: '배스킨라빈스 안양', meals: ['snack'], tags: ['아이스크림'], taste: 5, speed: 4, menus: ['파인트', '싱글레귤러'], tip: '디저트 배민 상위.' },
+  { id: 'p_ice2', name: '설빙 평촌점', meals: ['snack'], tags: ['아이스크림'], taste: 4, speed: 3, menus: ['인절미설빙', '치즈설빙'], tip: '빙수·아이스크림. 여럿이.' },
+  { id: 'p_ice3', name: '나뚜루픽업 안양', meals: ['snack'], tags: ['아이스크림'], taste: 4, speed: 5, menus: ['파인트', '컵'], tip: '배달·픽업 빠름.' },
+  // 야식라면
+  { id: 'p_ram1', name: '야식라면공장 3동', meals: ['late'], tags: ['야식라면'], taste: 4, speed: 5, menus: ['짜파구리', '비빔면세트', '만두'], tip: '자정 이후 가능. 스피드 최강.' },
+  { id: 'p_ram2', name: '포장마차라면야식', meals: ['late'], tags: ['야식라면'], taste: 3, speed: 5, menus: ['라면', '김밥', '튀김'], tip: '급할 때. 배민 야식.' },
+  { id: 'p_ram3', name: '심야라면연구소', meals: ['late'], tags: ['야식라면'], taste: 4, speed: 4, menus: ['차돌라면', '계란추가'], tip: '야근러 추천.' },
+  // 곱창
+  { id: 'p_gop1', name: '곱창마을 안양', meals: ['late', 'dinner'], tags: ['곱창'], taste: 5, speed: 3, menus: ['모둠곱창', '막창', '볶음밥'], tip: '야식 끝판왕. 배민 평점 높음.' },
+  { id: 'p_gop2', name: '하루곱창 평촌', meals: ['late'], tags: ['곱창'], taste: 4, speed: 3, menus: ['곱창전골', '모둠'], tip: '양 많음. 여럿이.' },
+  { id: 'p_gop3', name: '불곱창명가', meals: ['late', 'dinner'], tags: ['곱창'], taste: 4, speed: 4, menus: ['곱창구이', '대창'], tip: '배달 무난. 맛 안정.' },
+];
+
+const WHEEL_COLORS = ["#FF6B6B", "#FFA94D", "#FFD43B", "#69DB7C", "#4DABF7", "#9775FA", "#F783AC", "#20C997"];
+
+let foodSpinning = false;
+let foodMealKey = "lunch";
+let foodRotation = 0;
+let foodHighlight = "";
+let foodPick = null;
+
+function starsHtml(n, max = 5) {
+  const filled = "★".repeat(Math.max(0, Math.min(max, n)));
+  const empty = "☆".repeat(Math.max(0, max - n));
+  return `<span class="food-stars" aria-label="${n}점">${filled}<span class="food-stars-empty">${empty}</span></span>`;
+}
+
+function loadFoodTried() {
+  try {
+    const raw = localStorage.getItem(FOOD_TRIED_KEY);
+    const arr = raw ? JSON.parse(raw) : [];
+    return new Set(Array.isArray(arr) ? arr : []);
+  } catch {
+    return new Set();
+  }
+}
+
+function saveFoodTried(set) {
+  localStorage.setItem(FOOD_TRIED_KEY, JSON.stringify([...set]));
+}
+
+function isPlaceTried(placeId) {
+  return loadFoodTried().has(placeId);
+}
+
+function setPlaceTried(placeId, tried) {
+  const set = loadFoodTried();
+  if (tried) set.add(placeId);
+  else set.delete(placeId);
+  saveFoodTried(set);
+}
+
+function placeMatch(place, menu) {
+  if (!menu) return false;
+  return (
+    place.tags.some((t) => menu.includes(t) || t.includes(menu)) ||
+    place.menus.some((m) => menu.includes(m) || m.includes(menu))
+  );
+}
+
+/** 메뉴당 배민 고평점 순으로 N곳 */
+function placesForMenu(mealKey, menu, limit = 3) {
+  if (!menu) return [];
+  return FOOD_PLACES.filter((p) => p.meals.includes(mealKey) && placeMatch(p, menu))
+    .sort((a, b) => b.taste + b.speed - (a.taste + a.speed) || b.taste - a.taste)
+    .slice(0, limit);
+}
+
+function canManageFoodAnnounce() {
+  return isAdmin() || isFoodManager();
+}
+
+function foodEmojiFor(category = "", menu = "") {
+  const s = `${category} ${menu}`.toLowerCase();
+  if (/치킨|chicken|후라이드|양념치킨/.test(s)) return "🍗";
+  if (/피자|pizza/.test(s)) return "🍕";
+  if (/햄버거|버거|hamburger/.test(s)) return "🍔";
+  if (/초밥|스시|회|사시미/.test(s)) return "🍣";
+  if (/돈까스|돈가스|까스|카레/.test(s)) return "🍱";
+  if (/칼국수|국수|우동|라면|면/.test(s)) return "🍜";
+  if (/짜장|짬뽕|탕수|중식|중국/.test(s)) return "🥡";
+  if (/삼겹|목살|고기|갈비|스테이크|제육/.test(s)) return "🍖";
+  if (/비빔|덮밥|돌솥/.test(s)) return "🍚";
+  if (/김치|찌개|된장|국밥|설렁/.test(s)) return "🥘";
+  if (/파스타|스파게티|이탈리/.test(s)) return "🍝";
+  if (/샐러드|샌드|브런치/.test(s)) return "🥗";
+  if (/빵|베이커|케이크|디저트|간식/.test(s)) return "🧁";
+  if (/커피|카페|음료/.test(s)) return "☕";
+  return "🍽️";
+}
+
+function ensureFoodHistory() {
+  if (!Array.isArray(state.foodHistory)) state.foodHistory = [];
+}
+
+function pushFoodHistory(entry) {
+  ensureFoodHistory();
+  const category = (entry.category || entry.menu || "").trim();
+  const vendorName = (entry.vendorName || "").trim();
+  const dish = (entry.dish || entry.topMenu || "").trim();
+  const date = entry.date || today();
+  const dup = state.foodHistory.find(
+    (h) => h.date === date && h.category === category && h.vendorName === vendorName
+  );
+  if (dup) {
+    if (dish) dup.dish = dish;
+    dup.emoji = foodEmojiFor(category, dish || category);
+    return;
+  }
+  state.foodHistory.unshift({
+    id: uid("fh"),
+    date,
+    mealLabel: entry.mealLabel || "",
+    category,
+    vendorName,
+    dish,
+    emoji: foodEmojiFor(category, dish || category),
+  });
+  state.foodHistory = state.foodHistory.slice(0, 48);
+}
+
+function syncFoodHistoryFromPolls() {
+  ensureFoodPolls();
+  ensureFoodHistory();
+  [...(state.foodPolls || [])]
+    .filter((p) => p.status === "open" || p.status === "closed" || p.status === "done")
+    .sort((a, b) => String(a.date || "").localeCompare(String(b.date || "")))
+    .forEach((p) => {
+      const top = foodPollTally(p)[0];
+      pushFoodHistory({
+        date: p.date,
+        mealLabel: p.mealLabel,
+        category: p.category || p.menu,
+        vendorName: p.vendorName,
+        dish: top?.count ? top.place?.name || "" : "",
+      });
+    });
+}
+
+function ensureFoodPolls() {
+  if (!Array.isArray(state.foodPolls)) state.foodPolls = [];
+}
+
+function defaultFoodCatalog() {
+  return [
+    { id: "fv1", category: "김치찌개", name: "본가김치찌개(안양3동)", menus: ["김치찌개정식", "계란말이", "공기밥", "된장찌개", "제육추가"], mealTypes: ["lunch", "dinner"] },
+    { id: "fv2", category: "비빔밥", name: "돌솥비빔당(안양)", menus: ["돌솥비빔밥", "야채비빔밥", "육회비빔밥", "열무비빔밥", "고추장비빔밥"], mealTypes: ["lunch"] },
+    { id: "fv3", category: "제육볶음", name: "제육의정석 안양점", menus: ["제육덮밥", "제육정식", "계란찜", "쌈채소세트", "된장찌개"], mealTypes: ["lunch", "dinner"] },
+    { id: "fv4", category: "돈까스", name: "안양왕돈까스", menus: ["등심돈까스", "치즈돈까스", "히레까스", "커리돈까스", "함박스테이크"], mealTypes: ["lunch"] },
+    { id: "fv5", category: "칼국수", name: "바지락칼국수골목", menus: ["바지락칼국수", "왕만두", "들깨칼국수", "김치칼국수", "보쌈정식"], mealTypes: ["lunch"] },
+    { id: "fv6", category: "짜장면", name: "홍콩반점0410 안양점", menus: ["짜장면", "짬뽕", "탕수육", "간짜장", "삼선짬뽕"], mealTypes: ["lunch", "dinner", "late"] },
+    { id: "fv7", category: "삼겹살", name: "삼겹의품격(안양)", menus: ["삼겹살", "목살", "된장찌개", "항정살", "비빔면"], mealTypes: ["dinner"] },
+    { id: "fv8", category: "치킨", name: "BBQ 안양호계점", menus: ["황금올리브", "양념치킨", "허니콤보", "레드콤보", "고추바사삭"], mealTypes: ["dinner", "late"] },
+  ];
+}
+
+function ensureFoodCatalog() {
+  if (!Array.isArray(state.foodCatalog)) state.foodCatalog = [];
+  if (!state.foodCatalog.length) {
+    state.foodCatalog = defaultFoodCatalog();
+  }
+  state.foodCatalog = state.foodCatalog.map((v) => ({
+    id: v.id || uid("fv"),
+    category: (v.category || "").trim() || "기타",
+    name: (v.name || "").trim() || "업체",
+    menus: (Array.isArray(v.menus) ? v.menus : String(v.menus || "").split(","))
+      .map((m) => String(m).trim())
+      .filter(Boolean)
+      .slice(0, 5),
+    mealTypes: Array.isArray(v.mealTypes) && v.mealTypes.length ? v.mealTypes : ["lunch", "dinner", "snack", "late"],
+  }));
+}
+
+function foodCategoriesForMeal(mealKey) {
+  ensureFoodCatalog();
+  const set = new Set();
+  state.foodCatalog.forEach((v) => {
+    if (!mealKey || (v.mealTypes || []).includes(mealKey)) set.add(v.category);
+  });
+  return [...set];
+}
+
+function foodVendorsInCategory(category, mealKey) {
+  ensureFoodCatalog();
+  return state.foodCatalog.filter(
+    (v) => v.category === category && (!mealKey || (v.mealTypes || []).includes(mealKey))
+  );
+}
+
+function pickRandomFoodVendor(category, mealKey) {
+  const list = foodVendorsInCategory(category, mealKey);
+  if (!list.length) return null;
+  return list[Math.floor(Math.random() * list.length)];
+}
+
+function foodPollShareUrl(pollId) {
+  const u = new URL(location.href.split("#")[0].split("?")[0], location.href);
+  u.searchParams.set("foodPoll", pollId);
+  return u.toString();
+}
+
+function parseFoodPollIdFromLocation() {
+  const q = new URLSearchParams(location.search).get("foodPoll");
+  if (q) return q;
+  const hash = location.hash.replace(/^#/, "");
+  const m = hash.match(/^food-poll[=/](.+)$/);
+  return m ? decodeURIComponent(m[1]) : "";
+}
+
+function defaultFoodDeadlineHour() {
+  const h = new Date().getHours();
+  if (h < 11) return 11;
+  if (h < 17) return 17;
+  return 21;
+}
+
+function pad2(n) {
+  return String(Math.min(99, Math.max(0, Number(n) || 0))).padStart(2, "0");
+}
+
+function normalizeFoodDeadline(hour, minute) {
+  const h = Math.min(23, Math.max(0, Number(hour) || 0));
+  const m = Math.min(59, Math.max(0, Number(minute) || 0));
+  return { deadlineHour: h, deadlineMinute: m };
+}
+
+function formatFoodDeadline(hour, minute = 0) {
+  const { deadlineHour: h, deadlineMinute: m } = normalizeFoodDeadline(hour, minute);
+  return `${pad2(h)}시 ${pad2(m)}분`;
+}
+
+function foodDeadlineSelectHtml(draft) {
+  const { deadlineHour: h, deadlineMinute: m } = normalizeFoodDeadline(
+    draft?.deadlineHour,
+    draft?.deadlineMinute ?? 0
+  );
+  const hourOpts = Array.from({ length: 24 }, (_, i) => {
+    const v = pad2(i);
+    return `<option value="${i}" ${i === h ? "selected" : ""}>${v}시</option>`;
+  }).join("");
+  const minuteOpts = Array.from({ length: 60 }, (_, i) => {
+    const v = pad2(i);
+    return `<option value="${i}" ${i === m ? "selected" : ""}>${v}분</option>`;
+  }).join("");
+  return `
+    <div class="field food-deadline-field">
+      <span class="food-deadline-label">마감 시각</span>
+      <div class="food-deadline-row">
+        <select id="foodDeadlineHour" aria-label="마감 시">${hourOpts}</select>
+        <select id="foodDeadlineMinute" aria-label="마감 분">${minuteOpts}</select>
+      </div>
+      <p class="muted" style="margin:6px 0 0">선택 예: ${formatFoodDeadline(h, m)}까지</p>
+    </div>`;
+}
+
+function buildFoodDraft(pick) {
+  const meal = FOOD_MENUS[foodMealKey];
+  const deadlineHour = defaultFoodDeadlineHour();
+  const deadlineMinute = 0;
+  const date = today();
+  const category = pick?.category || "";
+  const vendor = pick?.vendor;
+  const menus = (vendor?.menus || []).slice(0, 5);
+  const menuLines = menus.map((m, i) => `${i + 1}. ${m}`).join("\n");
+  const until = formatFoodDeadline(deadlineHour, deadlineMinute);
+  const body = [
+    `오늘 식사 종목은 ${category} 이고, 업체는 ${vendor?.name || "-"} 입니다.`,
+    `대표 메뉴는 아래와 같습니다. (아래 ${menus.length || 5}개 중에 고르기)`,
+    "",
+    menuLines || "(대표 메뉴를 업체 관리에서 등록해 주세요.)",
+    "",
+    `드시고 싶은 메뉴를 ${until}까지 체크해 주세요.`,
+  ].join("\n");
+  return {
+    id: uid("fp"),
+    menu: category,
+    category,
+    vendorId: vendor?.id || "",
+    vendorName: vendor?.name || "",
+    mealKey: foodMealKey,
+    mealLabel: meal.label,
+    date,
+    deadlineHour,
+    deadlineMinute,
+    places: menus.map((m, i) => ({
+      id: `${vendor?.id || "m"}_${i}`,
+      name: m,
+      menus: [m],
+      tip: vendor?.name || "",
+    })),
+    body,
+    status: "draft",
+  };
+}
+
+let foodDraft = null;
+
+function foodAnnounceHtml(draft) {
+  if (!draft) return "";
+  const options = draft.places
+    .map(
+      (p, i) => `
+      <label class="food-announce-option">
+        <span class="food-announce-num">${i + 1}</span>
+        <span>
+          <strong>${escapeHtml(p.name)}</strong>
+          ${p.tip ? `<span class="muted">${escapeHtml(p.tip)}</span>` : ""}
+        </span>
+      </label>`
+    )
+    .join("");
+  return `
+    <section class="panel food-announce-panel food-manage-only" id="foodAnnouncePanel">
+      <div class="panel-head">
+        <div>
+          <h2 class="panel-title">식사 메뉴 공지 초안</h2>
+          <p class="muted" style="margin:4px 0 0">${escapeHtml(draft.vendorName || "")} · ${escapeHtml(draft.category || draft.menu || "")} · 확정 시 TF 전체에 메뉴선택 알람이 갑니다.</p>
+        </div>
+      </div>
+      ${foodDeadlineSelectHtml(draft)}
+      <textarea class="food-announce-body" id="foodAnnounceBody" rows="10">${escapeHtml(draft.body)}</textarea>
+      <div class="food-announce-options">${options || `<div class="empty">대표메뉴를 업체 관리에서 등록해 주세요.</div>`}</div>
+      <div class="row" style="margin-top:12px;flex-wrap:wrap;gap:8px">
+        <button type="button" class="btn btn-primary" id="foodConfirmBtn">확정 · TF 공지</button>
+        <button type="button" class="btn" id="foodKakaoCopyBtn">카톡으로 알리기 (복사)</button>
+        <button type="button" class="btn btn-ghost" id="foodKakaoFileBtn">카톡용 URL 파일</button>
+      </div>
+      <p class="muted" id="foodAnnounceHint" style="margin:10px 0 0">「확정」을 먼저 누르면 투표 링크가 생성됩니다. 이후 카톡 버튼으로 붙여넣기 하세요.</p>
+    </section>`;
+}
+
+function syncFoodDraftFromForm() {
+  if (!foodDraft) return null;
+  const hourEl = $("#foodDeadlineHour");
+  const minuteEl = $("#foodDeadlineMinute");
+  const bodyEl = $("#foodAnnounceBody");
+  const next = normalizeFoodDeadline(
+    hourEl ? hourEl.value : foodDraft.deadlineHour,
+    minuteEl ? minuteEl.value : foodDraft.deadlineMinute ?? 0
+  );
+  foodDraft.deadlineHour = next.deadlineHour;
+  foodDraft.deadlineMinute = next.deadlineMinute;
+  if (bodyEl) foodDraft.body = bodyEl.value;
+  const until = formatFoodDeadline(foodDraft.deadlineHour, foodDraft.deadlineMinute);
+  foodDraft.body = foodDraft.body.replace(
+    /드시고 싶은 메뉴를 .+?까지/,
+    `드시고 싶은 메뉴를 ${until}까지`
+  );
+  if (bodyEl) bodyEl.value = foodDraft.body;
+  return foodDraft;
+}
+
+function confirmFoodPoll() {
+  if (!canManageFoodAnnounce() || !foodDraft) return;
+  ensureFoodPolls();
+  ensureRequests();
+  syncFoodDraftFromForm();
+  const draft = foodDraft;
+  const poll = {
+    ...draft,
+    status: "open",
+    createdBy: sessionUser || "",
+    createdAt: new Date().toISOString(),
+    votes: [],
+  };
+  const existing = state.foodPolls.findIndex((p) => p.id === poll.id);
+  if (existing >= 0) state.foodPolls[existing] = poll;
+  else state.foodPolls.unshift(poll);
+
+  const groupId = uid("g");
+  state.members.forEach((m) => {
+    state.requests.push({
+      id: uid("req"),
+      groupId,
+      title: "메뉴를 선택해 주세요",
+      memo: `${poll.date} ${poll.mealLabel} 「${poll.menu}」 후보 중 투표해 주세요. (${formatFoodDeadline(poll.deadlineHour, poll.deadlineMinute)}까지)\n${foodPollShareUrl(poll.id)}`,
+      requester: sessionUser || "식사담당",
+      recipient: m.name,
+      dueDate: poll.date,
+      status: "대기",
+      createdAt: today(),
+    });
+  });
+
+  foodDraft = { ...poll, status: "open" };
+  pushFoodHistory({
+    date: poll.date,
+    mealLabel: poll.mealLabel,
+    category: poll.category || poll.menu,
+    vendorName: poll.vendorName,
+    dish: "",
+  });
+  persist();
+  updateRequestPlane();
+  alert(
+    `${poll.date} ${poll.mealLabel} 메뉴는 이 후보 중에서 고르는 것으로 공지했습니다.\nTF 전체에 메뉴선택 알람을 보냈습니다.`
+  );
+  renderFood();
+}
+
+function copyFoodPollForKakao() {
+  if (!canManageFoodAnnounce() || !foodDraft) return;
+  syncFoodDraftFromForm();
+  const poll =
+    state.foodPolls?.find((p) => p.id === foodDraft.id) ||
+    (foodDraft.status === "open" ? foodDraft : null);
+  if (!poll || poll.status !== "open") {
+    alert("먼저 「확정 · TF 공지」를 눌러 투표 링크를 만들어 주세요.");
+    return;
+  }
+  const url = foodPollShareUrl(poll.id);
+  const text = [
+    `[TF 식사 투표] ${poll.date} ${poll.mealLabel}`,
+    poll.body,
+    "",
+    `투표하러 가기 ↓`,
+    url,
+    "",
+    `(링크에서 이름 선택 후 메뉴를 체크하면 여기에 누적됩니다)`,
+  ].join("\n");
+  navigator.clipboard.writeText(text).then(
+    () => alert("카톡에 붙여넣을 문구와 URL을 복사했습니다."),
+    () => {
+      prompt("복사해서 카톡에 붙여넣으세요:", text);
+    }
+  );
+}
+
+function downloadFoodPollUrlFile() {
+  if (!canManageFoodAnnounce() || !foodDraft) return;
+  syncFoodDraftFromForm();
+  const poll = state.foodPolls?.find((p) => p.id === foodDraft.id);
+  if (!poll || poll.status !== "open") {
+    alert("먼저 「확정 · TF 공지」를 눌러 주세요.");
+    return;
+  }
+  const url = foodPollShareUrl(poll.id);
+  const content = [
+    `[InternetShortcut]`,
+    `URL=${url}`,
+    "",
+    `TF 식사 투표: ${poll.menu}`,
+    url,
+  ].join("\n");
+  const blob = new Blob(["\uFEFF" + content], { type: "text/plain;charset=utf-8" });
+  const a = document.createElement("a");
+  a.href = URL.createObjectURL(blob);
+  a.download = `TF식사투표_${poll.date}.url.txt`;
+  a.click();
+  URL.revokeObjectURL(a.href);
+}
+
+function bindFoodAnnouncePanel() {
+  if (!canManageFoodAnnounce()) return;
+  $("#foodConfirmBtn")?.addEventListener("click", () => confirmFoodPoll());
+  $("#foodKakaoCopyBtn")?.addEventListener("click", () => copyFoodPollForKakao());
+  $("#foodKakaoFileBtn")?.addEventListener("click", () => downloadFoodPollUrlFile());
+  $("#foodDeadlineHour")?.addEventListener("change", () => syncFoodDraftFromForm());
+  $("#foodDeadlineMinute")?.addEventListener("change", () => syncFoodDraftFromForm());
+}
+
+function foodPollById(id) {
+  ensureFoodPolls();
+  return state.foodPolls.find((p) => p.id === id);
+}
+
+function voteFoodPoll(pollId, placeId, voterName) {
+  ensureFoodPolls();
+  const poll = foodPollById(pollId);
+  if (!poll || poll.status !== "open") {
+    alert("진행 중인 투표가 없습니다.");
+    return false;
+  }
+  const name = (voterName || sessionUser || "").trim();
+  if (!name) {
+    alert("투표자 이름을 선택해 주세요.");
+    return false;
+  }
+  poll.votes = (poll.votes || []).filter((v) => v.by !== name);
+  poll.votes.push({ by: name, placeId, at: new Date().toISOString() });
+  const top = foodPollTally(poll)[0];
+  pushFoodHistory({
+    date: poll.date,
+    mealLabel: poll.mealLabel,
+    category: poll.category || poll.menu,
+    vendorName: poll.vendorName,
+    dish: top?.place?.name || "",
+  });
+  persist();
+  return true;
+}
+
+function foodPollTally(poll) {
+  const map = {};
+  (poll.places || []).forEach((p) => {
+    map[p.id] = { place: p, count: 0, voters: [] };
+  });
+  (poll.votes || []).forEach((v) => {
+    if (!map[v.placeId]) return;
+    map[v.placeId].count += 1;
+    map[v.placeId].voters.push(v.by);
+  });
+  return Object.values(map).sort((a, b) => b.count - a.count);
+}
+
+function renderFoodPollVoteOverlay(pollId) {
+  ensureFoodPolls();
+  const poll = foodPollById(pollId);
+  if (!poll) {
+    alert("투표 링크가 올바르지 않거나 만료되었습니다.");
+    return;
+  }
+  let host = $("#foodPollOverlay");
+  if (!host) {
+    host = document.createElement("div");
+    host.id = "foodPollOverlay";
+    host.className = "food-poll-overlay";
+    document.body.appendChild(host);
+  }
+  const tally = foodPollTally(poll);
+  const myVote = (poll.votes || []).find((v) => v.by === sessionUser);
+  host.hidden = false;
+  host.innerHTML = `
+    <div class="food-poll-card">
+      <div class="panel-head">
+        <div>
+          <h2 class="panel-title">${escapeHtml(poll.date)} ${escapeHtml(poll.mealLabel)} 메뉴 투표</h2>
+          <p class="muted">메뉴: <strong>${escapeHtml(poll.menu)}</strong> · ${escapeHtml(formatFoodDeadline(poll.deadlineHour, poll.deadlineMinute))}까지</p>
+        </div>
+        <button type="button" class="btn btn-ghost btn-sm" id="foodPollClose">닫기</button>
+      </div>
+      <pre class="food-poll-body">${escapeHtml(poll.body)}</pre>
+      <div class="food-poll-vote-list">
+        ${(poll.places || [])
+          .map((p) => {
+            const row = tally.find((t) => t.place.id === p.id);
+            const checked = myVote?.placeId === p.id ? "checked" : "";
+            return `<label class="food-poll-vote-item">
+              <input type="radio" name="foodVotePlace" value="${escapeAttr(p.id)}" ${checked} />
+              <span>
+                <strong>${escapeHtml(p.name)}</strong>
+                <span class="muted">${escapeHtml((p.menus || []).join(", "))}</span>
+                <span class="food-poll-count">${row?.count || 0}표 ${row?.voters?.length ? `(${escapeHtml(row.voters.join(", "))})` : ""}</span>
+              </span>
+            </label>`;
+          })
+          .join("")}
+      </div>
+      ${
+        !sessionUser
+          ? `<label class="field">이름 선택
+              <select id="foodPollVoter">
+                <option value="">선택</option>
+                ${state.members.map((m) => `<option value="${escapeAttr(m.name)}">${escapeHtml(m.name)}</option>`).join("")}
+              </select>
+            </label>`
+          : `<p class="muted">${escapeHtml(sessionUser)}님으로 투표합니다.</p>`
+      }
+      <div class="row" style="margin-top:12px">
+        <button type="button" class="btn btn-primary" id="foodPollSubmit">투표 저장</button>
+      </div>
+    </div>
+  `;
+  $("#foodPollClose")?.addEventListener("click", () => {
+    host.hidden = true;
+  });
+  $("#foodPollSubmit")?.addEventListener("click", () => {
+    const placeId = host.querySelector('input[name="foodVotePlace"]:checked')?.value;
+    const voter = sessionUser || $("#foodPollVoter")?.value || "";
+    if (!placeId) {
+      alert("메뉴(맛집)를 선택해 주세요.");
+      return;
+    }
+    if (voteFoodPoll(poll.id, placeId, voter)) {
+      alert("투표가 반영되었습니다.");
+      renderFoodPollVoteOverlay(poll.id);
+      if ($("#view-food")?.classList.contains("active")) renderFood();
+    }
+  });
+}
+
+function openFoodPollFromLocation() {
+  const id = parseFoodPollIdFromLocation();
+  if (!id) return;
+  ensureFoodPolls();
+  if (!foodPollById(id)) return;
+  window.setTimeout(() => renderFoodPollVoteOverlay(id), 400);
+}
+
+function renderPlaceCards(mealKey, highlightMenu = "") {
+  if (foodPick?.vendor) {
+    const v = foodPick.vendor;
+    return `
+      <article class="place-card is-hit">
+        <header class="place-card-head">
+          <h3 class="place-name">${escapeHtml(v.name)}</h3>
+          <div class="place-card-badges">
+            <span class="badge">${escapeHtml(foodPick.category)}</span>
+            <span class="badge ok">선정</span>
+          </div>
+        </header>
+        <p class="place-menus"><strong>대표메뉴</strong> ${escapeHtml((v.menus || []).join(", ") || "-")}</p>
+      </article>`;
+  }
+  return `<div class="empty">돌림판을 돌려 종목·업체를 선정해 주세요.</div>`;
+}
+
+function renderFoodCatalogPanel() {
+  if (!canManageFoodAnnounce()) return "";
+  ensureFoodCatalog();
+  const rows = state.foodCatalog
+    .map(
+      (v) => `
+    <tr data-vendor-id="${escapeAttr(v.id)}">
+      <td>${escapeHtml(v.category)}</td>
+      <td>${escapeHtml(v.name)}</td>
+      <td class="muted">${escapeHtml((v.menus || []).join(", "))}</td>
+      <td class="muted">${escapeHtml((v.mealTypes || []).map((k) => FOOD_MENUS[k]?.label || k).join(", "))}</td>
+      <td>
+        <div class="row">
+          <button type="button" class="btn btn-sm" data-edit-vendor="${escapeAttr(v.id)}">수정</button>
+          <button type="button" class="btn btn-sm btn-danger" data-del-vendor="${escapeAttr(v.id)}">삭제</button>
+        </div>
+      </td>
+    </tr>`
+    )
+    .join("");
+  return `
+    <section class="food-tried-admin panel food-catalog-panel food-manage-only">
+      <div class="panel-head">
+        <div>
+          <h3 class="section-title">종목·업체·대표메뉴 관리 (${isFoodManager() ? "식사담당" : "관리자"})</h3>
+          <p class="food-catalog-notice">이 화면은 식사 담당과 관리자만 보이는 화면입니다.</p>
+          <p class="muted" style="margin:4px 0 0">돌림판은 등록된 종목을 돌리고, 해당 종목의 업체를 랜덤으로 고릅니다.</p>
+        </div>
+        <button type="button" class="btn btn-primary btn-sm" id="addFoodVendor">업체 추가</button>
+      </div>
+      <div class="table-wrap">
+        <table class="food-catalog-table">
+          <thead>
+            <tr>
+              <th>종목</th>
+              <th>업체</th>
+              <th>대표메뉴(최대5)</th>
+              <th>식사구분</th>
+              <th></th>
+            </tr>
+          </thead>
+          <tbody>
+            ${rows || `<tr><td colspan="5"><div class="empty">등록된 업체가 없습니다.</div></td></tr>`}
+          </tbody>
+        </table>
+      </div>
+    </section>`;
+}
+
+function openFoodVendorModal(id) {
+  if (!canManageFoodAnnounce()) return;
+  ensureFoodCatalog();
+  const item = id ? state.foodCatalog.find((v) => v.id === id) : null;
+  const mealChecks = Object.entries(FOOD_MENUS)
+    .map(([key, m]) => {
+      const checked = item ? (item.mealTypes || []).includes(key) : key === "lunch" || key === "dinner";
+      return `<label class="alt-submit-check"><input type="checkbox" name="mealTypes" value="${key}" ${checked ? "checked" : ""} /><span>${m.label}</span></label>`;
+    })
+    .join("");
+  const menus = [...(item?.menus || []), "", "", "", "", ""].slice(0, 5);
+  openModal({
+    title: item ? "업체 수정" : "업체 추가",
+    bodyHtml: `
+      <div class="form-grid two">
+        <label class="field">종목
+          <input name="category" list="foodCategoryList" required value="${escapeAttr(item?.category || "")}" placeholder="예: 제육볶음, 중식" />
+          <datalist id="foodCategoryList">
+            ${foodCategoriesForMeal().map((c) => `<option value="${escapeAttr(c)}"></option>`).join("")}
+          </datalist>
+        </label>
+        <label class="field">업체명
+          <input name="name" required value="${escapeAttr(item?.name || "")}" placeholder="예: 제육의정석 안양점" />
+        </label>
+        ${menus
+          .map(
+            (m, i) => `
+        <label class="field ${i === 0 ? "full" : ""}">대표메뉴 ${i + 1}
+          <input name="menu${i}" value="${escapeAttr(m)}" placeholder="메뉴명" />
+        </label>`
+          )
+          .join("")}
+        <div class="field full">
+          <span class="muted">식사구분</span>
+          <div class="row" style="margin-top:6px;flex-wrap:wrap;gap:8px">${mealChecks}</div>
+        </div>
+      </div>
+    `,
+    onSubmit: (fd) => {
+      const category = fd.get("category").toString().trim();
+      const name = fd.get("name").toString().trim();
+      const menuList = [0, 1, 2, 3, 4]
+        .map((i) => (fd.get(`menu${i}`) || "").toString().trim())
+        .filter(Boolean)
+        .slice(0, 5);
+      const mealTypes = fd.getAll("mealTypes").map(String);
+      if (!category || !name) {
+        alert("종목과 업체명을 입력해 주세요.");
+        return false;
+      }
+      if (!menuList.length) {
+        alert("대표메뉴를 1개 이상 입력해 주세요.");
+        return false;
+      }
+      const data = {
+        category,
+        name,
+        menus: menuList,
+        mealTypes: mealTypes.length ? mealTypes : ["lunch", "dinner", "snack", "late"],
+      };
+      if (item) Object.assign(item, data);
+      else state.foodCatalog.push({ id: uid("fv"), ...data });
+      persist();
+      renderFood();
+      return true;
+    },
+  });
+}
+
+function bindFoodCatalogPanel(root) {
+  if (!canManageFoodAnnounce()) return;
+  $("#addFoodVendor")?.addEventListener("click", () => openFoodVendorModal());
+  root.querySelectorAll("[data-edit-vendor]").forEach((btn) =>
+    btn.addEventListener("click", () => openFoodVendorModal(btn.dataset.editVendor))
+  );
+  root.querySelectorAll("[data-del-vendor]").forEach((btn) =>
+    btn.addEventListener("click", () => {
+      if (!canManageFoodAnnounce()) return;
+      if (!confirm("이 업체를 삭제할까요?")) return;
+      state.foodCatalog = state.foodCatalog.filter((v) => v.id !== btn.dataset.delVendor);
+      persist();
+      renderFood();
+    })
+  );
+}
+
+function showFoodPlaces(menu) {
+  const panel = $("#foodPlaces");
+  const list = $("#placeList");
+  const sub = $("#foodPlacesSub");
+  if (!panel || !list) return;
+  list.innerHTML = renderPlaceCards(foodMealKey, menu);
+  if (sub) {
+    sub.textContent = foodPick
+      ? `종목 ${foodPick.category} · 업체 ${foodPick.vendor?.name || "-"}`
+      : `「${menu}」 선정 결과`;
+  }
+  panel.hidden = false;
+  panel.classList.remove("pop-in");
+  void panel.offsetWidth;
+  panel.classList.add("pop-in");
+}
+
+function hideFoodPlaces() {
+  const panel = $("#foodPlaces");
+  if (!panel) return;
+  panel.hidden = true;
+  panel.classList.remove("pop-in");
+}
+
+function renderFood() {
+  ensureFoodCatalog();
+  const el = $("#view-food");
+  const meal = FOOD_MENUS[foodMealKey];
+  const items = foodCategoriesForMeal(foodMealKey);
+  const wheelItems = items.length ? items : ["등록필요"];
+  const slice = 360 / wheelItems.length;
+  const gradient = wheelItems
+    .map((_, i) => `${WHEEL_COLORS[i % WHEEL_COLORS.length]} ${i * slice}deg ${(i + 1) * slice}deg`)
+    .join(", ");
+  const labelRadius = wheelItems.length <= 4 ? 100 : 112;
+
+  el.innerHTML = `
+    <div class="food-page">
+      <p class="food-lead">돌림판은 <strong>종목</strong>을 고르고, 해당 종목의 <strong>업체</strong>를 랜덤으로 선정합니다. 대표메뉴 중 투표로 고릅니다.</p>
+      <div class="food-meal-tabs">
+        ${Object.entries(FOOD_MENUS)
+          .map(
+            ([key, m]) =>
+              `<button type="button" class="food-meal-btn ${key === foodMealKey ? "active" : ""}" data-meal="${key}">${m.label}</button>`
+          )
+          .join("")}
+      </div>
+
+      <div class="food-layout ${foodPick ? "has-result" : ""} ${canManageFoodAnnounce() && foodDraft ? "has-draft" : ""}">
+        <div class="food-wheel-col">
+          <div class="wheel-stage">
+            <div class="wheel-pointer" aria-hidden="true"></div>
+            <div class="wheel" id="foodWheel" style="background: conic-gradient(${gradient}); transform: rotate(${foodRotation}deg)">
+              ${wheelItems
+                .map((name, i) => {
+                  const angle = i * slice + slice / 2;
+                  return `<span class="wheel-label" style="transform: rotate(${angle}deg) translateY(-${labelRadius}px) rotate(${-angle}deg)">${escapeHtml(name)}</span>`;
+                })
+                .join("")}
+            </div>
+          </div>
+          <button type="button" class="btn btn-primary food-spin-btn" id="foodSpinBtn" ${items.length ? "" : "disabled"}>돌리기</button>
+          <div class="food-result" id="foodResult" aria-live="polite"></div>
+        </div>
+
+        ${
+          canManageFoodAnnounce() && foodDraft
+            ? foodAnnounceHtml(foodDraft)
+            : `<aside class="food-places" id="foodPlaces" ${foodPick ? "" : "hidden"}>
+          <div class="food-places-head">
+            <h2 class="panel-title">선정 업체</h2>
+            <p class="muted" id="foodPlacesSub">${
+              foodPick
+                ? `종목 ${escapeHtml(foodPick.category)} · ${escapeHtml(foodPick.vendor?.name || "")}`
+                : "돌림판 결과가 여기 표시됩니다"
+            }</p>
+          </div>
+          <div class="place-list" id="placeList">
+            ${foodPick ? renderPlaceCards(foodMealKey, foodPick.category) : ""}
+          </div>
+        </aside>`
+        }
+      </div>
+      ${renderOpenFoodPollSummary()}
+      ${renderFoodHistory()}
+      ${renderFoodCatalogPanel()}
+    </div>
+  `;
+
+  if (foodPick) {
+    const result = $("#foodResult");
+    if (result) {
+      result.className = "food-result is-win";
+      result.innerHTML = `오늘의 <strong>${escapeHtml(meal.label)}</strong><br />
+        <span class="food-win-name">${escapeHtml(foodPick.category)}</span>
+        <div class="muted" style="margin-top:6px;font-size:0.95rem">업체 · <strong>${escapeHtml(foodPick.vendor?.name || "-")}</strong></div>`;
+    }
+    $("#foodPlaces")?.classList.add("pop-in");
+  }
+
+  el.querySelectorAll("[data-meal]").forEach((btn) => {
+    btn.addEventListener("click", () => {
+      if (foodSpinning) return;
+      foodMealKey = btn.dataset.meal;
+      foodRotation = 0;
+      foodHighlight = "";
+      foodPick = null;
+      foodDraft = null;
+      renderFood();
+    });
+  });
+
+  $("#foodSpinBtn")?.addEventListener("click", () => spinFoodWheel());
+  bindFoodAnnouncePanel();
+  bindFoodCatalogPanel(el);
+  el.querySelectorAll("[data-open-poll]").forEach((btn) =>
+    btn.addEventListener("click", () => renderFoodPollVoteOverlay(btn.dataset.openPoll))
+  );
+}
+
+function renderOpenFoodPollSummary() {
+  ensureFoodPolls();
+  const openPolls = state.foodPolls.filter((p) => p.status === "open").slice(0, 3);
+  if (!openPolls.length) return "";
+  return `
+    <section class="panel" style="margin-top:12px">
+      <div class="panel-head"><h2 class="panel-title">진행 중 식사 투표</h2></div>
+      <div class="bar-list">
+        ${openPolls
+          .map((p) => {
+            const top = foodPollTally(p)[0];
+            const label = p.vendorName ? `${p.menu} · ${p.vendorName}` : p.menu;
+            return `<div class="bar-item">
+              <div class="meta">
+                <strong>${escapeHtml(p.date)} ${escapeHtml(p.mealLabel)} · ${escapeHtml(label)}</strong>
+                <span>${(p.votes || []).length}표 · 1위 ${escapeHtml(top?.place?.name || "-")} (${top?.count || 0})</span>
+              </div>
+              <button type="button" class="btn btn-sm" data-open-poll="${escapeAttr(p.id)}">투표·현황</button>
+            </div>`;
+          })
+          .join("")}
+      </div>
+    </section>`;
+}
+
+function renderFoodHistory() {
+  syncFoodHistoryFromPolls();
+  ensureFoodHistory();
+  const items = state.foodHistory.slice(0, 24);
+  return `
+    <section class="panel food-history-panel">
+      <div class="panel-head">
+        <div>
+          <h2 class="panel-title">우리 그동안 요 음식들을 먹었었네요.</h2>
+          <p class="muted" style="margin:4px 0 0">식사담당이 공지·확정한 식사 기록이 여기에 쌓입니다.</p>
+        </div>
+      </div>
+      ${
+        items.length
+          ? `<div class="food-history-grid">
+              ${items
+                .map(
+                  (h) => `
+                <article class="food-history-card" title="${escapeAttr(
+                  [h.date, h.mealLabel, h.vendorName, h.dish].filter(Boolean).join(" · ")
+                )}">
+                  <span class="food-history-emoji" aria-hidden="true">${h.emoji || "🍽️"}</span>
+                  <div class="food-history-body">
+                    <strong>${escapeHtml(h.category || h.dish || "식사")}</strong>
+                    <span class="muted">${escapeHtml(
+                      [h.date, h.mealLabel, h.vendorName || h.dish].filter(Boolean).join(" · ")
+                    )}</span>
+                  </div>
+                </article>`
+                )
+                .join("")}
+            </div>`
+          : `<div class="empty">아직 기록된 식사가 없습니다. 식사담당이 메뉴를 확정하면 여기에 표시됩니다.</div>`
+      }
+    </section>`;
+}
+
+function spinFoodWheel() {
+  if (foodSpinning) return;
+  ensureFoodCatalog();
+  const meal = FOOD_MENUS[foodMealKey];
+  const items = foodCategoriesForMeal(foodMealKey);
+  if (!items.length) {
+    alert(
+      canManageFoodAnnounce()
+        ? "이 식사구분에 등록된 종목·업체가 없습니다. 아래에서 먼저 추가해 주세요."
+        : "등록된 종목·업체가 아직 없습니다. 식사담당에게 등록을 요청해 주세요."
+    );
+    return;
+  }
+  if (!canManageFoodAnnounce()) {
+    alert("돌려볼 수는 있지만 메뉴 결정은 식사담당만 가능합니다!");
+  }
+  const n = items.length;
+  const slice = 360 / n;
+  const winIndex = Math.floor(Math.random() * n);
+  const center = winIndex * slice + slice / 2;
+  const currentMod = ((foodRotation % 360) + 360) % 360;
+  const desiredMod = (360 - center) % 360;
+  let delta = (desiredMod - currentMod + 360) % 360;
+  delta += (5 + Math.floor(Math.random() * 3)) * 360;
+  const finalRotation = foodRotation + delta;
+
+  foodSpinning = true;
+  hideFoodPlaces();
+  foodHighlight = "";
+  foodPick = null;
+  foodDraft = null;
+  const layout = document.querySelector(".food-layout");
+  layout?.classList.remove("has-result");
+
+  const btn = $("#foodSpinBtn");
+  const wheel = $("#foodWheel");
+  const result = $("#foodResult");
+  if (btn) btn.disabled = true;
+  if (result) {
+    result.className = "food-result";
+    result.textContent = `${meal.label} 종목·업체 고르는 중…`;
+  }
+
+  if (wheel) {
+    wheel.style.transition = "transform 4.2s cubic-bezier(0.12, 0.75, 0.12, 1)";
+    wheel.style.transform = `rotate(${finalRotation}deg)`;
+  }
+
+  window.setTimeout(() => {
+    foodRotation = finalRotation % 360;
+    foodSpinning = false;
+    const category = items[winIndex];
+    const vendor = pickRandomFoodVendor(category, foodMealKey);
+    foodHighlight = category;
+    foodPick = { category, vendor };
+    if (btn) btn.disabled = false;
+    if (wheel) {
+      wheel.style.transition = "none";
+      wheel.style.transform = `rotate(${foodRotation}deg)`;
+    }
+    if (result) {
+      result.className = "food-result is-win";
+      result.innerHTML = `오늘의 <strong>${escapeHtml(meal.label)}</strong><br />
+        <span class="food-win-name">${escapeHtml(category)}</span>
+        <div class="muted" style="margin-top:6px;font-size:0.95rem">업체 · <strong>${escapeHtml(vendor?.name || "-")}</strong></div>`;
+    }
+    layout?.classList.add("has-result");
+    showFoodPlaces(category);
+    if (canManageFoodAnnounce() && vendor) {
+      foodDraft = buildFoodDraft(foodPick);
+      renderFood();
+      $("#foodAnnouncePanel")?.scrollIntoView({ behavior: "smooth", block: "nearest" });
+    }
+  }, 4300);
+}
+
+
+const GUIDE_SECTIONS = [
+  {
+    id: "direction",
+    title: "이 시스템이 향하는 방향",
+    body: [
+      "TF Pulse는 보고서 TF의 목차·취합·요청·예산·일정·자료를 한곳에서 돌리는 운영 허브입니다.",
+      "역할(관리자·예산담당·식사담당·대상자)에 맞게 보이는 메뉴가 달라져, 각자 손댈 일에 집중할 수 있습니다.",
+      "이름은 선택해 접속하고, 입력한 데이터는 이 기기 브라우저에 저장됩니다. 관리자는 JSON으로 내보내기·가져오기가 가능합니다.",
+    ],
+  },
+  {
+    id: "roles",
+    title: "역할로 보는 권한",
+    body: [
+      "관리자: 목차·할당, 대상자, 공통 요청 발송, JSON 백업 등 전체 설정",
+      "예산담당자: 예산 항목 취합·통계·엑셀 내려받기",
+      "식사담당: 종목·업체·대표메뉴 등록, 돌림판 후 TF 공지·투표 링크",
+      "대상자: 담당 파트 취합 입력, 받은 요청 처리, 배정 예산 산출 입력",
+    ],
+  },
+];
+
+const GUIDE_MENU = [
+  {
+    tab: "dashboard",
+    name: "요약",
+    how: "파트 진행·취합·예산·일정을 한눈에 봅니다. 로그인 후 가장 먼저 보면 좋은 화면입니다.",
+  },
+  {
+    tab: "schedule",
+    name: "통합 일정",
+    how: "TF 마감·회의 일정을 보고 추가합니다. 다가오는 일정은 상단 알람으로도 안내됩니다.",
+  },
+  {
+    tab: "parts",
+    name: "목차·할당",
+    how: "관리자 전용. 보고서 목차와 페이지 범위·담당자를 세팅합니다.",
+    adminOnly: true,
+  },
+  {
+    tab: "collections",
+    name: "취합 현황",
+    how: "1·2·3차 취합 시점별 작성 페이지와 제출 상태를 확인·입력합니다. 대상자는 본인 파트만 수정합니다.",
+  },
+  {
+    tab: "requests",
+    name: "공통 요청",
+    how: "관리자가 전체에 요청을 보내면, 상단 파란 알람과 이 탭에서 확인하고 완료 처리합니다.",
+  },
+  {
+    tab: "budget",
+    name: "예산취합",
+    how: "혁신지원사업 예산 항목을 편성·입력합니다. 담당자는 배정 항목의 산출내역을 저장합니다.",
+  },
+  {
+    tab: "drive",
+    name: "드라이브",
+    how: "주요 문서가 있는 구글드라이브 링크를 모아 둡니다.",
+  },
+  {
+    tab: "resources",
+    name: "공통 서식",
+    how: "교육부 지침·스타일 가이드·공통 서식 링크를 한곳에서 엽니다.",
+  },
+  {
+    tab: "food",
+    name: "오늘 뭐먹지",
+    how: "돌림판으로 종목을 고르고, 해당 종목 업체를 랜덤 선정합니다. 종목·업체·대표메뉴 등록과 TF 공지는 식사담당·관리자만 볼 수 있습니다.",
+  },
+  {
+    tab: "members",
+    name: "대상자 관리",
+    how: "관리자 전용. TF 참여 대상자와 역할(관리자·예산·식사담당·대상자)을 등록합니다.",
+    adminOnly: true,
+  },
+];
+
+const GUIDE_TIPS = [
+  "상단 파란 ✈ 알람은 아직 처리하지 않은 공통 요청입니다. 누르면 요청 목록을 다시 볼 수 있습니다.",
+  "일정 알람(종)은 마감·회의가 다가올 때 표시됩니다. 닫아도 벨에서 다시 열 수 있습니다.",
+  "「오늘 뭐먹지」에서 확정·TF 공지를 누르면 전원에게 메뉴선택 요청이 가고, 카톡용 투표 링크를 복사할 수 있습니다.",
+  "아이폰·갤럭시·아이패드에서는 탭 메뉴를 좌우로 밀어 이동하세요. TF-Pulse.html 단일 파일로도 동일하게 동작합니다.",
+];
+
+function renderGuide() {
+  const el = $("#view-guide");
+  if (!el) return;
+  const menus = GUIDE_MENU.filter((m) => !m.adminOnly || isAdmin());
+  el.innerHTML = `
+    <div class="overview-page">
+      ${GUIDE_SECTIONS.map(
+        (sec) => `
+        <section class="panel overview-panel">
+          <h2 class="panel-title">${escapeHtml(sec.title)}</h2>
+          <ul class="overview-list">
+            ${sec.body.map((line) => `<li>${escapeHtml(line)}</li>`).join("")}
+          </ul>
+          ${
+            sec.id === "roles"
+              ? `<div class="overview-swatches" aria-hidden="true">
+                  <span class="ov-swatch admin">관리자</span>
+                  <span class="ov-swatch budget">예산</span>
+                  <span class="ov-swatch food">식사</span>
+                  <span class="ov-swatch member">대상자</span>
+                </div>`
+              : ""
+          }
+        </section>`
+      ).join("")}
+
+      <section class="panel overview-panel">
+        <h2 class="panel-title">메뉴별 사용법</h2>
+        <p class="panel-desc">각 항목을 누르면 해당 화면으로 이동합니다.</p>
+        <div class="overview-menu-grid">
+          ${menus
+            .map(
+              (m) => `
+            <button type="button" class="overview-menu-card" data-goto="${escapeAttr(m.tab)}">
+              <strong>${escapeHtml(m.name)}</strong>
+              <span>${escapeHtml(m.how)}</span>
+            </button>`
+            )
+            .join("")}
+        </div>
+      </section>
+
+      <section class="panel overview-panel">
+        <h2 class="panel-title">알아두면 좋은 팁</h2>
+        <ul class="overview-list">
+          ${GUIDE_TIPS.map((t) => `<li>${escapeHtml(t)}</li>`).join("")}
+        </ul>
+        <div class="overview-cta">
+          <button type="button" class="btn btn-primary" data-goto="dashboard">요약으로 시작하기</button>
+        </div>
+      </section>
+    </div>
+  `;
+
+  el.querySelectorAll("[data-goto]").forEach((btn) => {
+    btn.addEventListener("click", () => setView(btn.dataset.goto));
+  });
+}
+
+function renderView(name) {
+  const map = {
+    dashboard: renderDashboard,
+    parts: renderParts,
+    collections: renderCollections,
+    requests: renderRequests,
+    budget: renderBudget,
+    schedule: renderSchedule,
+    drive: renderDrive,
+    resources: renderResources,
+    food: renderFood,
+    members: renderMembers,
+    guide: renderGuide,
+  };
+  map[name]?.();
+}
+
+function renderAll() {
+  $("#tfName").textContent = state.meta.tfName || "TF Pulse";
+  applyRoleUi();
+  updateRemindBell();
+  updateRequestPlane();
+  const active = $(".tab-btn.active")?.dataset.view || "dashboard";
+  renderView(active);
+}
+
+function openMetaModal() {
+  if (!isAdmin()) return;
+  openModal({
+    title: "보고서 기본정보",
+    bodyHtml: `
+      <div class="form-grid">
+        <label class="field">TF 명칭
+          <input name="tfName" required value="${escapeAttr(state.meta.tfName || "")}" />
+        </label>
+        <label class="field">보고서 제목
+          <input name="reportTitle" required value="${escapeAttr(state.meta.reportTitle || "")}" />
+        </label>
+        <label class="field">목표 총 페이지
+          <input name="totalTargetPages" type="number" min="1" required value="${state.meta.totalTargetPages || 80}" />
+        </label>
+      </div>
+    `,
+    onSubmit: (fd) => {
+      state.meta.tfName = fd.get("tfName").trim();
+      state.meta.reportTitle = fd.get("reportTitle").trim();
+      state.meta.totalTargetPages = Number(fd.get("totalTargetPages")) || 0;
+      saveAndRender("parts");
+      $("#tfName").textContent = state.meta.tfName;
+      return true;
+    },
+  });
+}
+
+/* ---------- Modals ---------- */
+
+function openModal({ title, bodyHtml, onSubmit }) {
+  const dialog = $("#modal");
+  $("#modalTitle").textContent = title;
+  $("#modalBody").innerHTML = bodyHtml;
+  modalHandler = onSubmit;
+  const submitBtn = $("#modalSubmit");
+  if (submitBtn) {
+    submitBtn.textContent = "저장";
+    submitBtn.classList.remove("btn-ghost");
+  }
+  dialog.showModal();
+}
+
+function closeModal() {
+  $("#modal").close();
+  modalHandler = null;
+}
+
+function openPartModal(id) {
+  if (!isAdmin()) return;
+  const part = id ? partById(id) : null;
+  openModal({
+    title: part ? "파트 수정" : "파트 추가",
+    bodyHtml: `
+      <div class="form-grid two">
+        <label class="field">구분(로마자 등)
+          <input name="section" required value="${escapeAttr(part?.section || "")}" />
+        </label>
+        <label class="field">제목
+          <input name="title" required value="${escapeAttr(part?.title || "")}" />
+        </label>
+        <label class="field">담당자
+          <select name="assigneeId">
+            <option value="">미지정</option>
+            ${state.members
+              .map(
+                (m) =>
+                  `<option value="${m.id}" ${part?.assigneeId === m.id ? "selected" : ""}>${escapeHtml(m.name)}</option>`
+              )
+              .join("")}
+          </select>
+        </label>
+        <label class="field">비고
+          <input name="note" value="${escapeAttr(part?.note || "")}" />
+        </label>
+        <label class="field">시작 페이지
+          <input name="pageStart" type="number" min="1" required value="${part?.pageStart ?? 1}" />
+        </label>
+        <label class="field">끝 페이지
+          <input name="pageEnd" type="number" min="1" required value="${part?.pageEnd ?? 1}" />
+        </label>
+      </div>
+    `,
+    onSubmit: (fd) => {
+      const data = {
+        section: fd.get("section").trim(),
+        title: fd.get("title").trim(),
+        assigneeId: fd.get("assigneeId"),
+        note: fd.get("note").trim(),
+        pageStart: Number(fd.get("pageStart")),
+        pageEnd: Number(fd.get("pageEnd")),
+      };
+      if (data.pageEnd < data.pageStart) {
+        alert("끝 페이지는 시작 페이지 이상이어야 합니다.");
+        return false;
+      }
+      if (part) Object.assign(part, data);
+      else {
+        const newId = uid("p");
+        state.parts.push({ id: newId, ...data });
+        state.collections.forEach((c) => {
+          c.submissions.push({
+            partId: newId,
+            pageCount: 0,
+            status: "pending",
+            submittedAt: "",
+            memo: "",
+            checkImages: [],
+            checkFiles: [],
+            partDone: false,
+          });
+        });
+      }
+      saveAndRender("parts");
+      return true;
+    },
+  });
+}
+
+function openRoundModal(round) {
+  const col = state.collections.find((c) => c.round === round);
+  if (!col) return;
+  openModal({
+    title: "취합 차수 정보",
+    bodyHtml: `
+      <div class="form-grid">
+        <label class="field">이름
+          <input name="name" required value="${escapeAttr(col.name)}" />
+        </label>
+        <label class="field">마감일
+          <input name="dueDate" type="date" value="${escapeAttr(col.dueDate || "")}" />
+        </label>
+        <label class="field">설명
+          <input name="description" value="${escapeAttr(col.description || "")}" />
+        </label>
+      </div>
+    `,
+    onSubmit: (fd) => {
+      col.name = fd.get("name").trim();
+      col.dueDate = fd.get("dueDate");
+      col.description = fd.get("description").trim();
+      saveAndRender("collections");
+      return true;
+    },
+  });
+}
+
+function openScheduleModal(id) {
+  const item = id ? state.schedule.find((s) => s.id === id) : null;
+  openModal({
+    title: item ? "일정 수정" : "일정 추가",
+    bodyHtml: `
+      <div class="form-grid two">
+        <label class="field full">제목
+          <input name="title" required value="${escapeAttr(item?.title || "")}" />
+        </label>
+        <label class="field">시작일
+          <input name="date" type="date" required value="${escapeAttr(item?.date || today())}" />
+        </label>
+        <label class="field">종료일
+          <input name="endDate" type="date" value="${escapeAttr(item?.endDate || item?.date || today())}" />
+        </label>
+        <label class="field">유형
+          <select name="type">
+            ${["meeting", "deadline", "milestone", "other"]
+              .map(
+                (t) =>
+                  `<option value="${t}" ${item?.type === t ? "selected" : ""}>${typeLabel(t)}</option>`
+              )
+              .join("")}
+          </select>
+        </label>
+        <label class="field">등록자
+          <input name="createdBy" value="${escapeAttr(item?.createdBy || currentUserName())}" />
+        </label>
+        <label class="field full">비고
+          <textarea name="note" rows="2">${escapeHtml(item?.note || "")}</textarea>
+        </label>
+      </div>
+    `,
+    onSubmit: (fd) => {
+      const data = {
+        title: fd.get("title").trim(),
+        date: fd.get("date"),
+        endDate: fd.get("endDate") || fd.get("date"),
+        type: fd.get("type"),
+        createdBy: fd.get("createdBy").trim(),
+        note: fd.get("note").trim(),
+      };
+      if (item) Object.assign(item, data);
+      else state.schedule.push({ id: uid("s"), ...data });
+      saveAndRender("schedule");
+      return true;
+    },
+  });
+}
+
+function openDriveModal(id) {
+  if (!isAdmin()) return;
+  const item = id ? state.driveLinks.find((d) => d.id === id) : null;
+  openModal({
+    title: item ? "드라이브 링크 수정" : "드라이브 링크 등록",
+    bodyHtml: `
+      <div class="form-grid">
+        <label class="field">제목
+          <input name="title" required value="${escapeAttr(item?.title || "")}" />
+        </label>
+        <label class="field">URL
+          <input name="url" type="url" required placeholder="https://drive.google.com/..." value="${escapeAttr(item?.url || "")}" />
+        </label>
+        <label class="field">분류
+          <input name="category" value="${escapeAttr(item?.category || "공유폴더")}" />
+        </label>
+        <label class="field">비고
+          <input name="note" value="${escapeAttr(item?.note || "")}" />
+        </label>
+      </div>
+    `,
+    onSubmit: (fd) => {
+      const data = {
+        title: fd.get("title").trim(),
+        url: fd.get("url").trim(),
+        category: fd.get("category").trim(),
+        note: fd.get("note").trim(),
+      };
+      if (item) Object.assign(item, data);
+      else state.driveLinks.push({ id: uid("d"), ...data });
+      saveAndRender("drive");
+      return true;
+    },
+  });
+}
+
+function openResourceModal(id) {
+  if (!isAdmin()) return;
+  const item = id ? state.resources.find((r) => r.id === id) : null;
+  openModal({
+    title: item ? "자료 수정" : "공통 자료 등록",
+    bodyHtml: `
+      <div class="form-grid two">
+        <label class="field full">제목
+          <input name="title" required value="${escapeAttr(item?.title || "")}" />
+        </label>
+        <label class="field">분류
+          <select name="category">
+            ${["지침", "스타일", "서식", "기타"]
+              .map(
+                (c) =>
+                  `<option value="${c}" ${item?.category === c ? "selected" : ""}>${c}</option>`
+              )
+              .join("")}
+          </select>
+        </label>
+        <label class="field">파일명
+          <input name="fileName" value="${escapeAttr(item?.fileName || "")}" />
+        </label>
+        <label class="field full">링크(구글드라이브 등)
+          <input name="url" type="url" required value="${escapeAttr(item?.url || "")}" />
+        </label>
+        <label class="field full">비고
+          <input name="note" value="${escapeAttr(item?.note || "")}" />
+        </label>
+      </div>
+    `,
+    onSubmit: (fd) => {
+      const data = {
+        title: fd.get("title").trim(),
+        category: fd.get("category"),
+        fileName: fd.get("fileName").trim(),
+        url: fd.get("url").trim(),
+        note: fd.get("note").trim(),
+        uploadedAt: item?.uploadedAt || today(),
+      };
+      if (item) Object.assign(item, data);
+      else state.resources.push({ id: uid("r"), ...data });
+      saveAndRender("resources");
+      return true;
+    },
+  });
+}
+
+function openMemberModal(id) {
+  if (!isAdmin()) return;
+  const item = id ? memberById(id) : null;
+  openModal({
+    title: item ? "구성원 수정" : "구성원 추가",
+    bodyHtml: `
+      <div class="form-grid two">
+        <label class="field">이름
+          <input name="name" required value="${escapeAttr(item?.name || "")}" />
+        </label>
+        <label class="field">역할
+          <select name="role">
+            <option value="member" ${!item || item.role === "member" ? "selected" : ""}>대상자(사업담당)</option>
+            <option value="food" ${item?.role === "food" ? "selected" : ""}>식사담당</option>
+            <option value="budget" ${item?.role === "budget" ? "selected" : ""}>예산담당자</option>
+            <option value="admin" ${item?.role === "admin" ? "selected" : ""}>관리자</option>
+          </select>
+        </label>
+        <label class="field">담당 파트
+          <input name="part" value="${escapeAttr(item?.part || "")}" />
+        </label>
+        <label class="field">연락처
+          <input name="contact" value="${escapeAttr(item?.contact || "")}" />
+        </label>
+      </div>
+    `,
+    onSubmit: (fd) => {
+      const data = {
+        name: fd.get("name").trim(),
+        role: fd.get("role"),
+        part: fd.get("part").trim(),
+        contact: fd.get("contact").trim(),
+      };
+      if (item) Object.assign(item, data);
+      else state.members.push({ id: uid("m"), ...data });
+      saveAndRender("members");
+      return true;
+    },
+  });
+}
+
+function openBudgetTotalModal() {
+  if (!canManageBudget()) return;
+  ensureBudget();
+  openModal({
+    title: "총예산 설정",
+    bodyHtml: `
+      <div class="form-grid">
+        <label class="field">총예산 (원)
+          <input name="total" type="number" min="0" step="1000" required value="${state.budget.total}" />
+        </label>
+        <label class="field">비고
+          <input name="note" value="${escapeAttr(state.budget.note || "")}" placeholder="예: 보고서 TF 운영비" />
+        </label>
+      </div>
+    `,
+    onSubmit: (fd) => {
+      state.budget.total = Number(fd.get("total")) || 0;
+      state.budget.note = fd.get("note").trim();
+      saveAndRender("budget");
+      return true;
+    },
+  });
+}
+
+function budgetFormFieldsHtml(item, { includeAssignee = false, fullEdit = true } = {}) {
+  const suffix = uid("dl");
+  const readOnly = !fullEdit;
+  const ro = readOnly ? "readonly" : "";
+  return `
+      <div class="form-grid two">
+        <label class="field">연번
+          <input name="no" ${ro} value="${escapeAttr(item?.no || "")}" placeholder="예: 14" />
+        </label>
+        <label class="field">영역
+          <input name="area" list="budgetAreas_${suffix}" ${fullEdit ? "required" : "readonly"} value="${escapeAttr(item?.area || "")}" />
+        </label>
+        <label class="field full">세부내용명
+          <input name="content" list="budgetContents_${suffix}" ${ro} value="${escapeAttr(item?.content || "")}" />
+        </label>
+        <label class="field full">세부과제명
+          <input name="task" ${ro} value="${escapeAttr(item?.task || "")}" />
+        </label>
+        <label class="field full">세부프로그램(Activity)
+          <input name="activity" ${fullEdit ? "required" : "readonly"} value="${escapeAttr(item?.activity || item?.title || "")}" />
+        </label>
+        <label class="field">담당부서
+          <input name="dept" list="budgetDepts_${suffix}" ${ro} value="${escapeAttr(item?.dept || "")}" />
+        </label>
+        <label class="field">실무부서
+          <input name="workDept" list="budgetWorkDepts_${suffix}" ${ro} value="${escapeAttr(item?.workDept || "")}" />
+        </label>
+        <label class="field">편성금액 (원)
+          <input name="planned" type="number" min="0" step="1000" ${fullEdit ? "required" : "readonly"} value="${item?.planned ?? 0}" />
+        </label>
+        <label class="field">비목
+          <input name="expenseType" list="budgetExpense_${suffix}" required value="${escapeAttr(item?.expenseType || "")}" placeholder="선택 또는 직접 입력" />
+        </label>
+        <label class="field full">세부 산출내역
+          <textarea name="calcText" rows="4" placeholder="예: 강사료 000원 × N회 + 회의비 ...">${escapeHtml(item?.calcText || "")}</textarea>
+        </label>
+        <label class="field full">메모
+          <input name="note" value="${escapeAttr(item?.note || "")}" />
+        </label>
+        ${
+          includeAssignee
+            ? `<label class="field full">입력담당자
+          <select name="assigneeId">
+            <option value="">미지정</option>
+            ${inputAssignees()
+              .map(
+                (m) =>
+                  `<option value="${m.id}" ${item?.assigneeId === m.id ? "selected" : ""}>${escapeHtml(m.name)}</option>`
+              )
+              .join("")}
+          </select>
+        </label>`
+            : ""
+        }
+      </div>
+      ${datalistOptions(`budgetAreas_${suffix}`, BUDGET_CATALOG.areas)}
+      ${datalistOptions(`budgetContents_${suffix}`, BUDGET_CATALOG.contents)}
+      ${datalistOptions(`budgetDepts_${suffix}`, BUDGET_CATALOG.depts)}
+      ${datalistOptions(`budgetWorkDepts_${suffix}`, BUDGET_CATALOG.workDepts)}
+      ${datalistOptions(`budgetExpense_${suffix}`, BUDGET_CATALOG.expenseTypes)}
+  `;
+}
+
+function readBudgetItemFields(fd, prev = {}) {
+  const activity = (fd.get("activity") || "").toString().trim();
+  const area = (fd.get("area") || "").toString().trim();
+  return normalizeBudgetItem({
+    ...prev,
+    no: (fd.get("no") || "").toString().trim(),
+    area,
+    content: (fd.get("content") || "").toString().trim(),
+    task: (fd.get("task") || "").toString().trim(),
+    activity,
+    dept: (fd.get("dept") || "").toString().trim(),
+    workDept: (fd.get("workDept") || "").toString().trim(),
+    planned: Number(fd.get("planned")) || 0,
+    calcText: (fd.get("calcText") || "").toString().trim(),
+    note: (fd.get("note") || "").toString().trim(),
+    expenseType: (fd.get("expenseType") || "").toString().trim(),
+    assigneeId: fd.has("assigneeId") ? fd.get("assigneeId") || "" : prev.assigneeId || "",
+    spent: Number(prev.spent) || 0,
+    partId: prev.partId || "",
+    id: prev.id,
+  });
+}
+
+function openBudgetItemModal(id) {
+  if (!canManageBudget()) return;
+  ensureBudget();
+  const item = id ? state.budget.items.find((i) => i.id === id) : null;
+  const prevAssignee = item?.assigneeId || "";
+  openModal({
+    title: item ? "예산 항목 수정 (관리자)" : "예산 항목 추가",
+    bodyHtml: `
+      ${budgetFormFieldsHtml(item, { includeAssignee: true, fullEdit: true })}
+      <p class="muted">입력담당자를 지정하면 「예산을 입력하세요」 요청이 자동 발송됩니다.</p>
+    `,
+    onSubmit: (fd) => {
+      const data = readBudgetItemFields(fd, item || {});
+      if (!data.activity) {
+        alert("세부프로그램을 입력해 주세요.");
+        return false;
+      }
+      const nextAssignee = data.assigneeId || "";
+      if (item) Object.assign(item, data);
+      else {
+        data.id = uid("b");
+        state.budget.items.push(data);
+      }
+      const target = item || data;
+      if (nextAssignee && nextAssignee !== prevAssignee) {
+        sendBudgetInputRequest(target.id, { silent: true });
+        persist();
+        updateRequestPlane();
+      }
+      saveAndRender("budget");
+      if (nextAssignee && nextAssignee !== prevAssignee) {
+        const m = memberById(nextAssignee);
+        if (m) alert(`${m.name}님에게 「예산을 입력하세요」 요청을 보냈습니다.`);
+      }
+      return true;
+    },
+  });
+}
+
+function openBudgetEntryModal(itemId) {
+  ensureBudget();
+  const item = state.budget.items.find((i) => i.id === itemId);
+  if (!item || !canEditBudgetItem(item)) return;
+  const keepAssignee = item.assigneeId || "";
+  openModal({
+    title: `예산 입력 · ${budgetItemLabel(item)}`,
+    bodyHtml: `
+      <p class="muted" style="margin:0 0 10px">각 항목을 선택하거나 직접 입력한 뒤 <strong>저장</strong>을 누르세요.</p>
+      ${budgetFormFieldsHtml(item, { includeAssignee: false, fullEdit: true })}
+    `,
+    onSubmit: (fd) => {
+      const data = readBudgetItemFields(fd, item);
+      if (!canManageBudget()) data.assigneeId = keepAssignee;
+      Object.assign(item, data);
+      saveAndRender("budget");
+      return true;
+    },
+  });
+}
+
+function openBudgetBulkUploadModal() {
+  if (!isAdmin()) return;
+  ensureBudget();
+  openModal({
+    title: "예산 일괄 수정·업로드 (관리자)",
+    bodyHtml: `
+      <p class="muted">CSV 한 줄에 한 항목:<br>
+      <code>연번,영역,세부내용명,세부과제명,세부프로그램,담당부서,실무부서,편성금액,세부산출내역,입력담당자,메모</code></p>
+      <p class="muted">입력담당자는 대상자 이름(예: 김남인). 헤더 행은 자동 건너뜁니다.</p>
+      <label class="field full">CSV 내용
+        <textarea name="csv" rows="10" placeholder="14,2. 고등직업교육,가. 핵심역량...,1) ...,가) ...,교무처,교육혁신본부,9483680,,김남인,"></textarea>
+      </label>
+      <label class="alt-submit-check">
+        <input type="checkbox" name="replaceAll" />
+        <span>기존 예산 항목을 모두 지우고 새로 업로드</span>
+      </label>
+      <label class="alt-submit-check">
+        <input type="checkbox" name="notifyAssignees" checked />
+        <span>새로 지정된 담당자에게 「예산을 입력하세요」 요청 보내기</span>
+      </label>
+    `,
+    onSubmit: (fd) => {
+      const raw = (fd.get("csv") || "").toString().trim();
+      if (!raw) {
+        alert("CSV 내용을 입력해 주세요.");
+        return false;
+      }
+      const replaceAll = Boolean(fd.get("replaceAll"));
+      const notifyAssignees = Boolean(fd.get("notifyAssignees"));
+      const lines = raw.split(/\r?\n/).map((l) => l.trim()).filter(Boolean);
+      const parsed = [];
+      const notifyIds = [];
+      for (const line of lines) {
+        if (/^연번\s*,/.test(line) || /^영역\s*,/.test(line)) continue;
+        const cols = line.split(",").map((c) => c.trim());
+        if (cols.length < 8) {
+          alert(`형식 오류(열 부족): ${line}`);
+          return false;
+        }
+        const [
+          no,
+          area,
+          content,
+          task,
+          activity,
+          dept,
+          workDept,
+          plannedStr,
+          calcText = "",
+          assigneeName = "",
+          note = "",
+        ] = cols;
+        const planned = Number(String(plannedStr).replace(/[^\d.-]/g, "")) || 0;
+        const assignee = assigneeName ? memberByName(assigneeName) : null;
+        const row = normalizeBudgetItem({
+          id: uid("b"),
+          no,
+          area,
+          content,
+          task,
+          activity: activity || "항목",
+          dept,
+          workDept,
+          planned,
+          calcText,
+          note,
+          assigneeId: assignee?.id || "",
+        });
+        parsed.push(row);
+        if (notifyAssignees && row.assigneeId) notifyIds.push(row.id);
+      }
+      if (!parsed.length) {
+        alert("업로드할 항목이 없습니다.");
+        return false;
+      }
+      if (replaceAll) {
+        state.budget.items = parsed;
+        state.budget.details = [];
+      } else {
+        state.budget.items.push(...parsed);
+      }
+      notifyIds.forEach((id) => sendBudgetInputRequest(id, { silent: true }));
+      persist();
+      updateRequestPlane();
+      saveAndRender("budget");
+      if (notifyIds.length) alert(`${notifyIds.length}명(건)에게 예산 입력 요청을 보냈습니다.`);
+      return true;
+    },
+  });
+}
+
+/* ---------- Import / Export ---------- */
+
+function exportJson() {
+  const blob = new Blob([JSON.stringify(state, null, 2)], { type: "application/json" });
+  const a = document.createElement("a");
+  a.href = URL.createObjectURL(blob);
+  a.download = `tf-data-${today()}.json`;
+  a.click();
+  URL.revokeObjectURL(a.href);
+}
+
+function importJson(file) {
+  const reader = new FileReader();
+  reader.onload = () => {
+    try {
+      const data = JSON.parse(reader.result);
+      if (!data.meta || !Array.isArray(data.parts)) throw new Error("형식이 올바르지 않습니다.");
+      state = {
+        members: [],
+        parts: [],
+        collections: [],
+        schedule: [],
+        driveLinks: [],
+        resources: [],
+        budget: { total: 0, note: "", items: [], details: [] },
+        requests: [],
+        foodPolls: [],
+        foodCatalog: [],
+        foodHistory: [],
+        ...data,
+      };
+      ensureBudget();
+      ensureRequests();
+      ensureFoodPolls();
+      ensureFoodCatalog();
+      ensureFoodHistory();
+      persist();
+      renderAll();
+      alert("JSON을 가져왔습니다.");
+    } catch (err) {
+      alert(`가져오기 실패: ${err.message}`);
+    }
+  };
+  reader.readAsText(file);
+}
+
+async function resetSample() {
+  if (!confirm("브라우저에 저장된 데이터를 지우고 샘플 JSON으로 복원할까요?")) return;
+  localStorage.removeItem(STORAGE_KEY);
+  state = await loadSeed();
+  ensureBudget();
+  ensureRequests();
+  ensureFoodPolls();
+  ensureFoodCatalog();
+  ensureFoodHistory();
+  persist();
+  if (sessionUser && memberByName(sessionUser)) {
+    renderAll();
+    setView("members");
+  } else {
+    logout();
+  }
+}
+
+/* ---------- Boot ---------- */
+
+const REPORT_DEADLINE = new Date("2026-08-03T16:00:00+09:00");
+let deadlineTimer = null;
+
+function formatDeadlineRemain(ms) {
+  if (ms <= 0) return { text: "0일 0시간 0분", over: true };
+  const totalMin = Math.floor(ms / 60000);
+  const days = Math.floor(totalMin / (60 * 24));
+  const hours = Math.floor((totalMin % (60 * 24)) / 60);
+  const mins = totalMin % 60;
+  return {
+    text: `${String(days).padStart(2, "0")}일 ${String(hours).padStart(2, "0")}시간 ${String(mins).padStart(2, "0")}분`,
+    over: false,
+  };
+}
+
+function updateReportDeadline() {
+  const el = $("#deadlineRemain");
+  const line = document.querySelector(".deadline-remain");
+  if (!line) return;
+  const remain = REPORT_DEADLINE.getTime() - Date.now();
+  if (remain <= 0) {
+    line.classList.add("is-over");
+    line.textContent = "보고서 제출일이 지났습니다.";
+    if (deadlineTimer) {
+      window.clearInterval(deadlineTimer);
+      deadlineTimer = null;
+    }
+    return;
+  }
+  if (!el) {
+    line.classList.remove("is-over");
+    line.innerHTML =
+      '보고서 제출까지 <strong id="deadlineRemain">00일 00시간 00분</strong> 남았습니다.';
+  }
+  const strong = $("#deadlineRemain");
+  if (strong) strong.textContent = formatDeadlineRemain(remain).text;
+}
+
+function startReportDeadlineClock() {
+  updateReportDeadline();
+  if (deadlineTimer) window.clearInterval(deadlineTimer);
+  deadlineTimer = window.setInterval(updateReportDeadline, 30000);
+}
+
+async function boot() {
+  await initState();
+  startReportDeadlineClock();
+
+  const saved = localStorage.getItem(USER_KEY);
+  if (saved && memberByName(saved)) {
+    sessionUser = saved;
+    $("#loginGate").hidden = true;
+    $("#appShell").hidden = false;
+    applyRoleUi();
+    renderAll();
+    setView("dashboard");
+    window.setTimeout(() => {
+      openRemindPopup(false);
+      openRequestPopup(false);
+    }, 280);
+  } else {
+    showLoginGate();
+  }
+
+  openFoodPollFromLocation();
+
+  $$(".tab-btn").forEach((btn) => {
+    btn.addEventListener("click", () => setView(btn.dataset.view));
+  });
+
+  $("#btnHome")?.addEventListener("click", () => setView("dashboard"));
+  $("#btnLogout")?.addEventListener("click", logout);
+  $("#btnRemindBell")?.addEventListener("click", () => openRemindPopup(true));
+  $("#btnRequestPlane")?.addEventListener("click", () => openRequestPopup(true));
+  $("#remindCloseTop")?.addEventListener("click", closeRemindPopup);
+  $("#remindClose")?.addEventListener("click", closeRemindPopup);
+  $("#requestCloseTop")?.addEventListener("click", closeRequestPopup);
+  $("#requestClose")?.addEventListener("click", closeRequestPopup);
+  $("#requestGoTab")?.addEventListener("click", () => {
+    closeRequestPopup();
+    setView("requests");
+  });
+  $("#remindSnoozeAll")?.addEventListener("click", () => {
+    getUpcomingReminders().forEach((s) => snoozeReminder(s.id));
+    closeRemindPopup();
+  });
+  $("#remindDismissAll")?.addEventListener("click", () => {
+    getUpcomingReminders({ includeDismissed: true }).forEach((s) => dismissReminder(s.id));
+    closeRemindPopup();
+  });
+  $("#remindBackdrop")?.addEventListener("click", (e) => {
+    if (e.target === e.currentTarget) closeRemindPopup();
+  });
+  $("#requestBackdrop")?.addEventListener("click", (e) => {
+    if (e.target === e.currentTarget) closeRequestPopup();
+  });
+  $("#btnExport")?.addEventListener("click", exportJson);
+  $("#btnImport")?.addEventListener("change", (e) => {
+    if (!isAdmin()) return;
+    const file = e.target.files?.[0];
+    if (file) importJson(file);
+    e.target.value = "";
+  });
+
+  document.addEventListener("click", (e) => {
+    const resetBtn = e.target.closest?.("#btnReset");
+    if (resetBtn) {
+      if (!isAdmin()) return;
+      void resetSample();
+    }
+  });
+
+  $("#modalClose").addEventListener("click", closeModal);
+  $("#modalCancel").addEventListener("click", closeModal);
+  $("#modalForm").addEventListener("submit", (e) => {
+    e.preventDefault();
+    if (!modalHandler) return;
+    const fd = new FormData(e.target);
+    const ok = modalHandler(fd);
+    if (ok !== false) closeModal();
+  });
+}
+
+boot().catch((err) => {
+  document.body.innerHTML = `<div style="padding:2rem;font-family:sans-serif">
+    <h1>앱을 불러오지 못했습니다</h1>
+    <p>${escapeHtml(err.message)}</p>
+    <p>${
+      window.__TF_SEED__
+        ? "브라우저에서 이 HTML 파일을 다시 열어 주세요. (Safari·Chrome·Samsung Internet 지원)"
+        : "로컬 서버로 <code>index.html</code>을 열어 주세요. (예: <code>npx serve .</code>) 또는 <code>TF-Pulse.html</code> 단일 파일을 사용하세요."
+    }</p>
+  </div>`;
+});

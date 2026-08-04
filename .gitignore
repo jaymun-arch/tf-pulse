@@ -1,0 +1,13 @@
+node_modules/
+.DS_Store
+Thumbs.db
+*.log
+.env
+.env.*
+_build_standalone.py
+_ref_*
+_food_*
+_splice_*
+_extract_*
+_patch_*
+_budget_*.png

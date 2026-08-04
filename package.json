@@ -1,0 +1,10 @@
+{
+  "name": "tf-ops-hub",
+  "version": "1.0.0",
+  "private": false,
+  "description": "보고서 TF 운영 웹앱 (JSON 기반)",
+  "scripts": {
+    "start": "npx --yes serve . -p 5174",
+    "serve": "npx --yes serve . -p 5174"
+  }
+}
