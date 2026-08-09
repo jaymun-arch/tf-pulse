@@ -11,3 +11,5 @@ _splice_*
 _extract_*
 _patch_*
 _budget_*.png
+.vercel
+.env*
