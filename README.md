@@ -21,11 +21,12 @@ npm run start
 
 `TF-Pulse.html` 은 서버 없이 기본 기능만 동작합니다. **AI 취합분석·그림생성은 API 서버가 필요합니다.**
 
-### Vercel
+### 배포 (Vercel)
 
-1. GitHub 연동 배포
-2. Vercel 프로젝트 Environment Variables에 `OPENAI_API_KEY` 등록
-3. `/api/analyze`, `/api/generate-image` 서버리스 함수 사용
+- 앱: [https://tf-pulse.vercel.app](https://tf-pulse.vercel.app)
+- 저장소: [https://github.com/jaymun-arch/tf-pulse](https://github.com/jaymun-arch/tf-pulse)
+- 환경변수: Vercel에 `OPENAI_API_KEY` 등록됨
+- API: `/api/analyze`, `/api/generate-image`, `/api/review-summary`
 
 ## AI 기능
 
