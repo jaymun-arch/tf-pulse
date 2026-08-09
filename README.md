@@ -4,23 +4,34 @@
 
 ## 실행 방법
 
-### 로컬 서버 (개발)
+### 로컬 서버 (AI API 포함)
+
+1. OpenAI 키 설정 (둘 중 하나)
+   - `c:\Users\user\Documents\api\.env` 에 `OPENAI_API_KEY=...` (자동 로드)
+   - 또는 프로젝트 루트 `.env` 에 동일하게 설정
+2. 실행:
 
 ```bash
 npm run start
 ```
 
-브라우저에서 [http://127.0.0.1:5174/](http://127.0.0.1:5174/) 로 접속합니다.
-
-또는:
-
-```bash
-python -m http.server 5174
-```
+브라우저: [http://127.0.0.1:5174/](http://127.0.0.1:5174/)
 
 ### 단일 HTML (오프라인·모바일)
 
-`TF-Pulse.html` 파일을 브라우저로 열면 서버 없이 동작합니다.
+`TF-Pulse.html` 은 서버 없이 기본 기능만 동작합니다. **AI 취합분석·그림생성은 API 서버가 필요합니다.**
+
+### Vercel
+
+1. GitHub 연동 배포
+2. Vercel 프로젝트 Environment Variables에 `OPENAI_API_KEY` 등록
+3. `/api/analyze`, `/api/generate-image` 서버리스 함수 사용
+
+## AI 기능
+
+- **취합 현황** (+ 관리자 AI 분석): 취합 입력과 문서(.txt/.docx/.hwpx 또는 텍스트) AI 브리핑을 한 화면에서 처리
+- **윤독·리뷰**: 담당자 PDF 업로드 → 주요내용·수치·계획·환류 요약표 / 관리자 확인 가이드·리뷰 태그 / 윤독 회의 코멘트
+- **보고서 그림**: 연성대 테마(딥네이비·블루) 이미지 생성 → PNG / PPT 다운로드
 
 ## 주요 기능
 

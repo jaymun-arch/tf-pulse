@@ -1,4 +1,12 @@
-const STORAGE_KEY = "tf-ops-data-v9";
+import {
+  extractTextFromFile,
+  analyzeReportText,
+  analyzeReviewSummary,
+  generateYeonsungImage,
+  downloadImagesAsPpt,
+} from "./ai.js";
+
+const STORAGE_KEY = "tf-ops-data-v10";
 const USER_KEY = "tf-ops-user-v1";
 const REMIND_KEY = "tf-ops-schedule-remind-v1";
 const REMIND_BEFORE_DAYS = 14;
@@ -58,7 +66,14 @@ const BUDGET_CATALOG = {
 const VIEW_META = {
   dashboard: { title: "요약", desc: "파트 할당·취합·예산·일정을 한눈에 확인합니다." },
   parts: { title: "목차·할당", desc: "관리자 마스터: 사업보고서 목차와 페이지 할당을 세팅합니다." },
-  collections: { title: "취합 현황", desc: "1·2·3차 취합 시점별 작성 페이지와 제출 상태를 확인·입력합니다." },
+  collections: {
+    title: "취합 현황",
+    desc: "취합 입력과 연성대 자율혁신계획서 틀 기준 AI 검증·브리핑을 한 화면에서 다룹니다.",
+  },
+  review: {
+    title: "윤독·리뷰",
+    desc: "목차·할당 파트 구분으로 PDF 요약표를 보고, 같은 구분 순서대로 윤독 코멘트를 남깁니다.",
+  },
   requests: { title: "공통 요청", desc: "관리자 공통 요청을 보내거나, 받은 요청을 확인하고 완료 처리합니다." },
   budget: { title: "예산취합", desc: "혁신지원사업 예산 항목을 편성·입력·취합합니다." },
   schedule: { title: "통합 일정", desc: "TF 일정을 한눈에 보고 일정을 추가합니다." },
@@ -66,6 +81,10 @@ const VIEW_META = {
   resources: { title: "공통 서식", desc: "교육부 지침·스타일 가이드·공통 서식을 한곳에 모읍니다." },
   food: { title: "오늘 뭐먹지", desc: "보고서 쓰다 배고플 때, 돌림판으로 메뉴를 정해 보세요." },
   members: { title: "대상자 관리", desc: "관리자 마스터: 보고서 작성 참여 대상자를 등록·관리합니다." },
+  "ai-art": {
+    title: "보고서 그림",
+    desc: "자율혁신계획서 도식 양식(개요·추진체계·매트릭스 등)으로 그림을 만들고 PPT로 내려받습니다.",
+  },
   guide: {
     title: "사용방법.",
     desc: "시스템의 방향과 메뉴별 사용법을 짧게 정리했습니다. 처음이라면 아래를 읽고 요약 탭부터 시작해 보세요.",
@@ -375,10 +394,47 @@ function markDirty(dirty = true) {
   }
 }
 
+function pruneHeavyAiPayloads(level = 0) {
+  ensureAiBriefs();
+  ensureAiArts();
+  if (level >= 1) {
+    // 오래된 그림부터 제거
+    state.aiArts = state.aiArts.slice(0, Math.max(0, 8 - level * 2));
+  }
+  if (level >= 3) {
+    // 그래도 부족하면 base64 제거(메타만 유지) → 화면에는 빈 카드 대신 정리
+    state.aiArts = [];
+  }
+  if (level >= 4) {
+    state.aiBriefs = state.aiBriefs.slice(0, 3).map((b) => ({
+      ...b,
+      sourceText: (b.sourceText || "").slice(0, 2000),
+    }));
+  }
+}
+
 function persist() {
   state.meta.updatedAt = new Date().toISOString();
-  localStorage.setItem(STORAGE_KEY, JSON.stringify(state));
-  markDirty(false);
+  let level = 0;
+  for (;;) {
+    try {
+      localStorage.setItem(STORAGE_KEY, JSON.stringify(state));
+      markDirty(false);
+      return;
+    } catch (err) {
+      const quota =
+        err?.name === "QuotaExceededError" ||
+        err?.code === 22 ||
+        /quota|exceeded/i.test(String(err?.message || err));
+      if (!quota || level >= 5) {
+        console.warn("persist failed", err);
+        markDirty(true);
+        return;
+      }
+      level += 1;
+      pruneHeavyAiPayloads(level);
+    }
+  }
 }
 
 function saveAndRender(view) {
@@ -424,6 +480,10 @@ async function initState() {
       ensureFoodPolls();
       ensureFoodCatalog();
       ensureFoodHistory();
+      ensureAiBriefs();
+      ensureAiArts();
+      ensureReviewDocs();
+      ensureReviewSession();
       persist();
       return;
     } catch {
@@ -436,19 +496,96 @@ async function initState() {
   ensureFoodPolls();
   ensureFoodCatalog();
   ensureFoodHistory();
+  ensureAiBriefs();
+  ensureAiArts();
+  ensureReviewDocs();
+  ensureReviewSession();
   persist();
 }
 
+function ensureAiBriefs() {
+  if (!Array.isArray(state.aiBriefs)) state.aiBriefs = [];
+}
+
+function ensureAiArts() {
+  if (!Array.isArray(state.aiArts)) state.aiArts = [];
+}
+
+/** 윤독 회의용: 목차·할당과 동일한 파트 목록 (+ 맨 끝 종합) */
+function reviewPartNavItems() {
+  const parts = Array.isArray(state.parts) ? state.parts : [];
+  const items = parts.map((p, i) => {
+    const m = memberById(p.assigneeId);
+    return {
+      id: p.id,
+      index: i + 1,
+      section: p.section || "",
+      title: p.title || "",
+      label: `${p.section || ""}. ${p.title || ""}`.replace(/^\.\s*/, ""),
+      assigneeName: m?.name || "미배정",
+      pageLabel: `${p.pageStart ?? "?"}–${p.pageEnd ?? "?"}p`,
+      note: p.note || "",
+      isPart: true,
+    };
+  });
+  items.push({
+    id: "__overall__",
+    index: items.length + 1,
+    section: "",
+    title: "종합 의견 · 후속 일정",
+    label: "종합 의견 · 후속 일정",
+    assigneeName: "전체",
+    pageLabel: "",
+    note: "파트별 윤독 후 공통 판정·수정 마감·재취합",
+    isPart: false,
+  });
+  return items;
+}
+
+function ensureReviewDocs() {
+  if (!Array.isArray(state.reviewDocs)) state.reviewDocs = [];
+}
+
+function ensureReviewSession() {
+  if (!state.reviewSession || typeof state.reviewSession !== "object") {
+    state.reviewSession = {
+      title: "전체 취합본 윤독",
+      date: today(),
+      activePartId: "",
+      comments: [],
+      notes: "",
+    };
+  }
+  if (!Array.isArray(state.reviewSession.comments)) state.reviewSession.comments = [];
+  // 예전 회의흐름(stepId) 코멘트 → partId 없으면 종합으로 이전
+  state.reviewSession.comments.forEach((c) => {
+    if (!c.partId && c.stepId) c.partId = "__overall__";
+  });
+  const nav = reviewPartNavItems();
+  const validIds = new Set(nav.map((n) => n.id));
+  if (!state.reviewSession.activePartId || !validIds.has(state.reviewSession.activePartId)) {
+    state.reviewSession.activePartId = nav[0]?.id || "__overall__";
+  }
+  if (!state.reviewSession.title) state.reviewSession.title = "전체 취합본 윤독";
+  if (!state.reviewSession.date) state.reviewSession.date = today();
+  if (typeof state.reviewSession.notes !== "string") state.reviewSession.notes = "";
+  delete state.reviewSession.agenda;
+  delete state.reviewSession.activeStep;
+}
+
 function setView(name) {
+  if (name === "ai-brief") name = "collections";
   if (!isAdmin() && (name === "parts" || name === "members")) {
     name = "dashboard";
   }
   $$(".tab-btn").forEach((btn) => btn.classList.toggle("active", btn.dataset.view === name));
   $$(".view").forEach((el) => el.classList.toggle("active", el.id === `view-${name}`));
-  const meta = VIEW_META[name];
+  const meta = VIEW_META[name] || { title: name, desc: "" };
   let desc = meta.desc;
-  if (!isAdmin() && name === "collections") {
-    desc = "본인 담당 파트의 작성 페이지·제출 상태를 입력합니다.";
+  if (name === "collections") {
+    desc = isAdmin()
+      ? "취합 현황을 확인하고, 문서를 올리면 AI가 포함 내용을 브리핑합니다."
+      : "본인 담당 파트의 작성 페이지·제출 상태를 입력합니다.";
   }
   if (!isAdmin() && name === "dashboard") {
     desc = isBudgetManager()
@@ -1525,7 +1662,8 @@ function renderCollections() {
             </tbody>
           </table>
         </div>
-      </div>`
+      </div>
+      ${isAdmin() ? renderAiBriefSectionHtml(activeRound) : ""}`
         : `<div class="empty">취합 차수가 없습니다.</div>`
     }
   `;
@@ -1592,6 +1730,8 @@ function renderCollections() {
       saveAndRender("collections");
     });
   });
+
+  if (isAdmin()) bindAiBriefPanel(el);
 }
 
 function isSchedulePast(item) {
@@ -3638,10 +3778,10 @@ const GUIDE_SECTIONS = [
     id: "roles",
     title: "역할로 보는 권한",
     body: [
-      "관리자: 목차·할당, 대상자, 공통 요청 발송, JSON 백업 등 전체 설정",
+      "관리자: 목차·할당, 대상자, 공통 요청, 취합 현황의 AI 분석, JSON 백업 등 전체 설정",
       "예산담당자: 예산 항목 취합·통계·엑셀 내려받기",
       "식사담당: 종목·업체·대표메뉴 등록, 돌림판 후 TF 공지·투표 링크",
-      "대상자: 담당 파트 취합 입력, 받은 요청 처리, 배정 예산 산출 입력",
+      "대상자: 담당 파트 취합 입력, 받은 요청 처리, 배정 예산 산출 입력, 보고서 그림 활용",
     ],
   },
 ];
@@ -3666,7 +3806,17 @@ const GUIDE_MENU = [
   {
     tab: "collections",
     name: "취합 현황",
-    how: "1·2·3차 취합 시점별 작성 페이지와 제출 상태를 확인·입력합니다. 대상자는 본인 파트만 수정합니다.",
+    how: "1·2·3차 취합 현황을 입력합니다. 관리자는 같은 화면에서 취합 문서를 AI로 분석·브리핑할 수 있습니다.",
+  },
+  {
+    tab: "review",
+    name: "윤독·리뷰",
+    how: "목차·할당에 등록된 파트 구분으로 PDF 요약표를 모읍니다. 윤독 회의도 같은 할당 순서(Ⅰ·Ⅱ·Ⅲ…)로 진행하며 관리자가 파트별 평가 코멘트를 남깁니다.",
+  },
+  {
+    tab: "ai-art",
+    name: "보고서 그림",
+    how: "보고서 내용으로 연성대 테마 그림을 만들고 PPT로 내려받아 TF가 수정·활용합니다.",
   },
   {
     tab: "requests",
@@ -3767,11 +3917,1447 @@ function renderGuide() {
   });
 }
 
+function checklistStatusBadge(status) {
+  const map = {
+    ok: { label: "충족", cls: "ok" },
+    partial: { label: "부분", cls: "partial" },
+    missing: { label: "미비", cls: "missing" },
+  };
+  const m = map[status] || map.missing;
+  return `<span class="ai-check-badge ${m.cls}">${m.label}</span>`;
+}
+
+function renderAiBriefCard(item) {
+  const a = item.analysis || {};
+  const score = Number(a.coverageScore) || 0;
+  const checklist = Array.isArray(a.checklist) ? a.checklist : [];
+  return `
+    <article class="ai-brief-card" data-brief-id="${escapeAttr(item.id)}">
+      <header class="ai-brief-card-head">
+        <div>
+          <p class="ai-brief-kicker">${escapeHtml(item.roundName || "-")} · ${escapeHtml(item.partTitle || "전체")} · 틀 충족 ${score}%</p>
+          <h3>${escapeHtml(a.adminBrief || item.fileName || "분석 결과")}</h3>
+          <p class="muted">${escapeHtml(a.frame || "연성대 자율혁신계획서 핵심사업 틀")} · ${escapeHtml(item.fileName || "")} · ${escapeHtml((item.createdAt || "").slice(0, 16).replace("T", " "))}</p>
+        </div>
+        <div class="ai-score-ring" title="틀 충족도 ${score}%"><strong>${score}</strong><span>%</span></div>
+      </header>
+      <div class="ai-coverage-bar" aria-hidden="true"><span style="width:${Math.min(100, score)}%"></span></div>
+      ${
+        a.projectName
+          ? `<p class="ai-project-name"><strong>핵심사업</strong> ${escapeHtml(a.projectName)}</p>`
+          : ""
+      }
+      <p class="ai-brief-summary">${escapeHtml(a.summary || "")}</p>
+
+      ${
+        checklist.length
+          ? `<div class="ai-checklist">
+              <h4>취합 검증 양식 (자율혁신계획서 틀)</h4>
+              <ul>
+                ${checklist
+                  .map(
+                    (c) => `<li>
+                      ${checklistStatusBadge(c.status)}
+                      <strong>${escapeHtml(c.label || c.id || "")}</strong>
+                      <span class="muted">${escapeHtml(c.note || "")}</span>
+                    </li>`
+                  )
+                  .join("")}
+              </ul>
+            </div>`
+          : ""
+      }
+
+      <div class="ai-brief-grid">
+        <div>
+          <h4>현황분석</h4>
+          <ul>${(a.statusAnalysis || []).map((x) => `<li>${escapeHtml(x)}</li>`).join("") || "<li class='muted'>없음</li>"}</ul>
+          <h4>추진필요성</h4>
+          <ul>${(a.necessity || []).map((x) => `<li>${escapeHtml(x)}</li>`).join("") || "<li class='muted'>없음</li>"}</ul>
+          <h4>개요·추진체계</h4>
+          <p class="muted" style="margin:0;font-size:var(--text-sm);line-height:1.45">${escapeHtml(a.overviewModel || "-")}</p>
+        </div>
+        <div>
+          <h4>3개년·세부계획</h4>
+          <ul>${[...(a.plan3y || []), ...(a.planDetail || [])].slice(0, 8).map((x) => `<li>${escapeHtml(x)}</li>`).join("") || "<li class='muted'>없음</li>"}</ul>
+          <h4>기대효과 (정량/정성)</h4>
+          <ul>${[...(a.effectsQuant || []).map((x) => `[정량] ${x}`), ...(a.effectsQual || []).map((x) => `[정성] ${x}`)]
+            .slice(0, 8)
+            .map((x) => `<li>${escapeHtml(x)}</li>`)
+            .join("") || "<li class='muted'>없음</li>"}</ul>
+          <h4>보완 포인트</h4>
+          <ul>${(a.gaps || []).map((x) => `<li>${escapeHtml(x)}</li>`).join("") || "<li class='muted'>없음</li>"}</ul>
+        </div>
+      </div>
+      <div class="ai-chip-row" style="margin-top:10px">
+        ${(a.themes || []).map((t) => `<span class="ai-chip">${escapeHtml(t)}</span>`).join("")}
+        ${
+          a.suggestedDiagram
+            ? `<span class="ai-chip suggest">추천도식 · ${escapeHtml(a.suggestedDiagram)}</span>`
+            : ""
+        }
+      </div>
+      <div class="row" style="margin-top:10px">
+        ${
+          a.suggestedDiagram
+            ? `<button type="button" class="btn btn-sm" data-goto-art="${escapeAttr(item.id)}">보고서 그림으로 이어가기</button>`
+            : ""
+        }
+        <button type="button" class="btn btn-sm btn-danger" data-del-brief="${escapeAttr(item.id)}">삭제</button>
+      </div>
+    </article>`;
+}
+
+function renderAiBriefSectionHtml(defaultRound) {
+  if (!isAdmin()) return "";
+  ensureAiBriefs();
+  const rounds = state.collections || [];
+  const parts = state.parts || [];
+  const briefs = [...state.aiBriefs].sort((a, b) => String(b.createdAt || "").localeCompare(String(a.createdAt || "")));
+  const roundDefault = defaultRound || activeRound;
+
+  return `
+    <div class="ai-page" id="aiBriefSection" style="margin-top:12px">
+      <section class="panel ai-upload-panel ai-brief-callout">
+        <div class="panel-head">
+          <div>
+            <h2 class="panel-title">AI 취합검증 · 브리핑</h2>
+            <p class="muted" style="margin:4px 0 0">연성대 3주기 자율혁신계획서 핵심사업 틀(선정사유·현황/필요성·개요도·3개년 계획·기대효과)으로 검증합니다. (.txt .docx .hwpx · .hwp는 붙여넣기) · 관리자 전용</p>
+          </div>
+        </div>
+        <div class="form-grid two">
+          <label class="field">취합 차수
+            <select id="aiBriefRound">
+              ${rounds
+                .map(
+                  (c) =>
+                    `<option value="${c.round}" ${c.round === roundDefault ? "selected" : ""}>${escapeHtml(c.name)}</option>`
+                )
+                .join("")}
+            </select>
+          </label>
+          <label class="field">관련 파트 (선택)
+            <select id="aiBriefPart">
+              <option value="">전체 / 미지정</option>
+              ${parts.map((p) => `<option value="${escapeAttr(p.id)}">${escapeHtml(`${p.section}. ${p.title}`)}</option>`).join("")}
+            </select>
+          </label>
+          <label class="field full">문서 파일
+            <input type="file" id="aiBriefFile" accept=".txt,.md,.docx,.hwpx,.hwp,text/plain,application/vnd.openxmlformats-officedocument.wordprocessingml.document" />
+          </label>
+          <label class="field full">또는 본문 붙여넣기
+            <textarea id="aiBriefText" rows="7" placeholder="한글에서 복사한 보고서 본문을 붙여넣으세요."></textarea>
+          </label>
+        </div>
+        <div class="row" style="margin-top:12px;gap:8px;flex-wrap:wrap">
+          <button type="button" class="btn btn-primary" id="aiBriefRun">AI 분석 실행</button>
+          <span class="muted" id="aiBriefStatus"></span>
+        </div>
+      </section>
+
+      <section class="panel">
+        <div class="panel-head">
+          <h2 class="panel-title">검증 브리핑 보드</h2>
+          <span class="muted">${briefs.length}건 · 틀 체크리스트 포함</span>
+        </div>
+        <div class="ai-brief-list">
+          ${briefs.length ? briefs.map(renderAiBriefCard).join("") : `<div class="empty">아직 분석 결과가 없습니다. 위에서 문서를 분석해 보세요.</div>`}
+        </div>
+      </section>
+    </div>`;
+}
+
+function bindAiBriefPanel(root = document) {
+  if (!isAdmin()) return;
+  const rounds = state.collections || [];
+  $("#aiBriefRun", root)?.addEventListener("click", async () => {
+    const status = $("#aiBriefStatus", root);
+    const btn = $("#aiBriefRun", root);
+    const roundVal = Number($("#aiBriefRound", root)?.value || activeRound);
+    const col = rounds.find((c) => c.round === roundVal);
+    const partId = $("#aiBriefPart", root)?.value || "";
+    const part = partId ? partById(partId) : null;
+    let text = ($("#aiBriefText", root)?.value || "").trim();
+    let fileName = "붙여넣기 텍스트";
+    const file = $("#aiBriefFile", root)?.files?.[0];
+
+    try {
+      if (btn) btn.disabled = true;
+      if (status) status.textContent = "문서 읽는 중…";
+      if (file) {
+        fileName = file.name;
+        text = await extractTextFromFile(file);
+        const ta = $("#aiBriefText", root);
+        if (ta) ta.value = text.slice(0, 20000);
+      }
+      if (text.length < 40) throw new Error("분석할 텍스트가 부족합니다.");
+      if (status) status.textContent = "AI 분석 중… (수십 초 걸릴 수 있습니다)";
+      const data = await analyzeReportText({
+        text,
+        fileName,
+        roundName: col?.name || `${roundVal}차`,
+        partTitle: part ? `${part.section}. ${part.title}` : "",
+        tfName: state.meta?.tfName || "",
+      });
+      ensureAiBriefs();
+      state.aiBriefs.unshift({
+        id: uid("aib"),
+        round: roundVal,
+        roundName: col?.name || "",
+        partId: partId || "",
+        partTitle: part ? `${part.section}. ${part.title}` : "",
+        fileName,
+        by: sessionUser || "",
+        createdAt: new Date().toISOString(),
+        analysis: data.analysis,
+      });
+      state.aiBriefs = state.aiBriefs.slice(0, 40);
+      persist();
+      if (status) status.textContent = "완료";
+      renderCollections();
+      $("#aiBriefSection")?.scrollIntoView({ behavior: "smooth", block: "start" });
+    } catch (err) {
+      if (status) status.textContent = "";
+      alert(err.message || "분석에 실패했습니다.");
+    } finally {
+      if (btn) btn.disabled = false;
+    }
+  });
+
+  root.querySelectorAll("[data-del-brief]").forEach((btn) => {
+    btn.addEventListener("click", () => {
+      if (!confirm("이 분석 결과를 삭제할까요?")) return;
+      state.aiBriefs = state.aiBriefs.filter((b) => b.id !== btn.dataset.delBrief);
+      persist();
+      renderCollections();
+      $("#aiBriefSection")?.scrollIntoView({ behavior: "smooth", block: "start" });
+    });
+  });
+
+  root.querySelectorAll("[data-goto-art]").forEach((btn) => {
+    btn.addEventListener("click", () => {
+      const brief = state.aiBriefs.find((b) => b.id === btn.dataset.gotoArt);
+      if (brief?.analysis?.suggestedDiagram) {
+        const hit = REPORT_ART_TYPES.find(
+          (t) =>
+            brief.analysis.suggestedDiagram.includes(t.name) ||
+            t.name.includes(brief.analysis.suggestedDiagram.replace(/모형|도$/g, ""))
+        );
+        if (hit) state._aiArtType = hit.id;
+      }
+      state._aiArtBriefId = btn.dataset.gotoArt;
+      setView("ai-art");
+    });
+  });
+}
+
+/** 보고서 작성 방향 틀 (그룹 선택지) */
+const REPORT_FRAME_GROUPS = [
+  {
+    id: "core-project",
+    name: "핵심사업 기술틀",
+    desc: "선정사유 → 현황/필요성 → 개요도 → 3개년·세부계획 → 기대효과",
+    contextGuide:
+      "【작성 방향】핵심사업 페이지 구조로 정리\n1) 핵심사업명·목표\n2) 선정사유\n3) 현황분석 / 추진필요성\n4) 개요(추진체계·프로세스)\n5) 3개년 정량지표(2025–2027)\n6) 해당연도 세부추진\n7) 기대효과(정량·정성)\n\n【표현할 내용】",
+    defaultType: "overview",
+  },
+  {
+    id: "edu-innovation",
+    name: "교육혁신 방향",
+    desc: "전공트랙·마이크로전공·AI+X·유연학사 등 교육과정 혁신",
+    contextGuide:
+      "【작성 방향】교육혁신\n- 전공선택권·융합전공·트랙/마이크로전공\n- AI+X·DX 연계 교과·PBL/캡스톤\n- AA(지도)·학습경로·취업·역량지표\n\n【표현할 내용】",
+    defaultType: "overview",
+  },
+  {
+    id: "industry",
+    name: "지산학·ICC 방향",
+    desc: "지산학 거버넌스, ICC 특성화, 기업협력·성과공유",
+    contextGuide:
+      "【작성 방향】지산학협력·ICC\n- 거버넌스·협의체·다자협약\n- ICC 특성화(시장확장×직무심화)\n- 테크클리닉·R&BD·재직자교육·성과포럼\n\n【표현할 내용】",
+    defaultType: "icc-matrix",
+  },
+  {
+    id: "performance",
+    name: "성과관리·확산 방향",
+    desc: "성과지표 향상, 공유·확산, 환류(PDCA)",
+    contextGuide:
+      "【작성 방향】성과관리·확산\n- 정량 KPI(연도별 목표·실적)\n- 성과공유·포럼·확산 경로\n- 점검→개선 환류(PDCA)\n\n【표현할 내용】",
+    defaultType: "diffusion",
+  },
+  {
+    id: "roadmap",
+    name: "단계별 추진 방향",
+    desc: "연도·단계 마일스톤과 추진 일정 중심",
+    contextGuide:
+      "【작성 방향】단계별 추진\n- 2025 / 2026 / 2027 마일스톤\n- 단계별 핵심활동·산출물\n- 담당·협력주체·점검 시점\n\n【표현할 내용】",
+    defaultType: "roadmap",
+  },
+];
+
+/** 연성대 도식 기본 스타일 가이드 (수정 가능, API에 전달) */
+const YEONSUNG_STYLE_GUIDE_DEFAULT = `【연성대 자율혁신계획서 도식 기본 요구사항】
+1. 보고서용 공식 개념도·추진체계도 스타일 (SmartArt형 박스·화살표)
+2. 색: 딥네이비(#0B2C5F) 강조, 라이트블루(#D6E6F5) 모듈, 쿨그레이 라인, 흰 여백
+3. 요소: 둥근 모서리 박스, 방향 화살표, 단계 원형 번호(①②③), 미니멀 아이콘
+4. 금지: 본문 한글 문장·표·로고·워터마크·네온·3D·사진 콜라주
+5. 구도: 가로형 와이드, PPT 슬라이드에 바로 넣을 수 있는 여백·대비
+6. 톤: 전문대학 혁신지원사업·공공 보고서용, 신뢰감 있는 절제된 도식`;
+
+/** 연성대 자율혁신계획서 도식 양식에 맞춘 그림 타입 */
+const REPORT_ART_TYPES = [
+  {
+    id: "overview",
+    group: "structure",
+    groupLabel: "사업 구조",
+    name: "핵심사업 개요도",
+    desc: "선정사유·트랙·교과·산업연계가 한눈에 보이는 개요 플로우",
+    visual:
+      "academic report overview flowchart with rounded module boxes, directional arrows, left foundation icons to center track paths to industry outcome, navy and light-blue boxes",
+  },
+  {
+    id: "governance",
+    group: "structure",
+    groupLabel: "사업 구조",
+    name: "추진체계도",
+    desc: "거버넌스·위원회·협력 단계가 연결되는 추진체계",
+    visual:
+      "numbered circular stage bubbles 1-5 connected by lines, governance process ladder, clean institutional flowchart",
+  },
+  {
+    id: "certification",
+    group: "structure",
+    groupLabel: "사업 구조",
+    name: "인증단계모형",
+    desc: "기본·품질·혁신 등 단계형 인증 배지 구조",
+    visual:
+      "three stacked circular certification badges basic quality innovation, vertical capability ladder, report diagram style",
+  },
+  {
+    id: "icc-matrix",
+    group: "coop",
+    groupLabel: "협력·특성화",
+    name: "ICC 특성화 매트릭스",
+    desc: "시장확장×직무역량 축에 ICC·특성화를 배치한 매트릭스",
+    visual:
+      "2-axis matrix chart with plotted cluster nodes for industry-coupled centers, quadrant mapping, clean academic strategy map",
+  },
+  {
+    id: "platform",
+    group: "coop",
+    groupLabel: "협력·특성화",
+    name: "플랫폼 순환도",
+    desc: "중앙 플랫폼과 주변 프로그램이 순환하는 구조",
+    visual:
+      "central hub circle with four surrounding program quadrants and circular arrows, innovation growth platform diagram",
+  },
+  {
+    id: "diffusion",
+    group: "outcome",
+    groupLabel: "성과·일정",
+    name: "성과확산모형",
+    desc: "성과공유·포럼·확산을 나타내는 확산 구조",
+    visual:
+      "performance diffusion boxes with outward sharing arrows, forum and spillover modules, report-style process map",
+  },
+  {
+    id: "improvement",
+    group: "outcome",
+    groupLabel: "성과·일정",
+    name: "성과향상모형",
+    desc: "지표·역량이 연도별로 올라가는 향상 구조",
+    visual:
+      "ascending year steps 2025-2027 with KPI uplift arrows, improvement ladder, clean quantitative growth diagram",
+  },
+  {
+    id: "roadmap",
+    group: "outcome",
+    groupLabel: "성과·일정",
+    name: "3개년 추진 로드맵",
+    desc: "2025–2027 마일스톤·활동 타임라인",
+    visual:
+      "horizontal three-year roadmap timeline with milestone gates and activity blocks, navy headers light-blue cards",
+  },
+];
+
+function reportArtTypeById(id) {
+  return REPORT_ART_TYPES.find((t) => t.id === id) || REPORT_ART_TYPES[0];
+}
+
+function reportFrameById(id) {
+  return REPORT_FRAME_GROUPS.find((g) => g.id === id) || REPORT_FRAME_GROUPS[0];
+}
+
+function artTypesByGroup() {
+  const map = new Map();
+  REPORT_ART_TYPES.forEach((t) => {
+    if (!map.has(t.group)) map.set(t.group, { id: t.group, label: t.groupLabel, types: [] });
+    map.get(t.group).types.push(t);
+  });
+  return [...map.values()];
+}
+
+function buildYeonsungStyleGuide(type, frame) {
+  const t = type || reportArtTypeById(state._aiArtType);
+  const f = frame || reportFrameById(state._aiArtFrame || "core-project");
+  return `${YEONSUNG_STYLE_GUIDE_DEFAULT}
+
+【선택 작성 방향】${f.name}
+${f.desc}
+
+【선택 도식 타입】${t.name}
+${t.desc}
+시각 구조: ${t.visual}`;
+}
+
+function renderAiArt() {
+  const el = $("#view-ai-art");
+  if (!el) return;
+  ensureAiArts();
+  ensureAiBriefs();
+  const arts = [...state.aiArts];
+  const selectedFrame = state._aiArtFrame || "core-project";
+  const frame = reportFrameById(selectedFrame);
+  const selectedType = state._aiArtType || frame.defaultType || "overview";
+  const type = reportArtTypeById(selectedType);
+  const styleGuide = state._aiArtStyleGuide || buildYeonsungStyleGuide(type, frame);
+  const contextSeed = state._aiArtContextSeed || frame.contextGuide;
+  const prefillBriefId = state._aiArtBriefId || "";
+  const briefOpts = state.aiBriefs
+    .slice(0, 12)
+    .map(
+      (b) =>
+        `<option value="${escapeAttr(b.id)}" ${b.id === prefillBriefId ? "selected" : ""}>${escapeHtml(
+          `${b.roundName || ""} · ${b.analysis?.adminBrief || b.fileName || b.id}`
+        )}</option>`
+    )
+    .join("");
+  const groups = artTypesByGroup();
+
+  el.innerHTML = `
+    <div class="ai-page">
+      <section class="panel ai-art-hero">
+        <div class="panel-head">
+          <div>
+            <h2 class="panel-title">연성대 계획서 도식 생성</h2>
+            <p class="muted" style="margin:4px 0 0">작성 방향 틀을 고르면 내용 가이드가, 스타일 가이드는 자동으로 채워집니다. 수정한 뒤 그림을 생성하고 PPT로 받으세요.</p>
+          </div>
+        </div>
+
+        <div class="field full" style="margin-bottom:14px">
+          <span class="ai-type-label">1) 보고서 작성 방향 틀 (그룹)</span>
+          <div class="ai-type-grid ai-frame-grid" role="radiogroup" aria-label="보고서 작성 방향 틀">
+            ${REPORT_FRAME_GROUPS.map(
+              (g) => `
+              <button type="button" class="ai-type-card ai-frame-card ${g.id === selectedFrame ? "active" : ""}" data-art-frame="${escapeAttr(g.id)}" aria-pressed="${g.id === selectedFrame ? "true" : "false"}">
+                <strong>${escapeHtml(g.name)}</strong>
+                <span>${escapeHtml(g.desc)}</span>
+              </button>`
+            ).join("")}
+          </div>
+        </div>
+
+        <div class="field full" style="margin-bottom:14px">
+          <span class="ai-type-label">2) 도식 타입 (그룹별)</span>
+          ${groups
+            .map(
+              (g) => `
+            <div class="ai-type-group">
+              <p class="ai-type-group-title">${escapeHtml(g.label)}</p>
+              <div class="ai-type-grid" role="radiogroup" aria-label="${escapeAttr(g.label)}">
+                ${g.types
+                  .map(
+                    (t) => `
+                  <button type="button" class="ai-type-card ${t.id === selectedType ? "active" : ""}" data-art-type="${escapeAttr(t.id)}" aria-pressed="${t.id === selectedType ? "true" : "false"}">
+                    <strong>${escapeHtml(t.name)}</strong>
+                    <span>${escapeHtml(t.desc)}</span>
+                  </button>`
+                  )
+                  .join("")}
+              </div>
+            </div>`
+            )
+            .join("")}
+        </div>
+
+        <div class="form-grid two">
+          <label class="field">슬라이드 제목
+            <input id="aiArtTitle" value="${escapeAttr(type.name)}" />
+          </label>
+          <label class="field">AI 취합분석 불러오기 (선택)
+            <select id="aiArtBrief">
+              <option value="">직접 입력 / 작성 틀 가이드 사용</option>
+              ${briefOpts}
+            </select>
+          </label>
+          <label class="field full">연성대 스타일 · 생성 기본 가이드 <span class="muted">(자동 입력 · 수정 가능)</span>
+            <textarea id="aiArtStyleGuide" rows="8">${escapeHtml(styleGuide)}</textarea>
+          </label>
+          <div class="field full row" style="gap:8px;margin:-4px 0 4px">
+            <button type="button" class="btn btn-sm" id="aiArtStyleReset">스타일 가이드 기본값으로</button>
+            <button type="button" class="btn btn-sm" id="aiArtContextReset">작성 틀 가이드 다시 넣기</button>
+          </div>
+          <label class="field full">보고서 내용 / 요약 <span class="muted">(작성 방향 틀이 기본으로 채워짐)</span>
+            <textarea id="aiArtContext" rows="8" placeholder="그림으로 표현할 성과·프로그램·키워드를 적어 주세요.">${escapeHtml(contextSeed)}</textarea>
+          </label>
+          <label class="field full">추가 연출 지시 (선택)
+            <input id="aiArtPrompt" placeholder="예: 왼쪽은 현황, 오른쪽은 추진체계 / ICC를 4개 노드로" />
+          </label>
+        </div>
+        <div class="ai-art-actions">
+          <div class="row" style="gap:8px;flex-wrap:wrap">
+            <button type="button" class="btn btn-primary" id="aiArtRun">그림 생성</button>
+            <button type="button" class="btn" id="aiArtPpt" ${arts.length ? "" : "disabled"}>선택/전체 PPT 다운로드</button>
+          </div>
+          <div class="ai-art-progress" id="aiArtProgress" hidden aria-hidden="true">
+            <div class="ai-art-progress-meta">
+              <span class="muted" id="aiArtStatus"></span>
+              <span class="ai-art-progress-pct" id="aiArtProgressPct">0%</span>
+            </div>
+            <div class="ai-art-progress-track" role="progressbar" aria-valuemin="0" aria-valuemax="100" aria-valuenow="0" id="aiArtProgressBar">
+              <div class="ai-art-progress-fill" id="aiArtProgressFill"></div>
+            </div>
+            <p class="ai-art-progress-step muted" id="aiArtProgressStep"></p>
+          </div>
+        </div>
+      </section>
+
+      <section class="panel">
+        <div class="panel-head">
+          <h2 class="panel-title">생성된 그림</h2>
+          <span class="muted">${arts.length}장 · 최대 8장 보관</span>
+        </div>
+        <div class="ai-art-grid">
+          ${
+            arts.length
+              ? arts
+                  .map(
+                    (a) => `
+            <article class="ai-art-card">
+              <label class="ai-art-check">
+                <input type="checkbox" data-art-pick="${escapeAttr(a.id)}" checked />
+                <span>PPT 포함</span>
+              </label>
+              <img src="data:image/png;base64,${a.imageBase64}" alt="${escapeAttr(a.title || "art")}" />
+              <div class="ai-art-meta">
+                <strong>${escapeHtml(a.title || "그림")}</strong>
+                <span class="muted">${escapeHtml(a.typeName || "")}${a.typeName ? " · " : ""}${escapeHtml((a.createdAt || "").slice(0, 16).replace("T", " "))}</span>
+              </div>
+              <div class="row">
+                <a class="btn btn-sm" download="${escapeAttr((a.title || "art").replace(/\s+/g, "_"))}.png" href="data:image/png;base64,${a.imageBase64}">PNG</a>
+                <button type="button" class="btn btn-sm btn-danger" data-del-art="${escapeAttr(a.id)}">삭제</button>
+              </div>
+            </article>`
+                  )
+                  .join("")
+              : `<div class="empty">아직 생성된 그림이 없습니다.</div>`
+          }
+        </div>
+      </section>
+    </div>
+  `;
+
+  const syncStyleGuideField = () => {
+    const t = reportArtTypeById(state._aiArtType || selectedType);
+    const f = reportFrameById(state._aiArtFrame || selectedFrame);
+    const guide = buildYeonsungStyleGuide(t, f);
+    state._aiArtStyleGuide = guide;
+    if ($("#aiArtStyleGuide")) $("#aiArtStyleGuide").value = guide;
+  };
+
+  el.querySelectorAll("[data-art-frame]").forEach((btn) => {
+    btn.addEventListener("click", () => {
+      const f = reportFrameById(btn.dataset.artFrame);
+      state._aiArtFrame = f.id;
+      state._aiArtType = f.defaultType;
+      state._aiArtContextSeed = f.contextGuide;
+      el.querySelectorAll("[data-art-frame]").forEach((b) => {
+        const on = b.dataset.artFrame === f.id;
+        b.classList.toggle("active", on);
+        b.setAttribute("aria-pressed", on ? "true" : "false");
+      });
+      el.querySelectorAll("[data-art-type]").forEach((b) => {
+        const on = b.dataset.artType === f.defaultType;
+        b.classList.toggle("active", on);
+        b.setAttribute("aria-pressed", on ? "true" : "false");
+      });
+      if ($("#aiArtTitle")) $("#aiArtTitle").value = reportArtTypeById(f.defaultType).name;
+      // 취합분석을 불러오지 않았거나, 아직 작성 틀 가이드 상태면 새 틀로 교체
+      const briefId = $("#aiArtBrief")?.value || "";
+      const ctxVal = $("#aiArtContext")?.value || "";
+      if ($("#aiArtContext") && (!briefId || ctxVal.includes("【작성 방향】"))) {
+        $("#aiArtContext").value = f.contextGuide;
+        state._aiArtContextSeed = f.contextGuide;
+      }
+      syncStyleGuideField();
+    });
+  });
+
+  el.querySelectorAll("[data-art-type]").forEach((btn) => {
+    btn.addEventListener("click", () => {
+      const t = reportArtTypeById(btn.dataset.artType);
+      state._aiArtType = t.id;
+      el.querySelectorAll("[data-art-type]").forEach((b) => {
+        const on = b.dataset.artType === t.id;
+        b.classList.toggle("active", on);
+        b.setAttribute("aria-pressed", on ? "true" : "false");
+      });
+      const titleEl = $("#aiArtTitle");
+      if (titleEl && (!titleEl.value.trim() || REPORT_ART_TYPES.some((x) => x.name === titleEl.value.trim()))) {
+        titleEl.value = t.name;
+      }
+      syncStyleGuideField();
+    });
+  });
+
+  $("#aiArtStyleGuide")?.addEventListener("input", () => {
+    state._aiArtStyleGuide = $("#aiArtStyleGuide").value;
+  });
+  $("#aiArtContext")?.addEventListener("input", () => {
+    state._aiArtContextSeed = $("#aiArtContext").value;
+  });
+  $("#aiArtStyleReset")?.addEventListener("click", () => {
+    state._aiArtStyleGuide = "";
+    syncStyleGuideField();
+  });
+  $("#aiArtContextReset")?.addEventListener("click", () => {
+    const f = reportFrameById(state._aiArtFrame || selectedFrame);
+    state._aiArtContextSeed = f.contextGuide;
+    if ($("#aiArtContext")) $("#aiArtContext").value = f.contextGuide;
+  });
+
+  const applyBriefToArtForm = (id) => {
+    const b = state.aiBriefs.find((x) => x.id === id);
+    if (!b) return;
+    const a = b.analysis || {};
+    const f = reportFrameById(state._aiArtFrame || selectedFrame);
+    const ctx = [
+      f.contextGuide.split("【표현할 내용】")[0].trim(),
+      "【표현할 내용】",
+      a.projectName ? `핵심사업: ${a.projectName}` : "",
+      a.adminBrief,
+      a.summary,
+      a.overviewModel ? `개요·체계: ${a.overviewModel}` : "",
+      (a.statusAnalysis || []).length ? `현황: ${(a.statusAnalysis || []).join(" / ")}` : "",
+      (a.necessity || []).length ? `필요성: ${(a.necessity || []).join(" / ")}` : "",
+      (a.plan3y || []).length ? `3개년: ${(a.plan3y || []).join(" / ")}` : "",
+      (a.effectsQuant || []).length ? `정량효과: ${(a.effectsQuant || []).join(" / ")}` : "",
+      (a.themes || []).join(", "),
+    ]
+      .filter(Boolean)
+      .join("\n\n");
+    if ($("#aiArtContext")) $("#aiArtContext").value = ctx;
+    if ($("#aiArtTitle")) {
+      $("#aiArtTitle").value = (a.projectName || a.adminBrief || reportArtTypeById(state._aiArtType || selectedType).name).slice(0, 48);
+    }
+    if (a.suggestedDiagram) {
+      const hit = REPORT_ART_TYPES.find(
+        (t) => a.suggestedDiagram.includes(t.name) || t.name.includes(String(a.suggestedDiagram).replace(/모형|도$/g, ""))
+      );
+      if (hit) {
+        state._aiArtType = hit.id;
+        el.querySelectorAll("[data-art-type]").forEach((card) => {
+          const on = card.dataset.artType === hit.id;
+          card.classList.toggle("active", on);
+          card.setAttribute("aria-pressed", on ? "true" : "false");
+        });
+        syncStyleGuideField();
+      }
+    }
+  };
+
+  $("#aiArtBrief")?.addEventListener("change", () => {
+    const id = $("#aiArtBrief").value;
+    state._aiArtBriefId = id || "";
+    if (id) applyBriefToArtForm(id);
+  });
+  if (prefillBriefId) applyBriefToArtForm(prefillBriefId);
+
+  const setArtProgress = (pct, stepText, label) => {
+    const wrap = $("#aiArtProgress");
+    const fill = $("#aiArtProgressFill");
+    const bar = $("#aiArtProgressBar");
+    const pctEl = $("#aiArtProgressPct");
+    const stepEl = $("#aiArtProgressStep");
+    const status = $("#aiArtStatus");
+    const n = Math.max(0, Math.min(100, Math.round(pct)));
+    if (wrap) {
+      wrap.hidden = false;
+      wrap.setAttribute("aria-hidden", "false");
+      wrap.classList.toggle("is-done", n >= 100);
+      wrap.classList.toggle("is-error", false);
+    }
+    if (fill) fill.style.width = `${n}%`;
+    if (bar) bar.setAttribute("aria-valuenow", String(n));
+    if (pctEl) pctEl.textContent = `${n}%`;
+    if (stepEl && stepText != null) stepEl.textContent = stepText;
+    if (status && label != null) status.textContent = label;
+  };
+
+  const startArtProgress = (label) => {
+    const stages = [
+      { at: 8, step: "요청 준비 중…" },
+      { at: 22, step: "작성 방향·스타일 가이드 반영 중…" },
+      { at: 40, step: "도식 구조 설계 중…" },
+      { at: 58, step: "연성대 스타일 이미지 생성 중…" },
+      { at: 74, step: "레이아웃·색감 정리 중…" },
+      { at: 88, step: "거의 완료…" },
+    ];
+    let i = 0;
+    let current = 4;
+    setArtProgress(current, stages[0].step, label);
+    const timer = setInterval(() => {
+      if (i < stages.length) {
+        const target = stages[i].at;
+        current = Math.min(target, current + 2 + Math.floor(Math.random() * 3));
+        setArtProgress(current, stages[i].step, label);
+        if (current >= target) i += 1;
+      } else if (current < 92) {
+        current += 0.4;
+        setArtProgress(current, "서버 응답 대기 중…", label);
+      }
+    }, 420);
+    return {
+      finish(ok) {
+        clearInterval(timer);
+        if (ok) {
+          setArtProgress(100, "생성 완료", "완료");
+        } else {
+          const wrap = $("#aiArtProgress");
+          wrap?.classList.add("is-error");
+          setArtProgress(current, "생성 실패 — 다시 시도해 주세요.", "");
+        }
+      },
+    };
+  };
+
+  $("#aiArtRun")?.addEventListener("click", async () => {
+    const btn = $("#aiArtRun");
+    const type = reportArtTypeById(state._aiArtType || el.querySelector("[data-art-type].active")?.dataset.artType);
+    const frame = reportFrameById(state._aiArtFrame || selectedFrame);
+    const title = ($("#aiArtTitle")?.value || type.name).trim();
+    const context = ($("#aiArtContext")?.value || "").trim();
+    const prompt = ($("#aiArtPrompt")?.value || "").trim();
+    const styleGuideText = ($("#aiArtStyleGuide")?.value || buildYeonsungStyleGuide(type, frame)).trim();
+    state._aiArtStyleGuide = styleGuideText;
+    if (!context && !prompt) {
+      alert("보고서 내용 또는 연출 지시를 입력해 주세요.");
+      return;
+    }
+    let progress = null;
+    try {
+      if (btn) btn.disabled = true;
+      progress = startArtProgress(`${frame.name} · ${type.name} 생성 중…`);
+      const data = await generateYeonsungImage({
+        title,
+        context,
+        prompt,
+        styleGuide: styleGuideText,
+        reportFrame: frame.id,
+        reportFrameName: frame.name,
+        reportType: type.id,
+        reportTypeName: type.name,
+        reportTypeDesc: type.desc,
+        reportTypeVisual: type.visual,
+      });
+      progress.finish(true);
+      ensureAiArts();
+      state._aiArtFrame = frame.id;
+      state._aiArtType = type.id;
+      state._aiArtStyleGuide = styleGuideText;
+      state._aiArtContextSeed = context;
+      state.aiArts.unshift({
+        id: uid("art"),
+        title: data.title || title,
+        typeId: type.id,
+        typeName: `${frame.name} · ${type.name}`,
+        imageBase64: data.imageBase64,
+        prompt: data.prompt || "",
+        createdAt: new Date().toISOString(),
+        by: sessionUser || "",
+      });
+      state.aiArts = state.aiArts.slice(0, 8);
+      persist();
+      await new Promise((r) => setTimeout(r, 450));
+      renderAiArt();
+    } catch (err) {
+      progress?.finish(false);
+      alert(err.message || "그림 생성에 실패했습니다.");
+    } finally {
+      if (btn) btn.disabled = false;
+    }
+  });
+
+  $("#aiArtPpt")?.addEventListener("click", async () => {
+    const picked = [...el.querySelectorAll("[data-art-pick]:checked")].map((c) => c.dataset.artPick);
+    const slides = state.aiArts.filter((a) => picked.includes(a.id));
+    if (!slides.length) {
+      alert("PPT에 넣을 그림을 선택해 주세요.");
+      return;
+    }
+    try {
+      $("#aiArtStatus").textContent = "PPT 작성 중…";
+      await downloadImagesAsPpt({
+        title: `연성대_보고서그림_${today()}`,
+        slides: slides.map((s) => ({ title: s.title, imageBase64: s.imageBase64 })),
+      });
+      $("#aiArtStatus").textContent = "PPT 다운로드 완료";
+    } catch (err) {
+      alert(err.message || "PPT 저장에 실패했습니다.");
+    }
+  });
+
+  el.querySelectorAll("[data-del-art]").forEach((btn) => {
+    btn.addEventListener("click", () => {
+      if (!confirm("이 그림을 삭제할까요?")) return;
+      state.aiArts = state.aiArts.filter((a) => a.id !== btn.dataset.delArt);
+      persist();
+      renderAiArt();
+    });
+  });
+}
+
+const REVIEW_TAG_PRESETS = [
+  "수치 근거 보강",
+  "계획 구체화",
+  "환류(PDCA) 보완",
+  "성과·실적 상세",
+  "표·도식 추가",
+  "용어·문장 다듬기",
+];
+
+function reviewListCells(items, empty = "—") {
+  if (!items?.length) return `<span class="muted">${escapeHtml(empty)}</span>`;
+  return `<ul class="review-mini-list">${items
+    .slice(0, 6)
+    .map((t) => `<li>${escapeHtml(t)}</li>`)
+    .join("")}</ul>`;
+}
+
+function renderReviewDocCard(doc) {
+  const s = doc.summary || {};
+  const tags = Array.isArray(doc.reviewTags) ? doc.reviewTags : [];
+  const openTags = tags.filter((t) => t.status !== "done");
+  const admin = isAdmin();
+  const metricsHtml = (s.metrics || []).length
+    ? `<table class="review-metric-table"><thead><tr><th>지표</th><th>수치</th><th>비고</th></tr></thead><tbody>${(
+        s.metrics || []
+      )
+        .map(
+          (m) =>
+            `<tr><td>${escapeHtml(m.label)}</td><td>${escapeHtml(m.value)}</td><td class="muted">${escapeHtml(
+              m.note || ""
+            )}</td></tr>`
+        )
+        .join("")}</tbody></table>`
+    : `<span class="muted">제시된 수치 없음</span>`;
+
+  const guideHtml = (s.adminGuide || []).length
+    ? `<ul class="review-guide-list">${(s.adminGuide || [])
+        .map(
+          (g) => `
+        <li class="priority-${escapeAttr(g.priority || "mid")}">
+          <strong>${escapeHtml(g.item)}</strong>
+          <span>${escapeHtml(g.hint || "")}</span>
+        </li>`
+        )
+        .join("")}</ul>`
+    : `<p class="muted">가이드 없음</p>`;
+
+  const tagChips = tags.length
+    ? tags
+        .map(
+          (t) => `
+      <span class="review-tag ${t.status === "done" ? "is-done" : ""}" data-tag-id="${escapeAttr(t.id)}">
+        #${escapeHtml(t.label)}
+        ${admin ? `<button type="button" class="review-tag-toggle" data-toggle-tag="${escapeAttr(doc.id)}" data-tag="${escapeAttr(t.id)}" title="완료 토글">✓</button>
+        <button type="button" class="review-tag-del" data-del-tag="${escapeAttr(doc.id)}" data-tag="${escapeAttr(t.id)}" title="삭제">×</button>` : ""}
+      </span>`
+        )
+        .join("")
+    : `<span class="muted">리뷰 태그 없음</span>`;
+
+  return `
+    <article class="review-doc-card" data-doc-id="${escapeAttr(doc.id)}">
+      <header class="review-doc-head">
+        <div>
+          <p class="review-doc-kicker">${escapeHtml(doc.partTitle || "파트 미지정")} · ${escapeHtml(doc.by || "")}</p>
+          <h3>${escapeHtml(doc.fileName || "문서")}</h3>
+          <p class="muted">${escapeHtml((doc.createdAt || "").slice(0, 16).replace("T", " "))}
+            ${openTags.length ? ` · <strong class="review-open-count">열린 태그 ${openTags.length}</strong>` : ""}</p>
+        </div>
+        <div class="review-score" title="포함도">
+          <strong>${escapeHtml(String(s.coverageScore ?? "—"))}</strong>
+          <span>점</span>
+        </div>
+      </header>
+      <p class="review-oneliner">${escapeHtml(s.oneLiner || "요약 없음")}</p>
+      <div class="review-summary-grid">
+        <div>
+          <h4>주요 포함사항</h4>
+          ${reviewListCells(s.keyItems)}
+        </div>
+        <div>
+          <h4>수치 제시</h4>
+          ${metricsHtml}
+        </div>
+        <div>
+          <h4>계획 방향</h4>
+          ${reviewListCells(s.plans)}
+        </div>
+        <div>
+          <h4>환류 방향</h4>
+          ${reviewListCells(s.feedbackLoop)}
+        </div>
+      </div>
+      ${
+        admin
+          ? `<details class="review-admin-block" open>
+        <summary>관리자 확인 가이드</summary>
+        <p class="muted review-guide-lead">보고서에 무엇이 들어갔는지 아래 항목으로 점검하세요. 상세가 더 필요하면 리뷰 태그를 달아 주세요.</p>
+        ${guideHtml}
+      </details>`
+          : ""
+      }
+      <div class="review-tags-block">
+        <div class="row review-tags-head">
+          <h4>리뷰 태그</h4>
+          ${admin ? `<span class="muted">상세 보완 요청용</span>` : ""}
+        </div>
+        <div class="review-tag-row">${tagChips}</div>
+        ${
+          admin
+            ? `<div class="review-tag-add row">
+          <select data-tag-preset="${escapeAttr(doc.id)}">
+            <option value="">태그 선택…</option>
+            ${REVIEW_TAG_PRESETS.map((p) => `<option value="${escapeAttr(p)}">${escapeHtml(p)}</option>`).join("")}
+            ${(s.suggestedReviewTags || [])
+              .map((p) => `<option value="${escapeAttr(p)}">추천 · ${escapeHtml(p)}</option>`)
+              .join("")}
+          </select>
+          <input type="text" data-tag-custom="${escapeAttr(doc.id)}" placeholder="직접 입력" />
+          <button type="button" class="btn btn-sm btn-primary" data-add-tag="${escapeAttr(doc.id)}">태그 달기</button>
+        </div>`
+            : ""
+        }
+      </div>
+      ${
+        canEditSubmission(doc.partId) || isAdmin()
+          ? `<div class="row" style="margin-top:10px">
+          <button type="button" class="btn btn-sm btn-danger" data-del-doc="${escapeAttr(doc.id)}">문서 삭제</button>
+        </div>`
+          : ""
+      }
+    </article>`;
+}
+
+function renderReview() {
+  const el = $("#view-review");
+  if (!el) return;
+  ensureReviewDocs();
+  ensureReviewSession();
+  const tab = state._reviewTab || "summary";
+  const admin = isAdmin();
+  const me = currentMember();
+  const myParts = isAdmin()
+    ? state.parts || []
+    : (state.parts || []).filter((p) => p.assigneeId === me?.id);
+  const allParts = state.parts || [];
+  const docs = [...state.reviewDocs];
+  const docsByPart = (partId) =>
+    docs
+      .filter((d) => d.partId === partId)
+      .sort((a, b) => String(b.createdAt || "").localeCompare(String(a.createdAt || "")));
+  const session = state.reviewSession;
+  const partNav = reviewPartNavItems();
+  const activeNav =
+    partNav.find((n) => n.id === session.activePartId) || partNav[0] || null;
+  const partComments = (session.comments || []).filter((c) => c.partId === activeNav?.id);
+  const activePartDocs = activeNav?.isPart ? docsByPart(activeNav.id) : [];
+  const boardRows = allParts.map((p) => {
+    const m = memberById(p.assigneeId);
+    const partDocs = docsByPart(p.id);
+    const latest = partDocs[0];
+    return { part: p, member: m, latest, partDocs };
+  });
+
+  el.innerHTML = `
+    <div class="review-page">
+      <div class="review-subtabs" role="tablist">
+        <button type="button" class="review-subtab ${tab === "summary" ? "active" : ""}" data-review-tab="summary">① 업로드·요약표</button>
+        <button type="button" class="review-subtab ${tab === "session" ? "active" : ""}" data-review-tab="session">② 윤독 회의</button>
+      </div>
+
+      ${
+        tab === "summary"
+          ? `
+      <section class="panel">
+        <div class="panel-head">
+          <div>
+            <h2 class="panel-title">담당자 PDF 업로드</h2>
+            <p class="muted" style="margin:4px 0 0">목차·할당에 등록된 파트 기준으로 올립니다. PDF → 주요 포함사항·수치·계획·환류 요약표 (.pdf · .docx · .hwpx · 텍스트)</p>
+          </div>
+        </div>
+        ${
+          myParts.length
+            ? `<div class="form-grid two">
+          <label class="field">담당 파트 <span class="muted">(목차·할당 구분)</span>
+            <select id="reviewPart">
+              ${myParts
+                .map((p) => `<option value="${escapeAttr(p.id)}">${escapeHtml(`${p.section}. ${p.title}`)}</option>`)
+                .join("")}
+            </select>
+          </label>
+          <label class="field">파일
+            <input type="file" id="reviewFile" accept=".pdf,.txt,.md,.docx,.hwpx,application/pdf" />
+          </label>
+          <label class="field full">또는 본문 붙여넣기 (스캔 PDF일 때)
+            <textarea id="reviewText" rows="5" placeholder="PDF 텍스트 추출이 안 되면 여기에 붙여넣으세요."></textarea>
+          </label>
+        </div>
+        <div class="row" style="margin-top:12px;gap:8px;flex-wrap:wrap">
+          <button type="button" class="btn btn-primary" id="reviewUploadRun">업로드 · 요약표 생성</button>
+          <span class="muted" id="reviewUploadStatus"></span>
+        </div>`
+            : `<div class="empty">배정된 파트가 없어 업로드할 수 없습니다. 관리자에게 목차·할당을 요청하세요.</div>`
+        }
+      </section>
+
+      <section class="panel">
+        <div class="panel-head">
+          <h2 class="panel-title">요약표 보드</h2>
+          <span class="muted">목차·할당 순서 · ${allParts.length}개 파트 · 업로드 ${docs.length}건</span>
+        </div>
+        ${
+          allParts.length
+            ? `<div class="table-wrap review-board-table-wrap">
+          <table class="data-table review-board-table">
+            <thead>
+              <tr>
+                <th>할당 파트</th>
+                <th>담당</th>
+                <th>주요 포함사항</th>
+                <th>수치</th>
+                <th>계획</th>
+                <th>환류</th>
+                <th>점수</th>
+                <th>태그</th>
+              </tr>
+            </thead>
+            <tbody>
+              ${boardRows
+                .map(({ part: p, member: m, latest }) => {
+                  const s = latest?.summary || {};
+                  const open = (latest?.reviewTags || []).filter((t) => t.status !== "done").length;
+                  return `<tr data-scroll-doc="${escapeAttr(latest?.id || "")}" data-goto-part="${escapeAttr(p.id)}" class="review-board-row ${latest ? "" : "is-empty"}">
+                    <td>
+                      <strong>${escapeHtml(`${p.section}. ${p.title}`)}</strong><br />
+                      <span class="muted">${escapeHtml(p.pageStart ?? "?")}–${escapeHtml(String(p.pageEnd ?? "?"))}p${p.note ? ` · ${escapeHtml(p.note)}` : ""}</span>
+                    </td>
+                    <td>${escapeHtml(m?.name || "미배정")}</td>
+                    <td>${latest ? reviewListCells(s.keyItems, "—") : `<span class="muted">미업로드</span>`}</td>
+                    <td>${
+                      latest && (s.metrics || []).length
+                        ? (s.metrics || [])
+                            .slice(0, 3)
+                            .map((x) => `<div><strong>${escapeHtml(x.value)}</strong> <span class="muted">${escapeHtml(x.label)}</span></div>`)
+                            .join("")
+                        : "—"
+                    }</td>
+                    <td>${latest ? reviewListCells(s.plans, "—") : "—"}</td>
+                    <td>${latest ? reviewListCells(s.feedbackLoop, "—") : "—"}</td>
+                    <td>${latest ? `<strong>${escapeHtml(String(s.coverageScore ?? "—"))}</strong>` : "—"}</td>
+                    <td>${open ? `<span class="badge warn">열림 ${open}</span>` : latest ? `<span class="muted">없음</span>` : "—"}</td>
+                  </tr>`;
+                })
+                .join("")}
+            </tbody>
+          </table>
+        </div>
+        <div class="review-doc-list">
+          ${boardRows
+            .flatMap(({ partDocs }) => partDocs)
+            .map(renderReviewDocCard)
+            .join("") || `<div class="empty">담당자가 PDF를 올리면 파트별로 상세 요약이 쌓입니다.</div>`}
+        </div>`
+            : `<div class="empty">목차·할당에 등록된 파트가 없습니다. 관리자가 먼저 보고서 할당을 설정해 주세요.</div>`
+        }
+      </section>`
+          : `
+      <section class="panel">
+        <div class="panel-head">
+          <div>
+            <h2 class="panel-title">윤독 회의</h2>
+            <p class="muted" style="margin:4px 0 0">왼쪽은 <strong>목차·할당</strong>과 같은 파트 구분입니다. 할당 순서대로 윤독하며 평가 코멘트를 남깁니다.${admin ? " (코멘트는 관리자)" : " (조회는 전원)"}</p>
+          </div>
+        </div>
+        <div class="form-grid two">
+          <label class="field">회의 제목
+            <input id="reviewSessionTitle" value="${escapeAttr(session.title || "")}" ${admin ? "" : "readonly"} />
+          </label>
+          <label class="field">일자
+            <input type="date" id="reviewSessionDate" value="${escapeAttr(session.date || today())}" ${admin ? "" : "readonly"} />
+          </label>
+        </div>
+      </section>
+
+      <div class="review-session-layout">
+        <aside class="panel review-agenda">
+          <h3 class="panel-title" style="font-size:1rem">할당 파트</h3>
+          <p class="muted" style="margin:4px 0 0;font-size:var(--text-xs)">목차·할당 설정 순</p>
+          <ol class="review-agenda-list">
+            ${
+              partNav.length
+                ? partNav
+                    .map((nav) => {
+                      const count = (session.comments || []).filter((c) => c.partId === nav.id).length;
+                      const hasDoc = nav.isPart && docsByPart(nav.id).length > 0;
+                      const on = nav.id === activeNav?.id;
+                      return `<li>
+                  <button type="button" class="review-agenda-btn ${on ? "active" : ""} ${nav.isPart ? "" : "is-overall"}" data-review-part="${escapeAttr(nav.id)}">
+                    <span class="review-agenda-num">${nav.index}</span>
+                    <span>
+                      <strong>${escapeHtml(nav.label)}</strong>
+                      <small>${escapeHtml(nav.isPart ? `${nav.assigneeName} · ${nav.pageLabel}` : nav.note)}</small>
+                      ${hasDoc ? `<em class="review-has-doc">요약표 있음</em>` : nav.isPart ? `<em>미업로드</em>` : ""}
+                      ${count ? `<em>코멘트 ${count}</em>` : ""}
+                    </span>
+                  </button>
+                </li>`;
+                    })
+                    .join("")
+                : `<li class="empty">할당된 파트가 없습니다.</li>`
+            }
+          </ol>
+        </aside>
+
+        <section class="panel review-session-main">
+          <div class="panel-head">
+            <div>
+              <h2 class="panel-title">${escapeHtml(activeNav?.label || "파트")}</h2>
+              <p class="muted" style="margin:4px 0 0">
+                ${
+                  activeNav?.isPart
+                    ? `담당 ${escapeHtml(activeNav.assigneeName)} · ${escapeHtml(activeNav.pageLabel)}${activeNav.note ? ` · ${escapeHtml(activeNav.note)}` : ""}`
+                    : escapeHtml(activeNav?.note || "")
+                }
+              </p>
+            </div>
+          </div>
+
+          ${
+            activeNav?.isPart
+              ? `<div class="review-part-summary">
+            ${
+              activePartDocs.length
+                ? activePartDocs
+                    .map((d) => {
+                      const s = d.summary || {};
+                      return `<div class="review-ref-card">
+                  <strong>${escapeHtml(d.fileName)}</strong>
+                  <p>${escapeHtml(s.oneLiner || "")}</p>
+                  <div class="review-summary-grid" style="margin-top:8px">
+                    <div><h4>주요 포함</h4>${reviewListCells(s.keyItems)}</div>
+                    <div><h4>수치</h4>${
+                      (s.metrics || []).length
+                        ? (s.metrics || [])
+                            .slice(0, 4)
+                            .map((x) => `<div><strong>${escapeHtml(x.value)}</strong> ${escapeHtml(x.label)}</div>`)
+                            .join("")
+                        : `<span class="muted">—</span>`
+                    }</div>
+                    <div><h4>계획</h4>${reviewListCells(s.plans)}</div>
+                    <div><h4>환류</h4>${reviewListCells(s.feedbackLoop)}</div>
+                  </div>
+                </div>`;
+                    })
+                    .join("")
+                : `<div class="empty">이 파트의 요약표가 아직 없습니다. ① 업로드·요약표에서 담당자가 PDF를 올리면 여기에 표시됩니다.</div>`
+            }
+          </div>`
+              : `<div class="review-part-summary">
+            <p class="muted">파트별 윤독을 마친 뒤 공통 의견·수정 마감·재취합 일정을 정리합니다.</p>
+            <div class="review-session-ref">
+              ${boardRows
+                .map(({ part: p, latest }) => {
+                  const s = latest?.summary || {};
+                  const cCount = (session.comments || []).filter((c) => c.partId === p.id).length;
+                  return `<div class="review-ref-card">
+                  <strong>${escapeHtml(`${p.section}. ${p.title}`)}</strong>
+                  <p>${latest ? escapeHtml(s.oneLiner || "") : "미업로드"}</p>
+                  <p class="muted">코멘트 ${cCount} · 점수 ${latest?.summary?.coverageScore ?? "—"}</p>
+                </div>`;
+                })
+                .join("")}
+            </div>
+          </div>`
+          }
+
+          ${
+            admin
+              ? `<div class="review-comment-form">
+            <label class="field full">평가 코멘트 <span class="muted">(${escapeHtml(activeNav?.label || "선택 파트")})</span>
+              <textarea id="reviewCommentText" rows="3" placeholder="이 할당 파트에 대한 의견·판정·후속 조치를 적어 주세요."></textarea>
+            </label>
+            <div class="row" style="gap:8px;flex-wrap:wrap;margin-top:8px">
+              <label class="field" style="min-width:140px">판정
+                <select id="reviewCommentRating">
+                  <option value="good">양호</option>
+                  <option value="need">보완 필요</option>
+                  <option value="hold">보류·추가논의</option>
+                </select>
+              </label>
+              <button type="button" class="btn btn-primary" id="reviewCommentAdd" style="align-self:end">코멘트 추가</button>
+            </div>
+          </div>`
+              : ""
+          }
+
+          <div class="review-comment-list">
+            ${
+              partComments.length
+                ? partComments
+                    .map(
+                      (c) => `
+              <article class="review-comment-card rating-${escapeAttr(c.rating || "good")}">
+                <header>
+                  <span class="review-rating-badge">${
+                    c.rating === "need" ? "보완 필요" : c.rating === "hold" ? "보류" : "양호"
+                  }</span>
+                  <span class="muted">${escapeHtml(c.by || "")} · ${escapeHtml(
+                        (c.createdAt || "").slice(0, 16).replace("T", " ")
+                      )}</span>
+                  ${
+                    admin
+                      ? `<button type="button" class="btn btn-sm btn-danger" data-del-comment="${escapeAttr(c.id)}">삭제</button>`
+                      : ""
+                  }
+                </header>
+                <p>${escapeHtml(c.text)}</p>
+              </article>`
+                    )
+                    .join("")
+                : `<div class="empty">이 파트에 대한 코멘트가 아직 없습니다.</div>`
+            }
+          </div>
+
+          <label class="field full" style="margin-top:16px">전체 메모 (회의 공통)
+            <textarea id="reviewSessionNotes" rows="4" placeholder="윤독 전체에서 공유할 메모" ${admin ? "" : "readonly"}>${escapeHtml(
+              session.notes || ""
+            )}</textarea>
+          </label>
+          ${admin ? `<div class="row" style="margin-top:8px"><button type="button" class="btn" id="reviewSessionSave">회의 정보 저장</button></div>` : ""}
+        </section>
+      </div>`
+      }
+    </div>
+  `;
+
+  el.querySelectorAll("[data-review-tab]").forEach((btn) => {
+    btn.addEventListener("click", () => {
+      state._reviewTab = btn.dataset.reviewTab;
+      renderReview();
+    });
+  });
+
+  $("#reviewUploadRun")?.addEventListener("click", async () => {
+    const status = $("#reviewUploadStatus");
+    const btn = $("#reviewUploadRun");
+    const partId = $("#reviewPart")?.value || "";
+    const part = partById(partId);
+    if (!part) {
+      alert("파트를 선택해 주세요.");
+      return;
+    }
+    if (!canEditSubmission(partId) && !isAdmin()) {
+      alert("담당 파트만 업로드할 수 있습니다.");
+      return;
+    }
+    let text = ($("#reviewText")?.value || "").trim();
+    let fileName = "붙여넣기 텍스트";
+    const file = $("#reviewFile")?.files?.[0];
+    try {
+      if (btn) btn.disabled = true;
+      if (status) status.textContent = "문서 읽는 중…";
+      if (file) {
+        fileName = file.name;
+        text = await extractTextFromFile(file);
+        if ($("#reviewText")) $("#reviewText").value = text.slice(0, 12000);
+      }
+      if (text.length < 40) throw new Error("분석할 텍스트가 부족합니다.");
+      if (status) status.textContent = "요약표 생성 중… (수십 초 걸릴 수 있습니다)";
+      const data = await analyzeReviewSummary({
+        text,
+        fileName,
+        partTitle: `${part.section}. ${part.title}`,
+        uploader: sessionUser || "",
+        tfName: state.meta?.tfName || "",
+      });
+      ensureReviewDocs();
+      state.reviewDocs.unshift({
+        id: uid("rev"),
+        partId,
+        partTitle: `${part.section}. ${part.title}`,
+        fileName,
+        by: sessionUser || "",
+        createdAt: new Date().toISOString(),
+        textPreview: text.slice(0, 800),
+        summary: data.summary,
+        reviewTags: [],
+      });
+      state.reviewDocs = state.reviewDocs.slice(0, 30);
+      persist();
+      if (status) status.textContent = "완료";
+      renderReview();
+    } catch (err) {
+      if (status) status.textContent = "";
+      alert(err.message || "요약 생성에 실패했습니다.");
+    } finally {
+      if (btn) btn.disabled = false;
+    }
+  });
+
+  el.querySelectorAll("[data-scroll-doc]").forEach((row) => {
+    row.addEventListener("click", () => {
+      const id = row.dataset.scrollDoc;
+      if (!id) return;
+      const card = el.querySelector(`[data-doc-id="${id}"]`);
+      card?.scrollIntoView({ behavior: "smooth", block: "start" });
+    });
+  });
+
+  el.querySelectorAll("[data-goto-part]").forEach((row) => {
+    row.addEventListener("dblclick", () => {
+      ensureReviewSession();
+      state.reviewSession.activePartId = row.dataset.gotoPart;
+      state._reviewTab = "session";
+      persist();
+      renderReview();
+    });
+  });
+
+  el.querySelectorAll("[data-del-doc]").forEach((btn) => {
+    btn.addEventListener("click", () => {
+      if (!confirm("이 문서 요약을 삭제할까요?")) return;
+      state.reviewDocs = state.reviewDocs.filter((d) => d.id !== btn.dataset.delDoc);
+      persist();
+      renderReview();
+    });
+  });
+
+  el.querySelectorAll("[data-add-tag]").forEach((btn) => {
+    btn.addEventListener("click", () => {
+      if (!isAdmin()) return;
+      const id = btn.dataset.addTag;
+      const doc = state.reviewDocs.find((d) => d.id === id);
+      if (!doc) return;
+      const preset = el.querySelector(`[data-tag-preset="${id}"]`)?.value || "";
+      const custom = (el.querySelector(`[data-tag-custom="${id}"]`)?.value || "").trim();
+      const label = custom || preset;
+      if (!label) {
+        alert("태그를 선택하거나 입력해 주세요.");
+        return;
+      }
+      if (!Array.isArray(doc.reviewTags)) doc.reviewTags = [];
+      doc.reviewTags.push({
+        id: uid("tag"),
+        label,
+        by: sessionUser || "",
+        createdAt: new Date().toISOString(),
+        status: "open",
+      });
+      persist();
+      renderReview();
+    });
+  });
+
+  el.querySelectorAll("[data-toggle-tag]").forEach((btn) => {
+    btn.addEventListener("click", () => {
+      if (!isAdmin()) return;
+      const doc = state.reviewDocs.find((d) => d.id === btn.dataset.toggleTag);
+      const tag = doc?.reviewTags?.find((t) => t.id === btn.dataset.tag);
+      if (!tag) return;
+      tag.status = tag.status === "done" ? "open" : "done";
+      persist();
+      renderReview();
+    });
+  });
+
+  el.querySelectorAll("[data-del-tag]").forEach((btn) => {
+    btn.addEventListener("click", () => {
+      if (!isAdmin()) return;
+      const doc = state.reviewDocs.find((d) => d.id === btn.dataset.delTag);
+      if (!doc) return;
+      doc.reviewTags = (doc.reviewTags || []).filter((t) => t.id !== btn.dataset.tag);
+      persist();
+      renderReview();
+    });
+  });
+
+  el.querySelectorAll("[data-review-part]").forEach((btn) => {
+    btn.addEventListener("click", () => {
+      ensureReviewSession();
+      state.reviewSession.activePartId = btn.dataset.reviewPart;
+      persist();
+      renderReview();
+    });
+  });
+
+  $("#reviewCommentAdd")?.addEventListener("click", () => {
+    if (!isAdmin()) return;
+    ensureReviewSession();
+    const text = ($("#reviewCommentText")?.value || "").trim();
+    if (!text) {
+      alert("코멘트를 입력해 주세요.");
+      return;
+    }
+    const rating = $("#reviewCommentRating")?.value || "good";
+    state.reviewSession.comments.unshift({
+      id: uid("rc"),
+      partId: state.reviewSession.activePartId,
+      text,
+      rating,
+      by: sessionUser || "",
+      createdAt: new Date().toISOString(),
+    });
+    state.reviewSession.comments = state.reviewSession.comments.slice(0, 200);
+    persist();
+    renderReview();
+  });
+
+  el.querySelectorAll("[data-del-comment]").forEach((btn) => {
+    btn.addEventListener("click", () => {
+      if (!isAdmin()) return;
+      state.reviewSession.comments = state.reviewSession.comments.filter((c) => c.id !== btn.dataset.delComment);
+      persist();
+      renderReview();
+    });
+  });
+
+  $("#reviewSessionSave")?.addEventListener("click", () => {
+    if (!isAdmin()) return;
+    ensureReviewSession();
+    state.reviewSession.title = ($("#reviewSessionTitle")?.value || "").trim() || "전체 취합본 윤독";
+    state.reviewSession.date = $("#reviewSessionDate")?.value || today();
+    state.reviewSession.notes = $("#reviewSessionNotes")?.value || "";
+    persist();
+    alert("윤독 회의 정보를 저장했습니다.");
+  });
+
+  $("#reviewSessionNotes")?.addEventListener("change", () => {
+    if (!isAdmin()) return;
+    ensureReviewSession();
+    state.reviewSession.notes = $("#reviewSessionNotes").value || "";
+    persist();
+  });
+}
+
 function renderView(name) {
   const map = {
     dashboard: renderDashboard,
     parts: renderParts,
     collections: renderCollections,
+    review: renderReview,
     requests: renderRequests,
     budget: renderBudget,
     schedule: renderSchedule,
@@ -3779,6 +5365,7 @@ function renderView(name) {
     resources: renderResources,
     food: renderFood,
     members: renderMembers,
+    "ai-art": renderAiArt,
     guide: renderGuide,
   };
   map[name]?.();
@@ -4405,6 +5992,8 @@ function importJson(file) {
         foodPolls: [],
         foodCatalog: [],
         foodHistory: [],
+        aiBriefs: [],
+        aiArts: [],
         ...data,
       };
       ensureBudget();
@@ -4412,6 +6001,8 @@ function importJson(file) {
       ensureFoodPolls();
       ensureFoodCatalog();
       ensureFoodHistory();
+      ensureAiBriefs();
+      ensureAiArts();
       persist();
       renderAll();
       alert("JSON을 가져왔습니다.");
@@ -4431,6 +6022,8 @@ async function resetSample() {
   ensureFoodPolls();
   ensureFoodCatalog();
   ensureFoodHistory();
+  ensureAiBriefs();
+  ensureAiArts();
   persist();
   if (sessionUser && memberByName(sessionUser)) {
     renderAll();
@@ -4566,13 +6159,30 @@ async function boot() {
 }
 
 boot().catch((err) => {
-  document.body.innerHTML = `<div style="padding:2rem;font-family:sans-serif">
+  console.error(err);
+  const msg = escapeHtml(err?.message || String(err));
+  document.body.innerHTML = `<div style="padding:2rem;font-family:sans-serif;max-width:36rem">
     <h1>앱을 불러오지 못했습니다</h1>
-    <p>${escapeHtml(err.message)}</p>
-    <p>${
-      window.__TF_SEED__
-        ? "브라우저에서 이 HTML 파일을 다시 열어 주세요. (Safari·Chrome·Samsung Internet 지원)"
-        : "로컬 서버로 <code>index.html</code>을 열어 주세요. (예: <code>npx serve .</code>) 또는 <code>TF-Pulse.html</code> 단일 파일을 사용하세요."
-    }</p>
+    <p>${msg}</p>
+    <p>해결 방법:</p>
+    <ol>
+      <li><strong>http://127.0.0.1:5174/</strong> 로 접속 (파일 직접 열기 X)</li>
+      <li>프로젝트 폴더에서 <code>npm start</code> 실행</li>
+      <li>저장 용량 오류면 아래 버튼으로 로컬 데이터를 비운 뒤 새로고침</li>
+    </ol>
+    <p>
+      <button type="button" id="tfClearStorage" style="padding:8px 14px;cursor:pointer">
+        로컬 저장 데이터 초기화
+      </button>
+    </p>
   </div>`;
+  document.getElementById("tfClearStorage")?.addEventListener("click", () => {
+    try {
+      localStorage.removeItem(STORAGE_KEY);
+      localStorage.removeItem(USER_KEY);
+    } catch {
+      /* ignore */
+    }
+    location.reload();
+  });
 });
