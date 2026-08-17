@@ -1,33 +1,67 @@
 import { existsSync, readFileSync } from "node:fs";
 import { resolve, dirname } from "node:path";
 import { fileURLToPath } from "node:url";
+import { homedir } from "node:os";
 
 const __dirname = dirname(fileURLToPath(import.meta.url));
 
-/** Load OPENAI_API_KEY from process.env, local .env, or Documents/api/.env */
+function parseEnvFile(text) {
+  const out = {};
+  const cleaned = String(text || "").replace(/^\uFEFF/, "");
+  for (const line of cleaned.split(/\r?\n/)) {
+    const t = line.trim();
+    if (!t || t.startsWith("#")) continue;
+    const m = t.match(/^(?:export\s+)?([A-Za-z_][A-Za-z0-9_]*)\s*=\s*(.*)$/);
+    if (!m) continue;
+    let v = m[2].trim();
+    if (
+      (v.startsWith('"') && v.endsWith('"')) ||
+      (v.startsWith("'") && v.endsWith("'"))
+    ) {
+      v = v.slice(1, -1);
+    }
+    out[m[1]] = v;
+  }
+  return out;
+}
+
+function applyEnvFile(file) {
+  if (!existsSync(file)) return false;
+  try {
+    const env = parseEnvFile(readFileSync(file, "utf8"));
+    let applied = false;
+    for (const [k, v] of Object.entries(env)) {
+      if (!v) continue;
+      if (!process.env[k]) {
+        process.env[k] = v;
+        applied = true;
+      }
+    }
+    return applied || Boolean(env.OPENAI_API_KEY);
+  } catch {
+    return false;
+  }
+}
+
+/** Load OPENAI_API_KEY from process.env, project .env, or Documents/api/.env */
 export function loadOpenAIKey() {
-  if (process.env.OPENAI_API_KEY) return process.env.OPENAI_API_KEY.trim();
+  if (process.env.OPENAI_API_KEY?.trim()) {
+    return process.env.OPENAI_API_KEY.trim();
+  }
 
   const candidates = [
     resolve(process.cwd(), ".env"),
+    resolve(process.cwd(), ".env.local"),
     resolve(__dirname, "../../.env"),
-    resolve("C:/Users/user/Documents/api/.env"),
+    resolve(__dirname, "../../.env.local"),
+    resolve(homedir(), "Documents", "api", ".env"),
+    "C:/Users/user/Documents/api/.env",
   ];
 
   for (const file of candidates) {
-    try {
-      if (!existsSync(file)) continue;
-      const text = readFileSync(file, "utf8");
-      const m = text.match(/^\s*OPENAI_API_KEY\s*=\s*(.+)\s*$/m);
-      if (m) {
-        const key = m[1].trim().replace(/^["']|["']$/g, "");
-        if (key) {
-          process.env.OPENAI_API_KEY = key;
-          return key;
-        }
-      }
-    } catch {
-      /* continue */
+    applyEnvFile(file);
+    if (process.env.OPENAI_API_KEY?.trim()) {
+      return process.env.OPENAI_API_KEY.trim();
     }
   }
   return "";
@@ -50,16 +84,16 @@ export async function readJsonBody(req) {
   return JSON.parse(raw);
 }
 
-export async function openaiChat({ system, user, jsonMode = true }) {
+export async function openaiChat({ system, user, jsonMode = true, temperature = 0.3 }) {
   const key = loadOpenAIKey();
   if (!key) {
-    const err = new Error("OPENAI_API_KEY가 없습니다. .env 또는 Vercel 환경변수를 설정해 주세요.");
+    const err = new Error("OPENAI_API_KEY가 없습니다. Documents/api/.env 또는 Vercel 환경변수를 설정해 주세요.");
     err.status = 500;
     throw err;
   }
   const body = {
     model: "gpt-4o-mini",
-    temperature: 0.3,
+    temperature,
     messages: [
       { role: "system", content: system },
       { role: "user", content: user },
@@ -87,7 +121,7 @@ export async function openaiChat({ system, user, jsonMode = true }) {
 export async function openaiImage({ prompt, size = "1024x1024" }) {
   const key = loadOpenAIKey();
   if (!key) {
-    const err = new Error("OPENAI_API_KEY가 없습니다. .env 또는 Vercel 환경변수를 설정해 주세요.");
+    const err = new Error("OPENAI_API_KEY가 없습니다. Documents/api/.env 또는 Vercel 환경변수를 설정해 주세요.");
     err.status = 500;
     throw err;
   }

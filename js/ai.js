@@ -101,12 +101,16 @@ export async function generateYeonsungImage(payload) {
   return callAiApi("/api/generate-image", payload);
 }
 
+export async function planReportDiagram(payload) {
+  return callAiApi("/api/plan-diagram", payload);
+}
+
 export async function downloadImagesAsPpt({ title, slides }) {
   const PptxGenJS = (await import("https://cdn.jsdelivr.net/npm/pptxgenjs@3.12.0/+esm")).default;
   const pptx = new PptxGenJS();
   pptx.author = "TF Pulse";
-  pptx.title = title || "연성대 테마 보고서 그림";
-  pptx.subject = "혁신지원사업 성과보고서 시각자료";
+  pptx.title = title || "연성대_보고서_참고그림";
+  pptx.subject = "흑백 참고용(비트맵) · 수치 수정은 편집용 PPT 도식 권장";
 
   slides.forEach((slide, i) => {
     const s = pptx.addSlide();
@@ -115,34 +119,35 @@ export async function downloadImagesAsPpt({ title, slides }) {
       y: 0,
       w: "100%",
       h: "100%",
-      fill: { color: "0B2C5F" },
+      fill: { color: "FFFFFF" },
     });
     s.addText(slide.title || `슬라이드 ${i + 1}`, {
       x: 0.4,
-      y: 0.25,
+      y: 0.22,
       w: 9.2,
-      h: 0.45,
-      fontSize: 16,
+      h: 0.4,
+      fontSize: 15,
       bold: true,
-      color: "FFFFFF",
-      fontFace: "Arial",
+      color: "1A1A1A",
+      fontFace: "Malgun Gothic",
     });
     if (slide.imageBase64) {
       s.addImage({
         data: `image/png;base64,${slide.imageBase64}`,
-        x: 0.5,
-        y: 0.85,
-        w: 9,
-        h: 4.5,
+        x: 0.55,
+        y: 0.75,
+        w: 8.9,
+        h: 4.35,
       });
     }
-    s.addText("연성대학교 테마 · TF Pulse 자동생성 · 수정하여 활용하세요", {
+    s.addText("참고용 비트맵 · 숫자 수정이 필요하면「편집용 PPT 도식」을 사용하세요", {
       x: 0.4,
-      y: 5.45,
+      y: 5.35,
       w: 9.2,
-      h: 0.3,
-      fontSize: 10,
-      color: "A8C4E8",
+      h: 0.25,
+      fontSize: 9,
+      color: "666666",
+      fontFace: "Malgun Gothic",
     });
   });
 

@@ -1,6 +1,6 @@
 /**
  * Local static + API server.
- * Loads OPENAI_API_KEY from project .env or C:/Users/user/Documents/api/.env
+ * Loads OPENAI_API_KEY from project .env or %USERPROFILE%/Documents/api/.env
  */
 import http from "node:http";
 import { readFileSync, existsSync, statSync } from "node:fs";
@@ -53,6 +53,7 @@ const server = http.createServer(async (req, res) => {
     if (path === "/api/analyze") return runApi("analyze", req, res);
     if (path === "/api/generate-image") return runApi("generate-image", req, res);
     if (path === "/api/review-summary") return runApi("review-summary", req, res);
+    if (path === "/api/plan-diagram") return runApi("plan-diagram", req, res);
 
     if (req.method === "OPTIONS") {
       res.statusCode = 204;

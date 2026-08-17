@@ -7,15 +7,17 @@
 ### 로컬 서버 (AI API 포함)
 
 1. OpenAI 키 설정 (둘 중 하나)
-   - `c:\Users\user\Documents\api\.env` 에 `OPENAI_API_KEY=...` (자동 로드)
+   - `c:\Users\user\Documents\api\.env` 에 `OPENAI_API_KEY=...` (자동 로드·동기화)
    - 또는 프로젝트 루트 `.env` 에 동일하게 설정
-2. 실행:
+2. 실행 (`npm start` 시 Documents/api/.env → 프로젝트 `.env` 자동 동기화):
 
 ```bash
 npm run start
 ```
 
 브라우저: [http://127.0.0.1:5174/](http://127.0.0.1:5174/)
+
+키만 다시 맞출 때: `npm run sync-env`
 
 ### 단일 HTML (오프라인·모바일)
 

@@ -108,7 +108,21 @@
     <section class="view" id="view-members"></section>
     <section class="view" id="view-guide"></section>
 
-    <footer class="app-footer">powered by Jay.Mun</footer>
+    <footer class="app-footer" role="contentinfo">
+      <div class="app-footer-brand" tabindex="0" aria-label="Copyright © 2026 jay.mun. All rights reserved.">
+        <img
+          class="app-footer-logo"
+          src="assets/gomjwi-appa-mark.png"
+          alt=""
+          width="72"
+          height="72"
+          loading="lazy"
+          decoding="async"
+          aria-hidden="true"
+        />
+        <p class="app-footer-copyright">Copyright © 2026 jay.mun. All rights reserved.</p>
+      </div>
+    </footer>
   </div>
 
   <div id="remindBackdrop" class="remind-backdrop" hidden>
@@ -131,7 +145,8 @@
   </div>
 
   <div id="requestBackdrop" class="remind-backdrop" hidden>
-    <div class="remind-card" role="dialog" aria-modal="true" aria-labelledby="requestTitle">
+    <div class="remind-card request-popup-card" role="dialog" aria-modal="true" aria-labelledby="requestTitle">
+      <div class="request-autoclose" id="requestAutoCloseCount" hidden aria-live="polite" title="조작하지 않으면 자동으로 닫힙니다">5</div>
       <div class="remind-head">
         <div>
           <p class="remind-kicker">Admin Request</p>
@@ -1263,12 +1278,64 @@ dialog::backdrop {
 }
 
 .app-footer {
-  margin-top: 40px;
-  padding: 18px 8px 8px;
+  margin-top: 48px;
+  padding: 28px 12px 8px;
   text-align: center;
   font-size: var(--text-xs);
   color: var(--ink-faint);
   letter-spacing: 0.02em;
+  border-top: 1px solid var(--line);
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  gap: 0;
+}
+
+.app-footer-brand {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  gap: 6px;
+  cursor: default;
+  outline: none;
+}
+
+.app-footer-logo {
+  width: min(67px, 20vw);
+  height: auto;
+  display: block;
+  user-select: none;
+  -webkit-user-drag: none;
+  opacity: 0.22;
+  filter: grayscale(1) contrast(0.85) brightness(1.35);
+  mix-blend-mode: multiply;
+  transition: opacity 0.2s ease;
+}
+
+.app-footer-copyright {
+  margin: 0;
+  font-size: 0.78rem;
+  font-weight: 700;
+  color: var(--ink);
+  letter-spacing: 0.01em;
+  max-height: 0;
+  opacity: 0;
+  overflow: hidden;
+  transform: translateY(-2px);
+  transition: opacity 0.2s ease, max-height 0.2s ease, transform 0.2s ease;
+  pointer-events: none;
+}
+
+.app-footer-brand:hover .app-footer-copyright,
+.app-footer-brand:focus-visible .app-footer-copyright {
+  max-height: 2.5em;
+  opacity: 1;
+  transform: none;
+}
+
+.app-footer-brand:hover .app-footer-logo,
+.app-footer-brand:focus-visible .app-footer-logo {
+  opacity: 0.32;
 }
 
 .remind-bell {
@@ -1966,6 +2033,41 @@ body:not(.is-admin):not(.is-food) .food-catalog-panel {
   padding: 20px 18px 16px;
   box-shadow: 0 24px 80px rgba(0, 0, 0, 0.22);
   animation: fade-up 280ms var(--ease);
+}
+
+.request-popup-card {
+  position: relative;
+}
+
+.request-autoclose {
+  position: absolute;
+  top: 16px;
+  left: 14px;
+  z-index: 2;
+  min-width: 36px;
+  height: 36px;
+  padding: 0 8px;
+  border-radius: 980px;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  background: rgba(11, 44, 95, 0.1);
+  color: #0b2c5f;
+  font-size: 1.05rem;
+  font-weight: 800;
+  letter-spacing: -0.02em;
+  line-height: 1;
+  pointer-events: none;
+  user-select: none;
+}
+
+.request-autoclose.is-urgent {
+  background: rgba(196, 50, 50, 0.12);
+  color: #a32020;
+}
+
+.request-popup-card:has(.request-autoclose:not([hidden])) .remind-head > div {
+  padding-left: 40px;
 }
 
 .remind-head {
@@ -2857,7 +2959,7 @@ body {
 }
 
 .app-footer {
-  padding-bottom: calc(12px + env(safe-area-inset-bottom, 0));
+  padding-bottom: calc(20px + env(safe-area-inset-bottom, 0));
 }
 
 .tab-bar {
@@ -4864,6 +4966,48 @@ function updateRequestPlane() {
   }
 }
 
+let requestPopupCountdownTimer = null;
+
+function clearRequestPopupAutoClose() {
+  if (requestPopupCountdownTimer) {
+    window.clearInterval(requestPopupCountdownTimer);
+    requestPopupCountdownTimer = null;
+  }
+  const countEl = $("#requestAutoCloseCount");
+  if (countEl) {
+    countEl.hidden = true;
+    countEl.textContent = "";
+    countEl.classList.remove("is-urgent");
+  }
+}
+
+function cancelRequestPopupAutoClose() {
+  clearRequestPopupAutoClose();
+}
+
+function startRequestPopupAutoClose() {
+  clearRequestPopupAutoClose();
+  const countEl = $("#requestAutoCloseCount");
+  let left = 5;
+  if (countEl) {
+    countEl.hidden = false;
+    countEl.textContent = String(left);
+    countEl.classList.toggle("is-urgent", left <= 2);
+  }
+  requestPopupCountdownTimer = window.setInterval(() => {
+    left -= 1;
+    if (left <= 0) {
+      clearRequestPopupAutoClose();
+      closeRequestPopup();
+      return;
+    }
+    if (countEl) {
+      countEl.textContent = String(left);
+      countEl.classList.toggle("is-urgent", left <= 2);
+    }
+  }, 1000);
+}
+
 function renderRequestPopupList(items) {
   const list = $("#requestList");
   if (!items.length) {
@@ -4897,6 +5041,7 @@ function renderRequestPopupList(items) {
 
   list.querySelectorAll("[data-done-req]").forEach((btn) => {
     btn.addEventListener("click", () => {
+      cancelRequestPopupAutoClose();
       completeRequest(btn.dataset.doneReq);
       const left = myPendingRequests();
       if (left.length) renderRequestPopupList(left);
@@ -4931,9 +5076,11 @@ function openRequestPopup(force = false) {
   renderRequestPopupList(pending);
   $("#requestBackdrop").hidden = false;
   updateRequestPlane();
+  startRequestPopupAutoClose();
 }
 
 function closeRequestPopup() {
+  clearRequestPopupAutoClose();
   $("#requestBackdrop").hidden = true;
   updateRequestPlane();
 }
@@ -8571,6 +8718,13 @@ async function boot() {
     closeRequestPopup();
     setView("requests");
   });
+  $("#requestBackdrop .request-popup-card")?.addEventListener(
+    "pointerdown",
+    () => {
+      cancelRequestPopupAutoClose();
+    },
+    { capture: true }
+  );
   $("#remindSnoozeAll")?.addEventListener("click", () => {
     getUpcomingReminders().forEach((s) => snoozeReminder(s.id));
     closeRemindPopup();

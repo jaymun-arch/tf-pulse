@@ -5,9 +5,11 @@
   "type": "module",
   "description": "보고서 TF 운영 웹앱 (JSON 기반) + OpenAI 취합분석·그림생성",
   "scripts": {
+    "sync-env": "node scripts/sync-openai-env.mjs",
+    "prestart": "node scripts/sync-openai-env.mjs",
     "start": "node server/dev-api.mjs",
     "serve": "node server/dev-api.mjs",
-    "dev": "node server/dev-api.mjs"
+    "dev": "node scripts/sync-openai-env.mjs && node server/dev-api.mjs"
   },
   "engines": {
     "node": ">=18"

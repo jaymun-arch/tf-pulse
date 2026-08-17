@@ -3,8 +3,11 @@ import {
   analyzeReportText,
   analyzeReviewSummary,
   generateYeonsungImage,
+  planReportDiagram,
   downloadImagesAsPpt,
 } from "./ai.js";
+import { REPORT_LAYOUTS, downloadReportLayoutPpt, layoutPreviewWireHtml } from "./report-layouts.js";
+import { downloadEditableDiagramPpt, diagramPreviewWireHtml } from "./report-diagrams.js";
 
 const STORAGE_KEY = "tf-ops-data-v10";
 const USER_KEY = "tf-ops-user-v1";
@@ -64,32 +67,82 @@ const BUDGET_CATALOG = {
 };
 
 const VIEW_META = {
-  dashboard: { title: "요약", desc: "파트 할당·취합·예산·일정을 한눈에 확인합니다." },
+  dashboard: { title: "홈", desc: "내 할 일·팀 취합 진도·작성 기준(계획/실적)을 한눈에 봅니다." },
   parts: { title: "목차·할당", desc: "관리자 마스터: 사업보고서 목차와 페이지 할당을 세팅합니다." },
   collections: {
-    title: "취합 현황",
+    title: "취합",
     desc: "취합 입력과 연성대 자율혁신계획서 틀 기준 AI 검증·브리핑을 한 화면에서 다룹니다.",
   },
   review: {
     title: "윤독·리뷰",
     desc: "목차·할당 파트 구분으로 PDF 요약표를 보고, 같은 구분 순서대로 윤독 코멘트를 남깁니다.",
   },
-  requests: { title: "공통 요청", desc: "관리자 공통 요청을 보내거나, 받은 요청을 확인하고 완료 처리합니다." },
-  budget: { title: "예산취합", desc: "혁신지원사업 예산 항목을 편성·입력·취합합니다." },
-  schedule: { title: "통합 일정", desc: "TF 일정을 한눈에 보고 일정을 추가합니다." },
+  requests: { title: "요청", desc: "관리자 공통 요청을 보내거나, 받은 요청을 확인하고 완료 처리합니다." },
+  budget: {
+    title: "예산",
+    desc: "운영계획수립용(예산)과 결과보고작성용(실적)을 구분해 입력·취합합니다.",
+  },
+  schedule: { title: "일정", desc: "TF 일정을 한눈에 보고 일정을 추가합니다." },
   drive: { title: "드라이브", desc: "주요 문서가 있는 구글드라이브 링크를 확인합니다." },
   resources: { title: "공통 서식", desc: "교육부 지침·스타일 가이드·공통 서식을 한곳에 모읍니다." },
   food: { title: "오늘 뭐먹지", desc: "보고서 쓰다 배고플 때, 돌림판으로 메뉴를 정해 보세요." },
-  members: { title: "대상자 관리", desc: "관리자 마스터: 보고서 작성 참여 대상자를 등록·관리합니다." },
+  members: { title: "대상자", desc: "관리자 마스터: 보고서 작성 참여 대상자를 등록·관리합니다." },
   "ai-art": {
-    title: "보고서 그림",
-    desc: "자율혁신계획서 도식 양식(개요·추진체계·매트릭스 등)으로 그림을 만들고 PPT로 내려받습니다.",
+    title: "그림",
+    desc: "보고서 양식 레이아웃 PPT를 내려받거나, AI로 도식을 만들어 PPT에 담습니다.",
   },
   guide: {
-    title: "사용방법.",
-    desc: "시스템의 방향과 메뉴별 사용법을 짧게 정리했습니다. 처음이라면 아래를 읽고 요약 탭부터 시작해 보세요.",
+    title: "사용방법",
+    desc: "시스템의 방향과 메뉴별 사용법을 짧게 정리했습니다. 처음이라면 홈부터 시작해 보세요.",
   },
 };
+
+/** 상단 메뉴를 단순화한 그룹 구조 (세부 기능은 하위 탭) */
+const NAV_GROUPS = {
+  home: {
+    label: "홈",
+    views: ["dashboard"],
+    defaultView: "dashboard",
+  },
+  report: {
+    label: "보고서",
+    views: ["collections", "review", "ai-art"],
+    labels: { collections: "취합", review: "윤독·리뷰", "ai-art": "그림" },
+    defaultView: "collections",
+  },
+  ops: {
+    label: "운영",
+    views: ["schedule", "requests", "food"],
+    labels: { schedule: "일정", requests: "요청", food: "오늘 뭐먹지" },
+    defaultView: "schedule",
+  },
+  budget: {
+    label: "예산",
+    views: ["budget"],
+    defaultView: "budget",
+  },
+  library: {
+    label: "자료",
+    views: ["drive", "resources", "guide"],
+    labels: { drive: "드라이브", resources: "공통 서식", guide: "사용방법" },
+    defaultView: "drive",
+  },
+  setup: {
+    label: "설정",
+    adminOnly: true,
+    views: ["parts", "members"],
+    labels: { parts: "목차·할당", members: "대상자" },
+    defaultView: "parts",
+  },
+};
+
+const VIEW_TO_NAV = Object.fromEntries(
+  Object.entries(NAV_GROUPS).flatMap(([navId, g]) => g.views.map((v) => [v, navId]))
+);
+
+let activeNavId = "home";
+let activeViewName = "dashboard";
+const lastViewByNav = {};
 
 let state = null;
 let activeRound = 1;
@@ -166,6 +219,106 @@ function allocatedTotal() {
   return state.parts.reduce((sum, p) => sum + pagesOf(p), 0);
 }
 
+/** 취합 진도판 상태: 미착수 / 작성중 / 제출 */
+function submissionBoardStatus(sub) {
+  if (!sub) return { id: "todo", label: "미착수", cls: "pending" };
+  if (sub.status === "submitted" || sub.partDone) {
+    return { id: "done", label: "제출", cls: "ok" };
+  }
+  const hasPages = Number(sub.pageCount) > 0;
+  const hasFile =
+    (Array.isArray(sub.checkFiles) && sub.checkFiles.some((f) => f && f.name)) ||
+    Boolean(sub.altSubmit);
+  if (hasPages || hasFile) return { id: "wip", label: "작성중", cls: "warn" };
+  return { id: "todo", label: "미착수", cls: "pending" };
+}
+
+function latestCollection() {
+  if (!state.collections?.length) return null;
+  const maxRound = Math.max(...state.collections.map((c) => c.round));
+  return state.collections.find((c) => c.round === maxRound) || state.collections[0];
+}
+
+/** 홈·할 일용: 내 미완 작업 */
+function buildMyActionItems() {
+  const items = [];
+  const mine = myPartIds();
+  const col = latestCollection();
+  if (col && mine.length) {
+    col.submissions
+      .filter((s) => mine.includes(s.partId))
+      .forEach((s) => {
+        const st = submissionBoardStatus(s);
+        if (st.id === "done") return;
+        const p = partById(s.partId);
+        items.push({
+          id: `col-${col.round}-${s.partId}`,
+          kind: "collection",
+          title: `${p ? `${p.section}. ${p.title}` : s.partId} · ${st.label}`,
+          meta: `${col.name} 취합`,
+          goto: "collections",
+          urgent: st.id === "todo",
+        });
+      });
+  }
+
+  ensureRequests();
+  myPendingRequests().forEach((r) => {
+    const days = r.dueDate ? daysUntil(r.dueDate) : null;
+    items.push({
+      id: `req-${r.id}`,
+      kind: "request",
+      title: r.title || "공통 요청",
+      meta: r.dueDate
+        ? `마감 ${r.dueDate}${days != null ? ` · ${timingLabel(days)}` : ""}`
+        : "마감 미지정",
+      goto: "requests",
+      urgent: days != null && days <= 2,
+      requestId: r.id,
+    });
+  });
+
+  ensureBudget();
+  const me = currentMember();
+  const mode = getBudgetInputMode();
+  const meta = budgetModeMeta(mode);
+  if (me) {
+    state.budget.items
+      .filter((i) => i.assigneeId === me.id && !budgetCalcOf(i, mode))
+      .forEach((i) => {
+        items.push({
+          id: `bud-${i.id}`,
+          kind: "budget",
+          title: `${i.no ? `${i.no}. ` : ""}${i.activity || i.title || "예산 항목"} · ${meta.short} 미입력`,
+          meta: meta.tabLabel,
+          goto: "budget",
+          urgent: true,
+        });
+      });
+  }
+  return items;
+}
+
+/** 팀 취합 진도 (최신 차수) */
+function buildTeamCollectionBoard(col = latestCollection()) {
+  if (!col) return [];
+  return col.submissions.map((s) => {
+    const p = partById(s.partId);
+    const m = p ? memberById(p.assigneeId) : null;
+    const st = submissionBoardStatus(s);
+    return {
+      partId: s.partId,
+      section: p?.section || "",
+      title: p?.title || s.partId,
+      assignee: m?.name || "미지정",
+      pages: Number(s.pageCount) || 0,
+      alloc: p ? pagesOf(p) : 0,
+      status: st,
+      isMine: myPartIds().includes(s.partId),
+    };
+  });
+}
+
 function collectionSummary(round) {
   const col = state.collections.find((c) => c.round === round);
   if (!col) return { submitted: 0, pending: 0, pages: 0, totalParts: 0 };
@@ -201,6 +354,7 @@ function normalizeBudgetItem(raw = {}) {
     spent: Number(raw.spent) || 0,
     assigneeId: raw.assigneeId || "",
     calcText: (raw.calcText || "").trim(),
+    actualCalcText: (raw.actualCalcText || "").trim(),
     note: (raw.note || "").trim(),
     expenseType: (raw.expenseType || "").trim(),
     title: activity || (raw.title || "").trim() || "항목",
@@ -221,20 +375,85 @@ function ensureBudget() {
   state.budget.total = Number(state.budget.total) || 0;
   state.budget.note = state.budget.note || "";
   state.budget.yearLabel = state.budget.yearLabel || "당해연도";
+  state.budget.inputMode = state.budget.inputMode === "result" ? "result" : "plan";
   if (!state.budget.expensePlan.length) {
     state.budget.expensePlan = BUDGET_CATALOG.expenseTypes.map((name) => ({ name, planned: 0 }));
   }
 }
 
-function budgetExpenseStatus() {
+function getBudgetInputMode() {
+  ensureBudget();
+  return state.budget.inputMode === "result" ? "result" : "plan";
+}
+
+function setBudgetInputMode(mode) {
+  ensureBudget();
+  ensureReportDoc();
+  const next = mode === "result" ? "result" : "plan";
+  state.budget.inputMode = next;
+  state.report.docKind = next;
+}
+
+function budgetModeMeta(mode = getBudgetInputMode()) {
+  if (mode === "result") {
+    return {
+      mode: "result",
+      tabLabel: "결과보고작성용 (실적)",
+      short: "실적",
+      amountLabel: "실적금액",
+      calcLabel: "실적 산출내역",
+      enteredLabel: "현재 실적 합계",
+      remainLabel: "미집행·확인 필요",
+      filledLabel: "실적 산출 완료",
+      tableTitle: "사업비 비목별 실적 입력 현황",
+      tableSub: "결과보고 작성 기준 · 실적 입력 현황",
+      assigneeTitle: "담당자별 실적 입력 현황",
+      detailTitleManage: "실적 항목 상세",
+      detailTitleMine: "내 실적 항목",
+      bannerLead: "사업비 총액 대비",
+      bannerTail: "의 실적·사용처가 더 확인이 필요합니다.",
+      requestTitle: "실적을 입력하세요",
+      entryHint: "실적금액과 실적 산출내역을 입력한 뒤 저장해 주세요. 편성금액은 참고용입니다.",
+    };
+  }
+  return {
+    mode: "plan",
+    tabLabel: "운영계획수립용 (예산)",
+    short: "예산",
+    amountLabel: "편성금액",
+    calcLabel: "세부 산출내역",
+    enteredLabel: "현재 입력 합계",
+    remainLabel: "사용처 확인 필요",
+    filledLabel: "산출 입력 완료",
+    tableTitle: "사업비 비목별 예산 입력 현황",
+    tableSub: "운영계획 수립 기준 · 편성 입력 현황",
+    assigneeTitle: "담당자별 예산 입력 현황",
+    detailTitleManage: "예산 항목 상세",
+    detailTitleMine: "내 예산 항목",
+    bannerLead: "사업비 총액 대비",
+    bannerTail: "의 사용처가 더 확인이 필요합니다.",
+    requestTitle: "예산을 입력하세요",
+    entryHint: "편성금액과 세부 산출내역을 선택·입력한 뒤 저장해 주세요.",
+  };
+}
+
+function budgetAmountOf(item, mode = getBudgetInputMode()) {
+  return Number(mode === "result" ? item?.spent : item?.planned) || 0;
+}
+
+function budgetCalcOf(item, mode = getBudgetInputMode()) {
+  return ((mode === "result" ? item?.actualCalcText : item?.calcText) || "").trim();
+}
+
+function budgetExpenseStatus(mode = getBudgetInputMode()) {
   ensureBudget();
   const entered = {};
   state.budget.items.forEach((item) => {
     const key = item.expenseType || "미분류";
-    if (!entered[key]) entered[key] = { planned: 0, count: 0, filled: 0 };
-    entered[key].planned += Number(item.planned) || 0;
+    if (!entered[key]) entered[key] = { amount: 0, count: 0, filled: 0 };
+    entered[key].amount += budgetAmountOf(item, mode);
     entered[key].count += 1;
-    if ((item.calcText || "").trim()) entered[key].filled += 1;
+    if (budgetCalcOf(item, mode)) entered[key].filled += 1;
   });
 
   const total = Number(state.budget.total) || 0;
@@ -243,10 +462,10 @@ function budgetExpenseStatus() {
     ...Object.keys(entered).filter((k) => !BUDGET_CATALOG.expenseTypes.includes(k)),
   ];
   const rows = names.map((name) => {
-    const ent = entered[name] || { planned: 0, count: 0, filled: 0 };
+    const ent = entered[name] || { amount: 0, count: 0, filled: 0 };
     return {
       name,
-      entered: ent.planned,
+      entered: ent.amount,
       count: ent.count,
       filled: ent.filled,
       shareEntered: 0,
@@ -261,7 +480,7 @@ function budgetExpenseStatus() {
     r.shareEntered = enteredTotal ? (r.entered / enteredTotal) * 100 : 0;
     r.shareOfTotal = total ? (r.entered / total) * 100 : 0;
   });
-  return { rows, total, enteredTotal, remain, enteredPct, remainPct };
+  return { rows, total, enteredTotal, remain, enteredPct, remainPct, mode };
 }
 
 function budgetItemLabel(item) {
@@ -476,6 +695,7 @@ async function initState() {
         state.requests = seed.requests || [];
       }
       ensureBudget();
+      ensureReportDoc();
       ensureRequests();
       ensureFoodPolls();
       ensureFoodCatalog();
@@ -492,6 +712,7 @@ async function initState() {
   }
   state = await loadSeed();
   ensureBudget();
+  ensureReportDoc();
   ensureRequests();
   ensureFoodPolls();
   ensureFoodCatalog();
@@ -573,32 +794,96 @@ function ensureReviewSession() {
   delete state.reviewSession.activeStep;
 }
 
-function setView(name) {
-  if (name === "ai-brief") name = "collections";
-  if (!isAdmin() && (name === "parts" || name === "members")) {
-    name = "dashboard";
+function navGroupOf(viewName) {
+  return VIEW_TO_NAV[viewName] || "home";
+}
+
+function resolveViewName(name) {
+  if (!name) return "dashboard";
+  if (name === "ai-brief") return "collections";
+  // 그룹 id로 들어오면 기본(또는 마지막) 뷰로
+  if (NAV_GROUPS[name]) {
+    const g = NAV_GROUPS[name];
+    const remembered = lastViewByNav[name];
+    if (remembered && g.views.includes(remembered)) return remembered;
+    return g.defaultView;
   }
-  $$(".tab-btn").forEach((btn) => btn.classList.toggle("active", btn.dataset.view === name));
-  $$(".view").forEach((el) => el.classList.toggle("active", el.id === `view-${name}`));
-  const meta = VIEW_META[name] || { title: name, desc: "" };
+  return name;
+}
+
+function renderSubNav(navId, viewName) {
+  const bar = $("#subNav");
+  if (!bar) return;
+  const group = NAV_GROUPS[navId];
+  if (!group || group.views.length <= 1) {
+    bar.hidden = true;
+    bar.innerHTML = "";
+    return;
+  }
+  bar.hidden = false;
+  bar.innerHTML = group.views
+    .map((v) => {
+      const label = group.labels?.[v] || VIEW_META[v]?.title || v;
+      const on = v === viewName;
+      return `<button type="button" class="sub-tab-btn ${on ? "active" : ""}" data-view="${escapeAttr(v)}" aria-pressed="${on ? "true" : "false"}">${escapeHtml(label)}</button>`;
+    })
+    .join("");
+  bar.querySelectorAll("[data-view]").forEach((btn) => {
+    btn.addEventListener("click", () => setView(btn.dataset.view));
+  });
+}
+
+function setView(name) {
+  let viewName = resolveViewName(name);
+  if (!isAdmin() && (viewName === "parts" || viewName === "members")) {
+    viewName = "dashboard";
+  }
+  if (!isAdmin() && navGroupOf(viewName) === "setup") {
+    viewName = "dashboard";
+  }
+  const navId = navGroupOf(viewName);
+  if (NAV_GROUPS[navId]?.adminOnly && !isAdmin()) {
+    viewName = "dashboard";
+  }
+  const resolvedNav = navGroupOf(viewName);
+  activeNavId = resolvedNav;
+  activeViewName = viewName;
+  lastViewByNav[resolvedNav] = viewName;
+
+  $$("#mainNav .tab-btn").forEach((btn) => {
+    btn.classList.toggle("active", btn.dataset.nav === resolvedNav);
+  });
+  renderSubNav(resolvedNav, viewName);
+  $$(".view").forEach((el) => el.classList.toggle("active", el.id === `view-${viewName}`));
+
+  const group = NAV_GROUPS[resolvedNav];
+  const meta = VIEW_META[viewName] || { title: viewName, desc: "" };
+  const showGroupTitle = group && group.views.length > 1;
+  const title = showGroupTitle ? `${group.label} · ${meta.title}` : meta.title || group?.label || viewName;
   let desc = meta.desc;
-  if (name === "collections") {
+  if (viewName === "collections") {
     desc = isAdmin()
       ? "취합 현황을 확인하고, 문서를 올리면 AI가 포함 내용을 브리핑합니다."
       : "본인 담당 파트의 작성 페이지·제출 상태를 입력합니다.";
   }
-  if (!isAdmin() && name === "dashboard") {
+  if (!isAdmin() && viewName === "dashboard") {
     desc = isBudgetManager()
       ? "예산 배정·세부산출 통계를 확인합니다."
       : "나에게 할당된 파트와 진행 현황을 확인합니다.";
   }
-  if (name === "budget") {
-    if (isBudgetManager()) desc = "혁신지원사업 예산 항목을 취합·통계로 관리합니다.";
-    else if (!isAdmin()) desc = "배정된 예산 항목의 산출내역을 선택·입력 후 저장합니다.";
+  if (viewName === "budget") {
+    const modeMeta = budgetModeMeta();
+    if (isBudgetManager()) {
+      desc = `${modeMeta.tabLabel} 기준으로 항목을 취합·통계로 관리합니다.`;
+    } else if (!isAdmin()) {
+      desc = `배정 항목의 ${modeMeta.amountLabel}·${modeMeta.calcLabel}을 입력 후 저장합니다.`;
+    } else {
+      desc = "운영계획수립용(예산)과 결과보고작성용(실적)을 구분해 입력·취합합니다.";
+    }
   }
-  $("#viewTitle").textContent = meta.title;
+  $("#viewTitle").textContent = title;
   $("#viewDesc").textContent = desc;
-  renderView(name);
+  renderView(viewName);
 }
 
 function currentUserName() {
@@ -954,6 +1239,48 @@ function updateRequestPlane() {
   }
 }
 
+let requestPopupCountdownTimer = null;
+
+function clearRequestPopupAutoClose() {
+  if (requestPopupCountdownTimer) {
+    window.clearInterval(requestPopupCountdownTimer);
+    requestPopupCountdownTimer = null;
+  }
+  const countEl = $("#requestAutoCloseCount");
+  if (countEl) {
+    countEl.hidden = true;
+    countEl.textContent = "";
+    countEl.classList.remove("is-urgent");
+  }
+}
+
+function cancelRequestPopupAutoClose() {
+  clearRequestPopupAutoClose();
+}
+
+function startRequestPopupAutoClose() {
+  clearRequestPopupAutoClose();
+  const countEl = $("#requestAutoCloseCount");
+  let left = 5;
+  if (countEl) {
+    countEl.hidden = false;
+    countEl.textContent = String(left);
+    countEl.classList.toggle("is-urgent", left <= 2);
+  }
+  requestPopupCountdownTimer = window.setInterval(() => {
+    left -= 1;
+    if (left <= 0) {
+      clearRequestPopupAutoClose();
+      closeRequestPopup();
+      return;
+    }
+    if (countEl) {
+      countEl.textContent = String(left);
+      countEl.classList.toggle("is-urgent", left <= 2);
+    }
+  }, 1000);
+}
+
 function renderRequestPopupList(items) {
   const list = $("#requestList");
   if (!items.length) {
@@ -987,6 +1314,7 @@ function renderRequestPopupList(items) {
 
   list.querySelectorAll("[data-done-req]").forEach((btn) => {
     btn.addEventListener("click", () => {
+      cancelRequestPopupAutoClose();
       completeRequest(btn.dataset.doneReq);
       const left = myPendingRequests();
       if (left.length) renderRequestPopupList(left);
@@ -1005,7 +1333,7 @@ function completeRequest(id) {
   row.completedAt = today();
   persist();
   updateRequestPlane();
-  if ($(".tab-btn.active")?.dataset.view === "requests") renderRequests();
+  if (activeViewName === "requests") renderRequests();
 }
 
 function openRequestPopup(force = false) {
@@ -1021,9 +1349,11 @@ function openRequestPopup(force = false) {
   renderRequestPopupList(pending);
   $("#requestBackdrop").hidden = false;
   updateRequestPlane();
+  startRequestPopupAutoClose();
 }
 
 function closeRequestPopup() {
+  clearRequestPopupAutoClose();
   $("#requestBackdrop").hidden = true;
   updateRequestPlane();
 }
@@ -1032,29 +1362,21 @@ function closeRequestPopup() {
 
 function renderDashboard() {
   const el = $("#view-dashboard");
-  const c1 = collectionSummary(1);
-  const c2 = collectionSummary(2);
-  const c3 = collectionSummary(3);
-  const target = state.meta.totalTargetPages || allocatedTotal();
-  const bud = budgetSummary();
-  const allocPct = bud.total ? Math.min(100, Math.round((bud.planned / bud.total) * 100)) : 0;
-  const mine = myPartIds();
-  const myParts = state.parts.filter((p) => mine.includes(p.id));
-  const admin = isAdmin();
+  ensureReportDoc();
   ensureBudget();
-  const me = currentMember();
-  const myBudgetList = state.budget.items.filter((i) => me && i.assigneeId === me.id);
-  const myBudgetPlanned = myBudgetList.reduce((s, i) => s + (Number(i.planned) || 0), 0);
-  const myBudgetFilled = myBudgetList.filter((i) => (i.calcText || "").trim()).length;
-  const myBudgetPct = myBudgetList.length
-    ? Math.round((myBudgetFilled / myBudgetList.length) * 100)
-    : 0;
-
-  const latestRound = Math.max(...state.collections.map((c) => c.round));
-  const latestCol = state.collections.find((c) => c.round === latestRound);
-  const mySubs = (latestCol?.submissions || []).filter((s) => mine.includes(s.partId));
-  const myPages = mySubs.reduce((sum, s) => sum + (Number(s.pageCount) || 0), 0);
-  const mySubmitted = mySubs.filter((s) => s.status === "submitted").length;
+  ensureRequests();
+  const admin = isAdmin();
+  const doc = reportDocKindMeta();
+  const docKind = getReportDocKind();
+  const budMeta = budgetModeMeta();
+  const actions = buildMyActionItems();
+  const col = latestCollection();
+  const board = buildTeamCollectionBoard(col);
+  const doneCount = board.filter((r) => r.status.id === "done").length;
+  const wipCount = board.filter((r) => r.status.id === "wip").length;
+  const todoCount = board.filter((r) => r.status.id === "todo").length;
+  const pendingReq = myPendingRequests();
+  const overdueReq = pendingReq.filter((r) => r.dueDate && daysUntil(r.dueDate) < 0);
   const monthEvents = state.schedule.filter((s) => {
     const now = new Date();
     const y = now.getFullYear();
@@ -1064,196 +1386,175 @@ function renderDashboard() {
   });
 
   el.innerHTML = `
-    ${
-      admin
-        ? `<div class="panel" style="margin-bottom:10px">
-        <div class="panel-head">
-          <div>
-            <h2 class="panel-title">관리자 마스터</h2>
-            <p class="muted">사업보고서 목차·페이지 할당·작성 대상자를 세팅합니다.</p>
-          </div>
-          <div class="row">
-            <button class="btn btn-primary btn-sm" data-goto="parts">목차·할당 세팅</button>
-            <button class="btn btn-sm" data-goto="members">대상자 관리</button>
-            <button class="btn btn-sm" data-goto="requests">공통 요청</button>
-            <button class="btn btn-sm" id="editMeta">보고서 기본정보</button>
-          </div>
-        </div>
-      </div>`
-        : `<div class="panel" style="margin-bottom:10px">
-        <div class="panel-head">
-          <div>
-            <h2 class="panel-title panel-title-mine"><span class="mine-name">${escapeHtml(sessionUser)}</span>님 담당 현황</h2>
-            <p class="muted">할당된 파트의 진행만 입력할 수 있습니다.</p>
-          </div>
-          <button class="btn btn-primary btn-sm" data-goto="collections">내 취합 입력</button>
-          <button class="btn btn-sm" data-goto="requests">받은 요청</button>
-        </div>
-        <div class="metrics" style="margin:0;grid-template-columns:repeat(2,1fr)">
-          <div class="stat accent">
-            <div class="label">내 담당 파트</div>
-            <div class="value">${myParts.length}</div>
-            <div class="sub">${myParts.map((p) => `${p.section}.${p.title}`).join(" · ") || "미할당"}</div>
-          </div>
-          <div class="stat">
-            <div class="label">${escapeHtml(latestCol?.name || "취합")} 내 작성</div>
-            <div class="value">${myPages}<small>p</small></div>
-            <div class="sub">제출 ${mySubmitted}/${mySubs.length || 0}</div>
-          </div>
-        </div>
-      </div>`
-    }
-
-    <div class="panel" style="margin-bottom:10px">
-      <div class="panel-head">
-        <h2 class="panel-title">대학 전체 예산 취합</h2>
-        <button class="btn btn-sm" data-goto="budget">예산 탭</button>
+    <div class="panel hub-doc-banner" data-kind="${escapeAttr(docKind)}">
+      <div class="hub-doc-banner-main">
+        <span class="hub-doc-kicker">지금 작성 기준</span>
+        <strong class="hub-doc-title">${escapeHtml(doc.name)}</strong>
+        <p class="hub-doc-desc muted">${
+          docKind === "plan"
+            ? "운영계획(예산)·추진 계획 중심으로 취합·예산을 맞춥니다."
+            : "결과보고(실적)·성과 중심으로 취합·예산을 맞춥니다."
+        } · 예산 탭과 같은 기준입니다.</p>
       </div>
-      <div class="metrics" style="margin:0">
-        <div class="stat accent">
-          <div class="label">총 예산액</div>
-          <div class="value" style="font-size:1.05rem">${formatWon(bud.total)}</div>
-          <div class="sub">${escapeHtml(state.budget.note || "혁신지원사업")}</div>
-        </div>
-        <div class="stat">
-          <div class="label">편성예산 합계</div>
-          <div class="value" style="font-size:1.05rem">${formatWon(bud.planned)}</div>
-          <div class="sub">편성률 ${allocPct}% · ${state.budget.items.length}항목</div>
-        </div>
-        <div class="stat">
-          <div class="label">미배정 예산</div>
-          <div class="value" style="font-size:1.05rem">${formatWon(bud.unallocated)}</div>
-          <div class="sub">총예산 − 편성합계</div>
-        </div>
-        <div class="stat">
-          <div class="label">산출 입력 완료</div>
-          <div class="value">${state.budget.items.filter((i) => (i.calcText || "").trim()).length}<small>/${state.budget.items.length}</small></div>
-          <div class="sub">대학 전체 취합</div>
-        </div>
-      </div>
-    </div>
-
-    <div class="panel" style="margin-bottom:10px">
-      <div class="panel-head">
-        <div>
-          <h2 class="panel-title">내 사용예정 예산 입력 현황</h2>
-          <p class="muted" style="margin:4px 0 0">나에게 배정된 항목의 편성·산출 입력 상태입니다.</p>
-        </div>
-        <button class="btn btn-primary btn-sm" data-goto="budget">예산 입력</button>
-      </div>
-      <div class="metrics" style="margin:0 0 12px;grid-template-columns:repeat(3,1fr)">
-        <div class="stat accent">
-          <div class="label">내 배정 항목</div>
-          <div class="value">${myBudgetList.length}</div>
-          <div class="sub">입력담당 지정</div>
-        </div>
-        <div class="stat">
-          <div class="label">사용예정 금액</div>
-          <div class="value" style="font-size:1.05rem">${formatWon(myBudgetPlanned)}</div>
-          <div class="sub">편성금액 합계</div>
-        </div>
-        <div class="stat">
-          <div class="label">산출 입력</div>
-          <div class="value">${myBudgetFilled}<small>/${myBudgetList.length || 0}</small></div>
-          <div class="sub">완료율 ${myBudgetPct}%</div>
-        </div>
-      </div>
-      <div class="bar-list">
+      <div class="hub-doc-actions">
         ${
-          myBudgetList.length
-            ? myBudgetList
-                .map((item) => {
-                  const filled = Boolean((item.calcText || "").trim());
-                  const planned = Number(item.planned) || 0;
-                  const pct = myBudgetPlanned
-                    ? Math.min(100, Math.round((planned / myBudgetPlanned) * 100))
-                    : 0;
-                  const calc = (item.calcText || "").trim();
-                  return `
-                <div class="bar-item">
-                  <div class="meta">
-                    <strong>${escapeHtml(item.no ? `${item.no}. ` : "")}${escapeHtml(item.activity || item.title || "항목")}</strong>
-                    <span>${filled ? "입력완료" : "미입력"} · ${formatWon(planned)}</span>
-                  </div>
-                  <div class="progress"><span style="width:${filled ? Math.max(pct, 12) : 0}%"></span></div>
-                  <div class="budget-dash-calc ${filled ? "" : "is-empty"}">${
-                    filled
-                      ? escapeHtml(calc.length > 120 ? `${calc.slice(0, 120)}…` : calc)
-                      : "세부 산출내역을 입력해 주세요."
-                  }</div>
-                </div>`;
-                })
-                .join("")
-            : `<div class="empty">배정된 사용예정 예산이 없습니다. 관리자가 입력담당자로 지정하면 여기에 표시됩니다.</div>`
+          admin
+            ? `<div class="hub-doc-toggle" role="group" aria-label="보고서 작성 기준">
+                <button type="button" class="btn btn-sm ${docKind === "plan" ? "btn-primary" : ""}" data-doc-kind="plan">운영계획서</button>
+                <button type="button" class="btn btn-sm ${docKind === "result" ? "btn-primary" : ""}" data-doc-kind="result">결과보고서</button>
+              </div>
+              <p class="muted hub-doc-admin-hint">관리자만 기준을 바꿉니다. 바꾼 뒤 JSON을 내보내 팀에 공유하세요.</p>`
+            : `<span class="hub-doc-chip">${escapeHtml(doc.short)} · ${escapeHtml(budMeta.short)}</span>`
         }
       </div>
     </div>
 
-    <div class="metrics" style="margin-bottom:10px">
-      <div class="stat accent">
-        <div class="label">목표 총 페이지</div>
-        <div class="value">${target}</div>
-        <div class="sub">할당 합계 ${allocatedTotal()}p</div>
+    <div class="grid grid-2 hub-top-grid">
+      <div class="panel hub-todo-panel">
+        <div class="panel-head">
+          <div>
+            <h2 class="panel-title">나에게 할 일</h2>
+            <p class="muted" style="margin:4px 0 0">미제출 취합 · 미처리 요청 · ${escapeHtml(budMeta.short)} 미입력</p>
+          </div>
+          <span class="badge ${actions.length ? "warn" : "ok"}">${actions.length}건</span>
+        </div>
+        ${
+          actions.length
+            ? `<ul class="hub-todo-list">
+                ${actions
+                  .map(
+                    (a) => `
+                  <li class="hub-todo-item ${a.urgent ? "is-urgent" : ""}">
+                    <div>
+                      <strong>${escapeHtml(a.title)}</strong>
+                      <span class="muted">${escapeHtml(a.meta)}</span>
+                    </div>
+                    <button type="button" class="btn btn-sm btn-primary" data-goto="${escapeAttr(a.goto)}">바로가기</button>
+                  </li>`
+                  )
+                  .join("")}
+              </ul>`
+            : `<div class="empty hub-empty-ok">지금은 밀린 할 일이 없습니다.</div>`
+        }
       </div>
-      <div class="stat">
-        <div class="label">1차 취합</div>
-        <div class="value">${c1.pages}<small>p</small></div>
-        <div class="sub">${c1.submitted}/${c1.totalParts} 파트 제출</div>
-      </div>
-      <div class="stat">
-        <div class="label">2차 취합</div>
-        <div class="value">${c2.pages}<small>p</small></div>
-        <div class="sub">${c2.submitted}/${c2.totalParts} 파트 제출</div>
-      </div>
-      <div class="stat">
-        <div class="label">3차 취합</div>
-        <div class="value">${c3.pages}<small>p</small></div>
-        <div class="sub">${c3.submitted}/${c3.totalParts} 파트 제출</div>
+
+      <div class="panel">
+        <div class="panel-head">
+          <div>
+            <h2 class="panel-title">요청·일정 요약</h2>
+            <p class="muted" style="margin:4px 0 0">서로 놓치기 쉬운 운영 신호</p>
+          </div>
+        </div>
+        <div class="hub-signal-grid">
+          <button type="button" class="hub-signal" data-goto="requests">
+            <span class="hub-signal-label">내 미완료 요청</span>
+            <strong class="hub-signal-value">${pendingReq.length}</strong>
+            <span class="muted">${overdueReq.length ? `기한 지남 ${overdueReq.length}` : "요청 탭에서 완료"}</span>
+          </button>
+          <button type="button" class="hub-signal" data-goto="schedule">
+            <span class="hub-signal-label">이번 달 일정</span>
+            <strong class="hub-signal-value">${monthEvents.length}</strong>
+            <span class="muted">운영 · 일정</span>
+          </button>
+          <button type="button" class="hub-signal" data-goto="budget">
+            <span class="hub-signal-label">예산 기준</span>
+            <strong class="hub-signal-value" style="font-size:1.1rem">${escapeHtml(budMeta.short)}</strong>
+            <span class="muted">${escapeHtml(doc.name)}</span>
+          </button>
+          ${
+            admin
+              ? `<button type="button" class="hub-signal" data-goto="parts">
+            <span class="hub-signal-label">목차·할당</span>
+            <strong class="hub-signal-value" style="font-size:1.05rem">원본</strong>
+            <span class="muted">팀 기준 표</span>
+          </button>`
+              : `<button type="button" class="hub-signal" data-goto="collections">
+            <span class="hub-signal-label">취합 진도</span>
+            <strong class="hub-signal-value">${doneCount}<small>/${board.length || 0}</small></strong>
+            <span class="muted">제출 완료</span>
+          </button>`
+          }
+        </div>
       </div>
     </div>
 
-    <div class="grid grid-2">
-      <div class="panel">
-        <div class="panel-head"><h2 class="panel-title">${admin ? "파트별 페이지 할당" : "내 파트·페이지"}</h2></div>
-        <div class="bar-list">
-          ${(admin ? state.parts : myParts.length ? myParts : state.parts)
-            .map((p) => {
-              const m = memberById(p.assigneeId);
-              const pages = pagesOf(p);
-              const pct = target ? Math.min(100, Math.round((pages / target) * 100)) : 0;
-              const mineMark = mine.includes(p.id) ? " · 내 담당" : "";
-              return `
-                <div class="bar-item">
-                  <div class="meta">
-                    <strong>${escapeHtml(p.section)}. ${escapeHtml(p.title)}</strong>
-                    <span>${escapeHtml(m?.name || "미지정")} · ${pages}p (${p.pageStart}–${p.pageEnd})${mineMark}</span>
-                  </div>
-                  <div class="progress"><span style="width:${pct}%"></span></div>
-                </div>`;
-            })
-            .join("") || `<div class="empty">할당된 파트가 없습니다.</div>`}
+    <div class="panel hub-board-panel">
+      <div class="panel-head">
+        <div>
+          <h2 class="panel-title">팀 취합 진도${col ? ` · ${escapeHtml(col.name)}` : ""}</h2>
+          <p class="muted" style="margin:4px 0 0">파트 · 담당 · 상태만 봅니다. 입력은 취합 탭에서.</p>
+        </div>
+        <div class="row hub-board-legend">
+          <span class="badge pending">미착수 ${todoCount}</span>
+          <span class="badge warn">작성중 ${wipCount}</span>
+          <span class="badge ok">제출 ${doneCount}</span>
+          <button type="button" class="btn btn-sm btn-primary" data-goto="collections">취합 열기</button>
         </div>
       </div>
-      <div class="panel">
-        <div class="panel-head">
-          <h2 class="panel-title">이번 달 일정</h2>
-          <span class="badge">${monthEvents.length}건</span>
-        </div>
-        ${buildMonthCalendarHtml(new Date())}
-        <div class="row" style="margin-top:12px">
-          <button class="btn btn-sm" data-goto="schedule">일정 전체</button>
-          <button class="btn btn-sm" data-goto="collections">취합 현황</button>
-          <button class="btn btn-sm" data-goto="drive">드라이브</button>
-          <button class="btn btn-sm" data-goto="resources">공통 서식</button>
-        </div>
+      <div class="table-wrap">
+        <table class="hub-board-table">
+          <thead>
+            <tr>
+              <th>파트</th>
+              <th>담당</th>
+              <th>페이지</th>
+              <th>상태</th>
+            </tr>
+          </thead>
+          <tbody>
+            ${
+              board.length
+                ? board
+                    .map(
+                      (r) => `
+              <tr class="${r.isMine ? "is-mine" : ""} ${r.status.id === "todo" ? "is-late" : ""}">
+                <td>
+                  <strong>${escapeHtml(r.section)}. ${escapeHtml(r.title)}</strong>
+                  ${r.isMine ? `<span class="badge admin">내 담당</span>` : ""}
+                </td>
+                <td>${escapeHtml(r.assignee)}</td>
+                <td class="page-range">${r.pages}<small>/${r.alloc}p</small></td>
+                <td><span class="badge ${r.status.cls}">${escapeHtml(r.status.label)}</span></td>
+              </tr>`
+                    )
+                    .join("")
+                : `<tr><td colspan="4"><div class="empty">취합 차수가 없습니다.</div></td></tr>`
+            }
+          </tbody>
+        </table>
       </div>
     </div>
+
+    ${
+      admin
+        ? `<div class="panel" style="margin-bottom:0">
+        <div class="panel-head">
+          <div>
+            <h2 class="panel-title">관리자 · 원본 유지</h2>
+            <p class="muted" style="margin:4px 0 0">목차·할당을 고친 뒤 JSON을 내보내 팀과 맞추세요. 데이터는 브라우저에 저장됩니다.</p>
+          </div>
+          <div class="row">
+            <button class="btn btn-primary btn-sm" data-goto="parts">목차·할당</button>
+            <button class="btn btn-sm" data-goto="members">대상자</button>
+            <button class="btn btn-sm" data-goto="requests">요청 보내기</button>
+          </div>
+        </div>
+      </div>`
+        : ""
+    }
   `;
 
   el.querySelectorAll("[data-goto]").forEach((btn) => {
     btn.addEventListener("click", () => setView(btn.dataset.goto));
   });
-  $("#editMeta")?.addEventListener("click", () => openMetaModal());
+  el.querySelectorAll("[data-doc-kind]").forEach((btn) => {
+    btn.addEventListener("click", () => {
+      if (!isAdmin()) return;
+      setReportDocKind(btn.dataset.docKind);
+      persist();
+      renderDashboard();
+    });
+  });
 }
 
 function renderParts() {
@@ -1263,22 +1564,30 @@ function renderParts() {
   }
   const el = $("#view-parts");
   el.innerHTML = `
-    <div class="panel">
-      <div class="panel-head">
+    <div class="panel parts-master-banner">
+      <div class="panel-head" style="margin-bottom:0">
         <div>
-          <h2 class="panel-title">사업보고서 목차 · 페이지 할당</h2>
-          <p class="muted">관리자 마스터 권한으로 보고서 레이아웃을 세팅합니다.</p>
+          <h2 class="panel-title">팀 기준 원본 · 목차·할당</h2>
+          <p class="muted" style="margin:4px 0 0">이 표가 취합·홈 진도의 기준입니다. 수정 후 상단 <strong>JSON 내보내기</strong>로 팀에 공유하고, 다른 사람은 <strong>가져오기</strong>로 맞추세요.</p>
         </div>
         <div class="row">
           <button class="btn btn-sm" id="editMeta">기본정보</button>
           <button class="btn btn-primary" id="addPart">파트 추가</button>
         </div>
       </div>
+    </div>
+    <div class="panel">
+      <div class="panel-head">
+        <div>
+          <h2 class="panel-title">사업보고서 목차 · 페이지 할당</h2>
+          <p class="muted">파트 · 담당자 · 페이지 범위를 항상 최신으로 유지합니다.</p>
+        </div>
+      </div>
       <p class="muted" style="margin-top:-0.2rem;margin-bottom:0.8rem">
         목표 ${state.meta.totalTargetPages || 0}p · 현재 할당 ${allocatedTotal()}p · ${escapeHtml(state.meta.reportTitle || "")}
       </p>
       <div class="table-wrap">
-        <table>
+        <table class="parts-master-table">
           <thead>
             <tr>
               <th>구분</th>
@@ -1549,8 +1858,21 @@ function renderCollections() {
   const summary = collectionSummary(activeRound);
   const target = allocatedTotal() || state.meta.totalTargetPages || 1;
   const pct = Math.min(100, Math.round((summary.pages / target) * 100));
+  const boardRows = col ? buildTeamCollectionBoard(col) : [];
+  const boardTodo = boardRows.filter((r) => r.status.id === "todo").length;
+  const boardWip = boardRows.filter((r) => r.status.id === "wip").length;
+  const boardDone = boardRows.filter((r) => r.status.id === "done").length;
+  const doc = reportDocKindMeta();
 
   el.innerHTML = `
+    <div class="panel hub-doc-banner is-compact" data-kind="${escapeAttr(getReportDocKind())}" style="margin-bottom:10px">
+      <div class="hub-doc-banner-main">
+        <span class="hub-doc-kicker">작성 기준</span>
+        <strong class="hub-doc-title" style="font-size:1.15rem">${escapeHtml(doc.name)}</strong>
+        <p class="hub-doc-desc muted" style="margin:0">취합도 이 기준에 맞춰 작성합니다. 홈에서 관리자가 바꿀 수 있습니다.</p>
+      </div>
+    </div>
+
     <div class="round-tabs">
       ${state.collections
         .map((c) => {
@@ -1566,34 +1888,39 @@ function renderCollections() {
     ${
       col
         ? `
-      <div class="metrics" style="grid-template-columns:repeat(3,1fr)">
+      <div class="metrics" style="grid-template-columns:repeat(4,1fr)">
         <div class="stat accent">
           <div class="label">${escapeHtml(col.name)} 작성 페이지</div>
           <div class="value">${summary.pages}</div>
           <div class="sub">목표 대비 ${pct}% · 마감 ${escapeHtml(col.dueDate || "-")}</div>
         </div>
         <div class="stat">
-          <div class="label">제출 완료</div>
-          <div class="value">${summary.submitted}</div>
-          <div class="sub">대기 ${summary.pending} / 전체 ${summary.totalParts}</div>
+          <div class="label">미착수</div>
+          <div class="value">${boardTodo}</div>
+          <div class="sub">아직 시작 전</div>
         </div>
         <div class="stat">
-          <div class="label">진행률</div>
-          <div class="value">${pct}%</div>
-          <div class="sub"><div class="progress" style="margin-top:6px"><span style="width:${pct}%"></span></div></div>
+          <div class="label">작성중</div>
+          <div class="value">${boardWip}</div>
+          <div class="sub">페이지·파일 진행 중</div>
+        </div>
+        <div class="stat">
+          <div class="label">제출</div>
+          <div class="value">${boardDone}<small>/${summary.totalParts}</small></div>
+          <div class="sub"><div class="progress" style="margin-top:6px"><span style="width:${summary.totalParts ? Math.round((boardDone / summary.totalParts) * 100) : 0}%"></span></div></div>
         </div>
       </div>
 
       ${
         !isAdmin()
-          ? `<p class="muted" style="margin:0 0 10px">본인 담당 파트만 작성 페이지를 입력할 수 있습니다. 한글 파일 업로드(또는 별도제출) 후 <strong>제출</strong>을 누르면 상태·제출일이 자동 반영됩니다.</p>`
-          : ""
+          ? `<p class="muted" style="margin:0 0 10px">본인 담당 파트만 입력·제출할 수 있습니다. 다른 파트는 <strong>조회</strong>만 됩니다.</p>`
+          : `<p class="muted" style="margin:0 0 10px">진도판: <strong>미착수 → 작성중 → 제출</strong>. 담당·상태만으로도 누가 남았는지 보입니다.</p>`
       }
 
       <div class="panel">
         <div class="panel-head">
           <div>
-            <h2>${escapeHtml(col.name)} 파트별 현황</h2>
+            <h2>${escapeHtml(col.name)} 파트별 진도</h2>
             <p class="muted">${escapeHtml(col.description || "")}</p>
           </div>
           <button class="btn btn-sm admin-only" id="editRoundMeta">차수 정보 수정</button>
@@ -1622,15 +1949,11 @@ function renderCollections() {
                   const isMine = myPartIds().includes(s.partId);
                   const hasFile =
                     normalizeCheckFiles(s).some((f) => isHangulFileName(f.name)) || Boolean(s.altSubmit);
-                  const statusLabel = s.status === "submitted" ? "제출" : "대기";
+                  const boardSt = submissionBoardStatus(s);
                   const submitter = s.submittedBy || (s.status === "submitted" ? m?.name : "");
                   const tags = [
                     editable && !isAdmin() ? '<span class="badge admin">내 담당</span>' : "",
-                    s.partDone || s.status === "submitted"
-                      ? isMine
-                        ? '<span class="badge ok">내 파트 작성완료</span>'
-                        : '<span class="badge ok">작성완료</span>'
-                      : "",
+                    isMine && !editable ? "" : "",
                     submitter
                       ? `<span class="badge meeting">제출: ${escapeHtml(submitter)}</span>`
                       : "",
@@ -1638,7 +1961,7 @@ function renderCollections() {
                     .filter(Boolean)
                     .join(" ");
                   return `
-                  <tr class="${editable ? "" : "row-locked"}">
+                  <tr class="${editable ? "" : "row-locked"} ${boardSt.id === "todo" ? "row-todo" : ""}">
                     <td>
                       <strong>${escapeHtml(p ? `${p.section}. ${p.title}` : s.partId)}</strong>
                       ${tags ? `<div class="part-tags">${tags}</div>` : ""}
@@ -1648,7 +1971,7 @@ function renderCollections() {
                     <td>
                       <input class="inline-input" type="number" min="0" value="${Number(s.pageCount) || 0}" data-pages="${s.partId}" ${editable ? "" : "disabled"} />
                     </td>
-                    <td><span class="badge ${s.status === "submitted" ? "ok" : "pending"}">${statusLabel}</span></td>
+                    <td><span class="badge ${boardSt.cls}">${escapeHtml(boardSt.label)}</span></td>
                     <td class="muted">${escapeHtml(s.submittedAt || "-")}</td>
                     <td>
                       <button type="button" class="btn btn-sm check-open-btn ${hasFile ? "has-check" : ""}" data-check="${s.partId}" data-editable="${editable ? "1" : "0"}">
@@ -2001,7 +2324,7 @@ function myRelatedBudgetItems() {
   return state.budget.items.filter((i) => i.assigneeId === me.id);
 }
 
-function budgetDetailStats() {
+function budgetDetailStats(mode = getBudgetInputMode()) {
   ensureBudget();
   const byMember = {};
   const byArea = {};
@@ -2009,23 +2332,24 @@ function budgetDetailStats() {
   state.budget.items.forEach((item) => {
     const assignee = item.assigneeId ? memberById(item.assigneeId) : null;
     const who = assignee?.name || "미지정";
-    const planned = Number(item.planned) || 0;
+    const amount = budgetAmountOf(item, mode);
     if (!byMember[who]) byMember[who] = 0;
-    byMember[who] += planned;
+    byMember[who] += amount;
     const area = item.area || item.category || "기타";
     if (!byArea[area]) byArea[area] = { planned: 0, filled: 0 };
-    byArea[area].planned += planned;
-    if ((item.calcText || "").trim()) byArea[area].filled += 1;
+    byArea[area].planned += amount;
+    if (budgetCalcOf(item, mode)) byArea[area].filled += 1;
     const key = budgetItemLabel(item);
-    byItem[key] = planned;
+    byItem[key] = amount;
   });
-  const filled = state.budget.items.filter((i) => (i.calcText || "").trim()).length;
+  const filled = state.budget.items.filter((i) => budgetCalcOf(i, mode)).length;
   return {
     byMember,
     byArea,
     byItem,
     filled,
-    total: state.budget.items.reduce((s, i) => s + (Number(i.planned) || 0), 0),
+    total: state.budget.items.reduce((s, i) => s + budgetAmountOf(i, mode), 0),
+    mode,
   };
 }
 
@@ -2041,17 +2365,19 @@ function downloadBudgetExcel({ mineOnly = false } = {}) {
   } else if (!canManageBudget()) {
     return;
   }
+  const mode = getBudgetInputMode();
+  const meta = budgetModeMeta(mode);
   const items = mineOnly ? myRelatedBudgetItems() : state.budget.items;
   const lines = [];
   if (!mineOnly) {
-    const expenseStatus = budgetExpenseStatus();
-    lines.push(["[예산 입력 요약]"].map(csvEscape).join(","));
+    const expenseStatus = budgetExpenseStatus(mode);
+    lines.push([`[${meta.tabLabel} 입력 요약]`].map(csvEscape).join(","));
     lines.push(
       [
         "사업비총액",
-        "현재입력합계",
+        meta.enteredLabel,
         "입력비율(%)",
-        "사용처확인필요",
+        meta.remainLabel,
         "확인필요비율(%)",
       ]
         .map(csvEscape)
@@ -2069,7 +2395,7 @@ function downloadBudgetExcel({ mineOnly = false } = {}) {
         .join(",")
     );
     lines.push("");
-    lines.push(["[사업비 비목별 입력 현황]"].map(csvEscape).join(","));
+    lines.push([`[${meta.tableTitle}]`].map(csvEscape).join(","));
     lines.push(["비목", "현재입력액", "입력비중(%)", "총액대비(%)", "산출완료", "항목수"].map(csvEscape).join(","));
     expenseStatus.rows
       .filter((row) => row.entered > 0 || row.count > 0)
@@ -2089,7 +2415,7 @@ function downloadBudgetExcel({ mineOnly = false } = {}) {
       });
     lines.push("");
   } else {
-    lines.push([`[${sessionUser || "내"} 예산 항목]`].map(csvEscape).join(","));
+    lines.push([`[${sessionUser || "내"} ${meta.short} 항목]`].map(csvEscape).join(","));
   }
   lines.push(
     [
@@ -2103,6 +2429,8 @@ function downloadBudgetExcel({ mineOnly = false } = {}) {
       "실무부서",
       "편성금액",
       "세부 산출내역",
+      "실적금액",
+      "실적 산출내역",
       "입력담당자",
       "메모",
     ]
@@ -2123,6 +2451,8 @@ function downloadBudgetExcel({ mineOnly = false } = {}) {
         item.workDept,
         Number(item.planned) || 0,
         item.calcText || "",
+        Number(item.spent) || 0,
+        item.actualCalcText || "",
         assignee?.name || "",
         item.note || "",
       ]
@@ -2136,14 +2466,16 @@ function downloadBudgetExcel({ mineOnly = false } = {}) {
   });
   const a = document.createElement("a");
   a.href = URL.createObjectURL(blob);
-  a.download = mineOnly ? `내예산항목_${today()}.xls` : `예산_입력현황_${today()}.xls`;
+  const modeTag = mode === "result" ? "실적" : "예산";
+  a.download = mineOnly ? `내${modeTag}항목_${today()}.xls` : `${modeTag}_입력현황_${today()}.xls`;
   a.click();
   URL.revokeObjectURL(a.href);
 }
 
-function sendBudgetInputRequest(itemId, { silent = false } = {}) {
+function sendBudgetInputRequest(itemId, { silent = false, mode = getBudgetInputMode() } = {}) {
   if (!canManageBudget() && !isAdmin()) return false;
   ensureRequests();
+  const meta = budgetModeMeta(mode);
   const item = state.budget.items.find((i) => i.id === itemId);
   if (!item?.assigneeId) {
     if (!silent) alert("입력담당자를 먼저 지정해 주세요.");
@@ -2158,18 +2490,22 @@ function sendBudgetInputRequest(itemId, { silent = false } = {}) {
     (r) =>
       r.recipient === assignee.name &&
       r.status === "대기" &&
-      r.title === "예산을 입력하세요" &&
+      r.title === meta.requestTitle &&
       (r.memo || "").includes(item.id)
   );
   if (exists) {
-    if (!silent) alert("이미 대기 중인 예산 입력 요청이 있습니다.");
+    if (!silent) alert(`이미 대기 중인 ${meta.short} 입력 요청이 있습니다.`);
     return false;
   }
+  const amountHint =
+    mode === "result"
+      ? `편성 ${formatWon(item.planned)} · 실적 ${formatWon(item.spent)}`
+      : `편성 ${formatWon(item.planned)}`;
   state.requests.push({
     id: uid("req"),
     groupId: uid("g"),
-    title: "예산을 입력하세요",
-    memo: `예산 탭에서 「${budgetItemLabel(item)}」 항목을 선택·입력 후 저장해 주세요. (편성 ${formatWon(item.planned)}) [#${item.id}]`,
+    title: meta.requestTitle,
+    memo: `예산 탭 「${meta.tabLabel}」에서 「${budgetItemLabel(item)}」 항목을 선택·입력 후 저장해 주세요. (${amountHint}) [#${item.id}]`,
     requester: sessionUser || state.meta.adminName || "관리자",
     recipient: assignee.name,
     dueDate: "",
@@ -2179,7 +2515,7 @@ function sendBudgetInputRequest(itemId, { silent = false } = {}) {
   if (!silent) {
     persist();
     updateRequestPlane();
-    alert(`${assignee.name}님에게 「예산을 입력하세요」 요청을 보냈습니다.`);
+    alert(`${assignee.name}님에게 「${meta.requestTitle}」 요청을 보냈습니다.`);
   }
   return true;
 }
@@ -2187,13 +2523,15 @@ function sendBudgetInputRequest(itemId, { silent = false } = {}) {
 function renderBudget() {
   ensureBudget();
   const el = $("#view-budget");
+  const mode = getBudgetInputMode();
+  const meta = budgetModeMeta(mode);
   const sum = budgetSummary();
-  const detailStats = budgetDetailStats();
+  const detailStats = budgetDetailStats(mode);
   const manage = canManageBudget();
   const admin = isAdmin();
   const myItems = myRelatedBudgetItems();
   const visibleItems = manage ? state.budget.items : myItems;
-  const expenseStatus = budgetExpenseStatus();
+  const expenseStatus = budgetExpenseStatus(mode);
   const yearLabel = state.budget.yearLabel || "당해연도";
   const enteredPctLabel = Number.isInteger(expenseStatus.enteredPct)
     ? `${expenseStatus.enteredPct}`
@@ -2201,29 +2539,58 @@ function renderBudget() {
   const remainPctLabel = Number.isInteger(expenseStatus.remainPct)
     ? `${expenseStatus.remainPct}`
     : Number(expenseStatus.remainPct || 0).toFixed(1);
+  const execPct = sum.planned ? Math.round((sum.spent / sum.planned) * 1000) / 10 : 0;
 
-  const myPlanned = myItems.reduce((s, i) => s + (Number(i.planned) || 0), 0);
-  const myFilled = myItems.filter((i) => (i.calcText || "").trim()).length;
+  const myAmount = myItems.reduce((s, i) => s + budgetAmountOf(i, mode), 0);
+  const myFilled = myItems.filter((i) => budgetCalcOf(i, mode)).length;
 
   const byAssignee = {};
   state.budget.items.forEach((item) => {
     const m = item.assigneeId ? memberById(item.assigneeId) : null;
     const key = m?.name || "미지정";
-    if (!byAssignee[key]) byAssignee[key] = { planned: 0, count: 0, filled: 0 };
-    byAssignee[key].planned += Number(item.planned) || 0;
+    if (!byAssignee[key]) byAssignee[key] = { amount: 0, count: 0, filled: 0 };
+    byAssignee[key].amount += budgetAmountOf(item, mode);
     byAssignee[key].count += 1;
-    if ((item.calcText || "").trim()) byAssignee[key].filled += 1;
+    if (budgetCalcOf(item, mode)) byAssignee[key].filled += 1;
   });
 
+  const colSpan = mode === "result" ? 11 : 10;
+  const incompleteOnly = state._budgetShowIncomplete === true;
+  const listItems = incompleteOnly
+    ? visibleItems.filter((i) => !budgetCalcOf(i, mode))
+    : visibleItems;
+  const doc = reportDocKindMeta();
+
   el.innerHTML = `
+    <div class="panel budget-mode-panel hub-doc-banner" data-kind="${escapeAttr(mode)}" style="margin-bottom:10px">
+      <div class="panel-head" style="align-items:flex-start">
+        <div class="hub-doc-banner-main">
+          <span class="hub-doc-kicker">입력 구분 · ${escapeHtml(doc.name)}</span>
+          <strong class="hub-doc-title" style="font-size:1.35rem">${escapeHtml(meta.tabLabel)}</strong>
+          <p class="muted" style="margin:4px 0 0">홈의 작성 기준과 같습니다. ${
+            mode === "plan"
+              ? "편성금액·세부 산출내역만 입력합니다."
+              : "실적금액·실적 산출내역을 입력합니다. 편성금액은 참고입니다."
+          }</p>
+        </div>
+      </div>
+      <div class="review-subtabs budget-mode-tabs" role="tablist">
+        <button type="button" class="review-subtab ${mode === "plan" ? "active" : ""}" data-budget-mode="plan">운영계획수립용 (예산)</button>
+        <button type="button" class="review-subtab ${mode === "result" ? "active" : ""}" data-budget-mode="result">결과보고작성용 (실적)</button>
+      </div>
+    </div>
+
     ${
       !manage
         ? `<div class="panel" style="margin-bottom:10px">
       <div class="panel-head">
         <div>
-          <h2 class="panel-title">내 배정 예산</h2>
-          <p class="muted" style="margin:4px 0 0">나에게 지정된 항목만 입력·저장할 수 있습니다.</p>
+          <h2 class="panel-title">내 배정 ${escapeHtml(meta.short)}</h2>
+          <p class="muted" style="margin:4px 0 0">나에게 지정된 항목만 입력·저장합니다. 완료/미입력이 바로 보입니다.</p>
         </div>
+        <button type="button" class="btn btn-sm ${incompleteOnly ? "btn-primary" : ""}" id="budgetIncompleteToggle">${
+          incompleteOnly ? "전체 보기" : "미입력만"
+        }</button>
       </div>
       <div class="metrics" style="margin:0;grid-template-columns:repeat(3,1fr)">
         <div class="stat accent">
@@ -2232,38 +2599,44 @@ function renderBudget() {
           <div class="sub">입력 담당</div>
         </div>
         <div class="stat">
-          <div class="label">내 편성금액</div>
-          <div class="value" style="font-size:1.05rem">${formatWon(myPlanned)}</div>
+          <div class="label">내 ${escapeHtml(meta.amountLabel)}</div>
+          <div class="value" style="font-size:1.05rem">${formatWon(myAmount)}</div>
           <div class="sub">배정 합계</div>
         </div>
         <div class="stat">
-          <div class="label">산출 입력</div>
+          <div class="label">${escapeHtml(meta.filledLabel)}</div>
           <div class="value">${myFilled}<small>/${myItems.length || 0}</small></div>
-          <div class="sub">${myItems.length ? Math.round((myFilled / myItems.length) * 100) : 0}% 완료</div>
+          <div class="sub">${myItems.length ? Math.round((myFilled / myItems.length) * 100) : 0}% 완료 · 미입력 ${Math.max(0, myItems.length - myFilled)}</div>
         </div>
       </div>
     </div>`
-        : ""
+        : `<div class="row" style="margin:0 0 10px;justify-content:flex-end">
+        <button type="button" class="btn btn-sm ${incompleteOnly ? "btn-primary" : ""}" id="budgetIncompleteToggle">${
+          incompleteOnly ? "전체 항목 보기" : "미입력만 보기"
+        }</button>
+      </div>`
     }
 
     <div class="metrics">
       <div class="stat accent">
         <div class="label">사업비 총액</div>
         <div class="value" style="font-size:1.1rem">${formatWon(sum.total)}</div>
-        <div class="sub">${escapeHtml(yearLabel)}</div>
+        <div class="sub">${escapeHtml(yearLabel)}${mode === "result" ? ` · 편성 ${formatWon(sum.planned)}` : ""}</div>
       </div>
       <div class="stat">
-        <div class="label">현재 입력 합계</div>
+        <div class="label">${escapeHtml(meta.enteredLabel)}</div>
         <div class="value" style="font-size:1.1rem">${formatWon(expenseStatus.enteredTotal)}</div>
-        <div class="sub">총액 대비 ${enteredPctLabel}% · ${state.budget.items.length}항목</div>
+        <div class="sub">총액 대비 ${enteredPctLabel}% · ${state.budget.items.length}항목${
+          mode === "result" ? ` · 집행률 ${execPct}%` : ""
+        }</div>
       </div>
       <div class="stat">
-        <div class="label">사용처 확인 필요</div>
+        <div class="label">${escapeHtml(meta.remainLabel)}</div>
         <div class="value" style="font-size:1.1rem">${formatWon(expenseStatus.remain)}</div>
         <div class="sub">총액 대비 ${remainPctLabel}%</div>
       </div>
       <div class="stat">
-        <div class="label">산출 입력 완료</div>
+        <div class="label">${escapeHtml(meta.filledLabel)}</div>
         <div class="value" style="font-size:1.1rem">${detailStats.filled}/${state.budget.items.length}</div>
         <div class="sub">담당자 지정 ${state.budget.items.filter((i) => i.assigneeId).length}건</div>
       </div>
@@ -2271,8 +2644,8 @@ function renderBudget() {
 
     <div class="panel budget-summary-banner" style="margin-bottom:10px">
       <p class="budget-summary-text">
-        사업비 총액 대비 <strong>${enteredPctLabel}%</strong>가 입력되었고,
-        <strong>${formatWon(expenseStatus.remain)}(${remainPctLabel}%)</strong>의 사용처가 더 확인이 필요합니다.
+        ${escapeHtml(meta.bannerLead)} <strong>${enteredPctLabel}%</strong>가 입력되었고,
+        <strong>${formatWon(expenseStatus.remain)}(${remainPctLabel}%)</strong>${escapeHtml(meta.bannerTail)}
       </p>
       <div class="progress budget-summary-progress" title="입력 ${enteredPctLabel}%">
         <span style="width:${Math.min(100, expenseStatus.enteredPct)}%"></span>
@@ -2282,8 +2655,8 @@ function renderBudget() {
     <div class="panel" style="margin-bottom:10px">
       <div class="panel-head">
         <div>
-          <h2 class="panel-title">사업비 비목별 입력 현황</h2>
-          <p class="muted" style="margin:4px 0 0">${escapeHtml(yearLabel)} 기준 · 총액 대비 현재 입력 현황만 표시</p>
+          <h2 class="panel-title">${escapeHtml(meta.tableTitle)}</h2>
+          <p class="muted" style="margin:4px 0 0">${escapeHtml(yearLabel)} · ${escapeHtml(meta.tableSub)}</p>
         </div>
         <div class="row">
           ${manage ? `<button class="btn btn-sm budget-manage-only" id="downloadBudgetExcel">엑셀 다운로드</button>` : ""}
@@ -2300,7 +2673,7 @@ function renderBudget() {
               <th>현재 입력액</th>
               <th>입력 비중</th>
               <th>총액 대비</th>
-              <th>산출 입력</th>
+              <th>${escapeHtml(meta.filledLabel)}</th>
               <th>진행</th>
             </tr>
           </thead>
@@ -2331,7 +2704,7 @@ function renderBudget() {
               <td></td>
             </tr>
             <tr>
-              <td><strong class="muted">사용처 확인 필요</strong></td>
+              <td><strong class="muted">${escapeHtml(meta.remainLabel)}</strong></td>
               <td class="page-range"><strong>${formatWon(expenseStatus.remain)}</strong></td>
               <td class="page-range">-</td>
               <td class="page-range"><strong>${remainPctLabel}%</strong></td>
@@ -2343,21 +2716,21 @@ function renderBudget() {
       </div>
     </div>
 
-    ${!manage ? `<p class="muted" style="margin:0 0 10px">배정된 항목에서 값을 <strong>선택·직접 입력</strong>한 뒤 <strong>저장</strong>해 주세요.</p>` : ""}
+    ${!manage ? `<p class="muted" style="margin:0 0 10px">배정된 항목에서 <strong>${escapeHtml(meta.amountLabel)}</strong>·<strong>${escapeHtml(meta.calcLabel)}</strong>을 입력한 뒤 <strong>저장</strong>해 주세요.</p>` : ""}
 
     <div class="panel" style="margin-bottom:10px">
-      <div class="panel-head"><h2 class="panel-title">담당자별 입력 현황</h2></div>
+      <div class="panel-head"><h2 class="panel-title">${escapeHtml(meta.assigneeTitle)}</h2></div>
       ${
         Object.keys(byAssignee).length
           ? `<div class="bar-list">${Object.entries(byAssignee)
-              .sort((a, b) => b[1].planned - a[1].planned)
+              .sort((a, b) => b[1].amount - a[1].amount)
               .map(([name, v]) => {
                 const pct = expenseStatus.enteredTotal
-                  ? Math.min(100, Math.round((v.planned / expenseStatus.enteredTotal) * 100))
+                  ? Math.min(100, Math.round((v.amount / expenseStatus.enteredTotal) * 100))
                   : 0;
                 return `<div class="bar-item">
                   <div class="meta"><strong>${escapeHtml(name)}</strong>
-                    <span>${formatWon(v.planned)} · 산출 ${v.filled}/${v.count}</span></div>
+                    <span>${formatWon(v.amount)} · 산출 ${v.filled}/${v.count}</span></div>
                   <div class="progress"><span style="width:${pct}%"></span></div>
                 </div>`;
               })
@@ -2368,7 +2741,7 @@ function renderBudget() {
 
     <div class="panel" style="margin-bottom:10px">
       <div class="panel-head">
-        <h2 class="panel-title">${manage ? "예산 항목 상세" : "내 예산 항목"}</h2>
+        <h2 class="panel-title">${escapeHtml(manage ? meta.detailTitleManage : meta.detailTitleMine)}</h2>
         <div class="row">
           <button class="btn btn-sm" id="downloadBudgetExcel2">${manage ? "엑셀 다운로드" : "내 항목 엑셀 다운로드"}</button>
         </div>
@@ -2383,38 +2756,49 @@ function renderBudget() {
               <th>세부과제명</th>
               <th class="budget-activity-col">세부프로그램</th>
               <th>비목</th>
-              <th class="budget-amount-col">편성금액</th>
-              <th class="budget-calc-col">세부 산출내역</th>
+              ${mode === "result" ? `<th class="budget-amount-col">편성(참고)</th>` : ""}
+              <th class="budget-amount-col">${escapeHtml(meta.amountLabel)}</th>
+              <th class="budget-calc-col">${escapeHtml(meta.calcLabel)}</th>
               <th>입력담당자</th>
               <th class="budget-actions-col"></th>
             </tr>
           </thead>
           <tbody>
             ${
-              visibleItems.length
-                ? visibleItems
+              listItems.length
+                ? listItems
                     .map((item) => {
                       const assignee = item.assigneeId ? memberById(item.assigneeId) : null;
                       const canEdit = canEditBudgetItem(item);
-                      const calcPreview = (item.calcText || "").trim();
+                      const calcPreview = budgetCalcOf(item, mode);
+                      const amount = budgetAmountOf(item, mode);
+                      const filled = Boolean(calcPreview);
                       return `
-                      <tr>
+                      <tr class="${filled ? "" : "row-todo"}">
                         <td class="budget-no-col">${escapeHtml(item.no || "-")}</td>
                         <td class="budget-area-col"><span class="badge">${escapeHtml(item.area || item.category || "-")}</span></td>
                         <td class="muted budget-content-col"><div class="budget-wrap">${escapeHtml(item.content || "-")}</div></td>
                         <td class="muted budget-task-col"><div class="budget-wrap">${escapeHtml(item.task || "-")}</div></td>
                         <td class="budget-activity-col budget-key-cell"><div class="budget-wrap">${escapeHtml(item.activity || item.title || "-")}</div></td>
                         <td class="budget-bimok-col"><div class="budget-wrap">${escapeHtml(item.expenseType || "-")}</div></td>
-                        <td class="page-range budget-amount-col budget-key-cell">${formatWon(item.planned)}</td>
-                        <td class="budget-calc-col budget-key-cell">${
-                          calcPreview
-                            ? `<div class="budget-wrap budget-calc-text">${escapeHtml(calcPreview)}</div>`
-                            : `<span class="muted">미입력</span>`
-                        }</td>
+                        ${
+                          mode === "result"
+                            ? `<td class="page-range budget-amount-col muted">${formatWon(item.planned)}</td>`
+                            : ""
+                        }
+                        <td class="page-range budget-amount-col budget-key-cell">${formatWon(amount)}</td>
+                        <td class="budget-calc-col budget-key-cell">
+                          <span class="badge ${filled ? "ok" : "pending"}">${filled ? "완료" : "미입력"}</span>
+                          ${
+                            filled
+                              ? `<div class="budget-wrap budget-calc-text" style="margin-top:4px">${escapeHtml(calcPreview)}</div>`
+                              : ""
+                          }
+                        </td>
                         <td class="budget-assignee-col">${escapeHtml(assignee?.name || "미지정")}</td>
                         <td class="budget-actions-col">
                           <div class="row">
-                            ${canEdit ? `<button class="btn btn-sm btn-primary" data-entry="${item.id}">입력</button>` : ""}
+                            ${canEdit ? `<button class="btn btn-sm btn-primary" data-entry="${item.id}">${filled ? "수정" : "입력"}</button>` : ""}
                             ${
                               manage
                                 ? `<button class="btn btn-sm budget-manage-only" data-edit="${item.id}">수정</button>
@@ -2427,10 +2811,12 @@ function renderBudget() {
                       </tr>`;
                     })
                     .join("")
-                : `<tr><td colspan="10"><div class="empty">${
-                    manage
-                      ? "항목을 추가하거나 일괄 업로드한 뒤, 입력담당자를 지정하세요."
-                      : "배정된 예산 항목이 없습니다. 관리자 지정 후 「예산을 입력하세요」 요청을 확인하세요."
+                : `<tr><td colspan="${colSpan}"><div class="empty">${
+                    incompleteOnly
+                      ? "미입력 항목이 없습니다."
+                      : manage
+                        ? "항목을 추가하거나 일괄 업로드한 뒤, 입력담당자를 지정하세요."
+                        : `배정된 ${meta.short} 항목이 없습니다. 관리자 지정 후 「${meta.requestTitle}」 요청을 확인하세요.`
                   }</div></td></tr>`
             }
           </tbody>
@@ -2439,6 +2825,19 @@ function renderBudget() {
     </div>
   `;
 
+  el.querySelectorAll("[data-budget-mode]").forEach((btn) => {
+    btn.addEventListener("click", () => {
+      const next = btn.dataset.budgetMode === "result" ? "result" : "plan";
+      if (next === getBudgetInputMode()) return;
+      setBudgetInputMode(next);
+      persist();
+      setView("budget");
+    });
+  });
+  $("#budgetIncompleteToggle")?.addEventListener("click", () => {
+    state._budgetShowIncomplete = !state._budgetShowIncomplete;
+    renderBudget();
+  });
   $("#editBudgetTotal")?.addEventListener("click", () => openBudgetTotalModal());
   $("#addBudgetItem")?.addEventListener("click", () => openBudgetItemModal());
   $("#bulkBudgetUpload")?.addEventListener("click", () => openBudgetBulkUploadModal());
@@ -2477,6 +2876,9 @@ function renderRequests() {
   const el = $("#view-requests");
   const admin = isAdmin();
   const mine = state.requests.filter((r) => r.recipient === sessionUser);
+  const mineOpen = mine.filter((r) => r.status !== "완료");
+  const mineDone = mine.filter((r) => r.status === "완료");
+  const mineOverdue = mineOpen.filter((r) => r.dueDate && daysUntil(r.dueDate) < 0);
   const sentGroups = new Map();
   if (admin) {
     state.requests.forEach((r) => {
@@ -2494,15 +2896,43 @@ function renderRequests() {
       sentGroups.get(key).rows.push(r);
     });
   }
+  const sentList = [...sentGroups.values()];
+  const sentOpenGroups = sentList.filter((g) => g.rows.some((r) => r.status !== "완료")).length;
 
   el.innerHTML = `
+    <div class="metrics" style="margin-bottom:10px;grid-template-columns:repeat(3,1fr)">
+      <div class="stat accent">
+        <div class="label">${admin ? "진행 중 요청(건)" : "내 미완료"}</div>
+        <div class="value">${admin ? sentOpenGroups : mineOpen.length}</div>
+        <div class="sub">${admin ? "그룹 기준 · 미완료 포함" : "홈·상단 알람과 연결"}</div>
+      </div>
+      <div class="stat">
+        <div class="label">${admin ? "전체 발송 그룹" : "기한 지남"}</div>
+        <div class="value">${admin ? sentList.length : mineOverdue.length}</div>
+        <div class="sub">${admin ? "보낸 요청" : "우선 처리"}</div>
+      </div>
+      <div class="stat">
+        <div class="label">${admin ? "대상자 완료율" : "내 완료"}</div>
+        <div class="value">${
+          admin
+            ? (() => {
+                const all = state.requests.length;
+                const done = state.requests.filter((r) => r.status === "완료").length;
+                return all ? `${Math.round((done / all) * 100)}%` : "—";
+              })()
+            : mineDone.length
+        }</div>
+        <div class="sub">${admin ? "개별 요청 기준" : `전체 받은 ${mine.length}건`}</div>
+      </div>
+    </div>
+
     ${
       admin
         ? `<div class="panel" style="margin-bottom:10px">
         <div class="panel-head">
           <div>
             <h2 class="panel-title">공통 요청 보내기</h2>
-            <p class="muted">대상자에게 일괄 요청하면 상단 파란 알람으로 리마인드됩니다.</p>
+            <p class="muted">제목 · 대상 · 마감만 짧게. 상단 파란 알람·홈 할 일로 리마인드됩니다.</p>
           </div>
           <button class="btn btn-primary" id="addRequest">요청 등록</button>
         </div>
@@ -2522,17 +2952,18 @@ function renderRequests() {
             </thead>
             <tbody>
               ${
-                [...sentGroups.values()].length
-                  ? [...sentGroups.values()]
+                sentList.length
+                  ? sentList
                       .map((g) => {
                         const done = g.rows.filter((r) => r.status === "완료").length;
-                        return `<tr>
+                        const overdue = g.dueDate && daysUntil(g.dueDate) < 0 && done < g.rows.length;
+                        return `<tr class="${overdue ? "row-todo" : ""}">
                           <td>
                             <strong>${escapeHtml(g.title)}</strong>
                             <div class="muted">${escapeHtml(g.memo || "")}</div>
                           </td>
-                          <td>${escapeHtml(g.dueDate || "-")}</td>
-                          <td><span class="badge ${done === g.rows.length ? "ok" : "warn"}">${done}/${g.rows.length}</span></td>
+                          <td>${escapeHtml(g.dueDate || "-")}${overdue ? ` <span class="badge warn">지남</span>` : ""}</td>
+                          <td><span class="badge ${done === g.rows.length ? "ok" : "warn"}">${done}/${g.rows.length} 완료</span></td>
                           <td class="muted">${g.rows.map((r) => escapeHtml(r.recipient)).join(", ")}</td>
                           <td><button class="btn btn-sm btn-danger" data-del-group="${escapeAttr(g.groupId)}">삭제</button></td>
                         </tr>`;
@@ -2548,8 +2979,9 @@ function renderRequests() {
         <div class="panel-head">
           <div>
             <h2 class="panel-title">받은 공통 요청</h2>
-            <p class="muted">관리자가 보낸 요청입니다. 처리 후 완료로 표시하세요.</p>
+            <p class="muted">제목·마감·완료만 확인하면 됩니다. 처리 후 완료를 눌러 주세요.</p>
           </div>
+          <button type="button" class="btn btn-sm" data-goto-home>홈 할 일</button>
         </div>
         <div class="table-wrap">
           <table>
@@ -2566,14 +2998,23 @@ function renderRequests() {
               ${
                 mine.length
                   ? mine
-                      .map(
-                        (r) => `<tr>
+                      .map((r) => {
+                        const overdue = r.status !== "완료" && r.dueDate && daysUntil(r.dueDate) < 0;
+                        const soon =
+                          r.status !== "완료" && r.dueDate && daysUntil(r.dueDate) >= 0 && daysUntil(r.dueDate) <= 2;
+                        return `<tr class="${overdue ? "row-todo" : ""}">
                         <td>
                           <strong>${escapeHtml(r.title)}</strong>
                           <div class="muted">${escapeHtml(r.memo || "")}</div>
                         </td>
                         <td>${escapeHtml(r.requester || "-")}</td>
-                        <td>${escapeHtml(r.dueDate || "-")}</td>
+                        <td>${escapeHtml(r.dueDate || "-")}${
+                          overdue
+                            ? ` <span class="badge warn">지남</span>`
+                            : soon
+                              ? ` <span class="badge meeting">임박</span>`
+                              : ""
+                        }</td>
                         <td><span class="badge ${r.status === "완료" ? "ok" : "warn"}">${escapeHtml(r.status)}</span></td>
                         <td>
                           ${
@@ -2582,8 +3023,8 @@ function renderRequests() {
                               : `<button class="btn btn-sm btn-primary" data-done-req="${r.id}">완료</button>`
                           }
                         </td>
-                      </tr>`
-                      )
+                      </tr>`;
+                      })
                       .join("")
                   : `<tr><td colspan="5"><div class="empty">받은 요청이 없습니다.</div></td></tr>`
               }
@@ -2595,6 +3036,7 @@ function renderRequests() {
   `;
 
   $("#addRequest")?.addEventListener("click", () => openRequestModal());
+  el.querySelector("[data-goto-home]")?.addEventListener("click", () => setView("dashboard"));
   el.querySelectorAll("[data-done-req]").forEach((btn) =>
     btn.addEventListener("click", () => {
       completeRequest(btn.dataset.doneReq);
@@ -3769,9 +4211,9 @@ const GUIDE_SECTIONS = [
     id: "direction",
     title: "이 시스템이 향하는 방향",
     body: [
-      "TF Pulse는 보고서 TF의 목차·취합·요청·예산·일정·자료를 한곳에서 돌리는 운영 허브입니다.",
-      "역할(관리자·예산담당·식사담당·대상자)에 맞게 보이는 메뉴가 달라져, 각자 손댈 일에 집중할 수 있습니다.",
-      "이름은 선택해 접속하고, 입력한 데이터는 이 기기 브라우저에 저장됩니다. 관리자는 JSON으로 내보내기·가져오기가 가능합니다.",
+      "TF Pulse는 여러 명이 보고서를 함께 쓸 때, 내 할 일·팀 진도·작성 기준(운영계획/결과보고)을 맞추는 운영 허브입니다.",
+      "홈에서 할 일과 진도를 보고, 취합·요청·예산·목차 할당으로 이어집니다.",
+      "이름은 선택해 접속하고 데이터는 이 기기 브라우저에 저장됩니다. 관리자는 JSON 내보내기·가져오기로 팀 원본을 맞춥니다.",
     ],
   },
   {
@@ -3789,73 +4231,42 @@ const GUIDE_SECTIONS = [
 const GUIDE_MENU = [
   {
     tab: "dashboard",
-    name: "요약",
-    how: "파트 진행·취합·예산·일정을 한눈에 봅니다. 로그인 후 가장 먼저 보면 좋은 화면입니다.",
-  },
-  {
-    tab: "schedule",
-    name: "통합 일정",
-    how: "TF 마감·회의 일정을 보고 추가합니다. 다가오는 일정은 상단 알람으로도 안내됩니다.",
-  },
-  {
-    tab: "parts",
-    name: "목차·할당",
-    how: "관리자 전용. 보고서 목차와 페이지 범위·담당자를 세팅합니다.",
-    adminOnly: true,
+    name: "홈",
+    how: "파트·취합·예산·일정을 한눈에 봅니다. 로그인 후 가장 먼저 보면 좋은 화면입니다.",
   },
   {
     tab: "collections",
-    name: "취합 현황",
-    how: "1·2·3차 취합 현황을 입력합니다. 관리자는 같은 화면에서 취합 문서를 AI로 분석·브리핑할 수 있습니다.",
+    name: "보고서",
+    how: "취합 · 윤독·리뷰 · 그림을 한 메뉴에서 사용합니다. 그림 탭에서는 계획서 양식 레이아웃 PPT와 AI 도식을 내려받을 수 있습니다.",
   },
   {
-    tab: "review",
-    name: "윤독·리뷰",
-    how: "목차·할당에 등록된 파트 구분으로 PDF 요약표를 모읍니다. 윤독 회의도 같은 할당 순서(Ⅰ·Ⅱ·Ⅲ…)로 진행하며 관리자가 파트별 평가 코멘트를 남깁니다.",
-  },
-  {
-    tab: "ai-art",
-    name: "보고서 그림",
-    how: "보고서 내용으로 연성대 테마 그림을 만들고 PPT로 내려받아 TF가 수정·활용합니다.",
-  },
-  {
-    tab: "requests",
-    name: "공통 요청",
-    how: "관리자가 전체에 요청을 보내면, 상단 파란 알람과 이 탭에서 확인하고 완료 처리합니다.",
+    tab: "schedule",
+    name: "운영",
+    how: "일정 · 요청 · 오늘 뭐먹지를 묶었습니다. 마감·공통 요청·식사 공지를 여기서 돌립니다.",
   },
   {
     tab: "budget",
-    name: "예산취합",
-    how: "혁신지원사업 예산 항목을 편성·입력합니다. 담당자는 배정 항목의 산출내역을 저장합니다.",
+    name: "예산",
+    how: "운영계획수립용(예산)과 결과보고작성용(실적) 탭을 나눠 입력합니다. 담당자는 배정 항목의 편성·실적 산출내역을 저장합니다.",
   },
   {
     tab: "drive",
-    name: "드라이브",
-    how: "주요 문서가 있는 구글드라이브 링크를 모아 둡니다.",
+    name: "자료",
+    how: "드라이브 · 공통 서식 · 사용방법을 모았습니다. 링크·지침·도움말을 여기서 엽니다.",
   },
   {
-    tab: "resources",
-    name: "공통 서식",
-    how: "교육부 지침·스타일 가이드·공통 서식 링크를 한곳에서 엽니다.",
-  },
-  {
-    tab: "food",
-    name: "오늘 뭐먹지",
-    how: "돌림판으로 종목을 고르고, 해당 종목 업체를 랜덤 선정합니다. 종목·업체·대표메뉴 등록과 TF 공지는 식사담당·관리자만 볼 수 있습니다.",
-  },
-  {
-    tab: "members",
-    name: "대상자 관리",
-    how: "관리자 전용. TF 참여 대상자와 역할(관리자·예산·식사담당·대상자)을 등록합니다.",
+    tab: "parts",
+    name: "설정",
+    how: "관리자 전용. 목차·할당과 대상자 관리를 설정합니다.",
     adminOnly: true,
   },
 ];
 
 const GUIDE_TIPS = [
+  "상단 메뉴는 홈 · 보고서 · 운영 · 예산 · 자료 · 설정(관리자) 여섯 칸입니다. 세부 기능은 그 아래 하위 탭에서 고릅니다.",
   "상단 파란 ✈ 알람은 아직 처리하지 않은 공통 요청입니다. 누르면 요청 목록을 다시 볼 수 있습니다.",
   "일정 알람(종)은 마감·회의가 다가올 때 표시됩니다. 닫아도 벨에서 다시 열 수 있습니다.",
-  "「오늘 뭐먹지」에서 확정·TF 공지를 누르면 전원에게 메뉴선택 요청이 가고, 카톡용 투표 링크를 복사할 수 있습니다.",
-  "아이폰·갤럭시·아이패드에서는 탭 메뉴를 좌우로 밀어 이동하세요. TF-Pulse.html 단일 파일로도 동일하게 동작합니다.",
+  "「오늘 뭐먹지」는 운영 메뉴 안에 있습니다. 확정·TF 공지를 누르면 전원에게 메뉴선택 요청이 갑니다.",
 ];
 
 function renderGuide() {
@@ -3906,7 +4317,7 @@ function renderGuide() {
           ${GUIDE_TIPS.map((t) => `<li>${escapeHtml(t)}</li>`).join("")}
         </ul>
         <div class="overview-cta">
-          <button type="button" class="btn btn-primary" data-goto="dashboard">요약으로 시작하기</button>
+          <button type="button" class="btn btn-primary" data-goto="dashboard">홈으로 시작하기</button>
         </div>
       </section>
     </div>
@@ -4151,58 +4562,150 @@ function bindAiBriefPanel(root = document) {
   });
 }
 
-/** 보고서 작성 방향 틀 (그룹 선택지) */
+/** 보고서 대구분 — 관리자가 선택하면 이후 틀·도식·GPT 기획이 이 방향을 따름 */
+const REPORT_DOC_KINDS = [
+  {
+    id: "plan",
+    name: "운영계획서",
+    short: "계획",
+    desc: "목표·추진체계·세부계획·기대효과 중심. 「앞으로 무엇을 할지」를 설득하는 도식.",
+    focus:
+      "목표·추진필요성·체계·프로세스·연도별 계획·정량 목표치·기대효과를 전면에 두고, 실적·달성률 문구는 쓰지 마세요.",
+    tone: "계획·설계·추진·목표 설정",
+    icon: "fi-rr-clipboard-list-check",
+    preferTypes: ["overview", "governance", "certification", "roadmap", "platform"],
+  },
+  {
+    id: "result",
+    name: "결과보고서",
+    short: "실적",
+    desc: "실적·달성·확산·환류 중심. 「무엇을 했고 어떤 성과인가」를 보여주는 도식.",
+    focus:
+      "실적·달성률·성과지표 향상·공유·확산·개선(환류)을 전면에 두고, 앞으로의 계획 문구만으로 채우지 마세요.",
+    tone: "실적·성과·확산·환류",
+    icon: "fi-rr-chart-histogram",
+    preferTypes: ["improvement", "diffusion", "overview", "icc-matrix", "platform"],
+  },
+];
+
+function ensureReportDoc() {
+  if (!state.report || typeof state.report !== "object") state.report = {};
+  state.report.docKind = state.report.docKind === "result" ? "result" : "plan";
+}
+
+function getReportDocKind() {
+  ensureReportDoc();
+  return state.report.docKind === "result" ? "result" : "plan";
+}
+
+function setReportDocKind(kind) {
+  ensureReportDoc();
+  ensureBudget();
+  const next = kind === "result" ? "result" : "plan";
+  state.report.docKind = next;
+  state.budget.inputMode = next;
+}
+
+function reportDocKindById(id) {
+  return REPORT_DOC_KINDS.find((k) => k.id === id) || REPORT_DOC_KINDS[0];
+}
+
+function reportDocKindMeta(kind = getReportDocKind()) {
+  return reportDocKindById(kind);
+}
+
+/** 보고서 작성 방향 틀 (그룹 선택지) — docKind에 따라 가이드·기본 도식이 달라짐 */
 const REPORT_FRAME_GROUPS = [
   {
     id: "core-project",
     name: "핵심사업 기술틀",
-    desc: "선정사유 → 현황/필요성 → 개요도 → 3개년·세부계획 → 기대효과",
-    contextGuide:
-      "【작성 방향】핵심사업 페이지 구조로 정리\n1) 핵심사업명·목표\n2) 선정사유\n3) 현황분석 / 추진필요성\n4) 개요(추진체계·프로세스)\n5) 3개년 정량지표(2025–2027)\n6) 해당연도 세부추진\n7) 기대효과(정량·정성)\n\n【표현할 내용】",
-    defaultType: "overview",
+    desc: "선정사유 → 현황/필요성 → 개요도 → 3개년·세부 → 효과/실적",
+    icon: "fi-rr-diagram-project",
+    contextGuidePlan:
+      "【보고서 구분】운영계획서\n【작성 방향】핵심사업 페이지 구조로 정리\n1) 핵심사업명·목표\n2) 선정사유\n3) 현황분석 / 추진필요성\n4) 개요(추진체계·프로세스)\n5) 3개년 정량 목표(2025–2027)\n6) 해당연도 세부추진 계획\n7) 기대효과(정량·정성)\n\n【표현할 내용】",
+    contextGuideResult:
+      "【보고서 구분】결과보고서\n【작성 방향】핵심사업 실적·성과 구조로 정리\n1) 핵심사업명·목표 대비 실적\n2) 추진 경과·주요 산출\n3) 정량 지표 목표 대비 달성\n4) 정성 성과·사례\n5) 확산·환류·개선 사항\n\n【표현할 내용】",
+    defaultTypePlan: "overview",
+    defaultTypeResult: "improvement",
   },
   {
     id: "edu-innovation",
     name: "교육혁신 방향",
     desc: "전공트랙·마이크로전공·AI+X·유연학사 등 교육과정 혁신",
-    contextGuide:
-      "【작성 방향】교육혁신\n- 전공선택권·융합전공·트랙/마이크로전공\n- AI+X·DX 연계 교과·PBL/캡스톤\n- AA(지도)·학습경로·취업·역량지표\n\n【표현할 내용】",
-    defaultType: "overview",
+    icon: "fi-rr-graduation-cap",
+    contextGuidePlan:
+      "【보고서 구분】운영계획서\n【작성 방향】교육혁신 계획\n- 전공선택권·융합전공·트랙/마이크로전공 설계\n- AI+X·DX 연계 교과·PBL/캡스톤 추진 계획\n- AA(지도)·학습경로·취업·역량 목표 지표\n\n【표현할 내용】",
+    contextGuideResult:
+      "【보고서 구분】결과보고서\n【작성 방향】교육혁신 실적\n- 개설·운영 실적(트랙/마이크로/융합)\n- AI+X·PBL/캡스톤 참여·산출 성과\n- 역량·취업 연계 지표 달성\n\n【표현할 내용】",
+    defaultTypePlan: "overview",
+    defaultTypeResult: "diffusion",
   },
   {
     id: "industry",
     name: "지산학·ICC 방향",
     desc: "지산학 거버넌스, ICC 특성화, 기업협력·성과공유",
-    contextGuide:
-      "【작성 방향】지산학협력·ICC\n- 거버넌스·협의체·다자협약\n- ICC 특성화(시장확장×직무심화)\n- 테크클리닉·R&BD·재직자교육·성과포럼\n\n【표현할 내용】",
-    defaultType: "icc-matrix",
+    icon: "fi-rr-industry-alt",
+    contextGuidePlan:
+      "【보고서 구분】운영계획서\n【작성 방향】지산학협력·ICC 추진 계획\n- 거버넌스·협의체·다자협약 구축 계획\n- ICC 특성화(시장확장×직무심화) 배치\n- 테크클리닉·R&BD·재직자교육·포럼 일정\n\n【표현할 내용】",
+    contextGuideResult:
+      "【보고서 구분】결과보고서\n【작성 방향】지산학협력·ICC 실적\n- 협의체·협약·기업 참여 실적\n- ICC·프로그램 운영 성과\n- 성과포럼·확산·환류 결과\n\n【표현할 내용】",
+    defaultTypePlan: "icc-matrix",
+    defaultTypeResult: "platform",
   },
   {
     id: "performance",
     name: "성과관리·확산 방향",
     desc: "성과지표 향상, 공유·확산, 환류(PDCA)",
-    contextGuide:
-      "【작성 방향】성과관리·확산\n- 정량 KPI(연도별 목표·실적)\n- 성과공유·포럼·확산 경로\n- 점검→개선 환류(PDCA)\n\n【표현할 내용】",
-    defaultType: "diffusion",
+    icon: "fi-rr-chart-line-up",
+    contextGuidePlan:
+      "【보고서 구분】운영계획서\n【작성 방향】성과관리·확산 계획\n- 정량 KPI(연도별 목표치)\n- 성과공유·포럼·확산 계획\n- 점검→개선 환류(PDCA) 체계\n\n【표현할 내용】",
+    contextGuideResult:
+      "【보고서 구분】결과보고서\n【작성 방향】성과관리·확산 실적\n- 정량 KPI 목표 대비 실적\n- 성과공유·포럼·확산 실적\n- 점검→개선 환류 사례\n\n【표현할 내용】",
+    defaultTypePlan: "diffusion",
+    defaultTypeResult: "improvement",
   },
   {
     id: "roadmap",
     name: "단계별 추진 방향",
     desc: "연도·단계 마일스톤과 추진 일정 중심",
-    contextGuide:
-      "【작성 방향】단계별 추진\n- 2025 / 2026 / 2027 마일스톤\n- 단계별 핵심활동·산출물\n- 담당·협력주체·점검 시점\n\n【표현할 내용】",
-    defaultType: "roadmap",
+    icon: "fi-rr-roadmap",
+    contextGuidePlan:
+      "【보고서 구분】운영계획서\n【작성 방향】단계별 추진 계획\n- 2025 / 2026 / 2027 마일스톤(계획)\n- 단계별 핵심활동·산출물(예정)\n- 담당·협력주체·점검 시점\n\n【표현할 내용】",
+    contextGuideResult:
+      "【보고서 구분】결과보고서\n【작성 방향】단계별 추진 실적\n- 연도·단계별 완료 활동·산출물\n- 마일스톤 달성 여부\n- 지연·보완·차기 환류\n\n【표현할 내용】",
+    defaultTypePlan: "roadmap",
+    defaultTypeResult: "roadmap",
   },
 ];
 
-/** 연성대 도식 기본 스타일 가이드 (수정 가능, API에 전달) */
-const YEONSUNG_STYLE_GUIDE_DEFAULT = `【연성대 자율혁신계획서 도식 기본 요구사항】
-1. 보고서용 공식 개념도·추진체계도 스타일 (SmartArt형 박스·화살표)
-2. 색: 딥네이비(#0B2C5F) 강조, 라이트블루(#D6E6F5) 모듈, 쿨그레이 라인, 흰 여백
-3. 요소: 둥근 모서리 박스, 방향 화살표, 단계 원형 번호(①②③), 미니멀 아이콘
-4. 금지: 본문 한글 문장·표·로고·워터마크·네온·3D·사진 콜라주
-5. 구도: 가로형 와이드, PPT 슬라이드에 바로 넣을 수 있는 여백·대비
-6. 톤: 전문대학 혁신지원사업·공공 보고서용, 신뢰감 있는 절제된 도식`;
+function frameContextGuide(frame, kind = getReportDocKind()) {
+  const f = frame || reportFrameById(state._aiArtFrame || "core-project");
+  if (kind === "result") {
+    return f.contextGuideResult || f.contextGuidePlan || f.contextGuide || "";
+  }
+  return f.contextGuidePlan || f.contextGuide || "";
+}
+
+function frameDefaultType(frame, kind = getReportDocKind()) {
+  const f = frame || reportFrameById(state._aiArtFrame || "core-project");
+  if (kind === "result") return f.defaultTypeResult || f.defaultTypePlan || f.defaultType || "overview";
+  return f.defaultTypePlan || f.defaultType || "overview";
+}
+
+/** 연성대 도식 기본 스타일 가이드 (수정 가능, API에 전달) — 흑백 보고서 톤 */
+const YEONSUNG_STYLE_GUIDE_DEFAULT = `【연성대 혁신지원사업 보고서 도식 기본 요구사항】
+1. 인쇄용 흑백·회색 톤 보고서 도식 (공공문서 양식)
+2. 색: 검정·회색·흰색만 (#1A1A1A/#333/#4A4A4A/#777/#CCC/#F0F0F0/#FFF). 네이비·블루·컬러·그라데이션 금지
+3. 레이아웃 규칙(참고 양식 학습):
+   - 상단 회색 타이틀 바 + 좌측 진한 세로 액센트
+   - 섹션 번호(1, 2)로 상·하 구분
+   - 진한 회색 헤더 바(흰 글씨) + 중첩 사각 박스 그리드
+   - 패널 간 두꺼운 블록 화살표(→)로 흐름 표시
+   - 단계 번호는 원형 배지(①②③)
+   - 매트릭스·허브-스포크·상승 막대·3개년 표 등 구조형 도식
+4. 금지: 어두운 배경, 화려한 인포그래픽, 3D·네온·사진·로고·워터마크
+5. 구도: 흰 바탕 가로형(16:9), 한글 보고서(HWP)에 삽입해도 이질감 없는 절제된 레이아웃
+6. 참고: 숫자·문구를 자주 고칠 도식은 AI 이미지가 아니라「편집용 PPT 도식」을 사용`;
 
 /** 연성대 자율혁신계획서 도식 양식에 맞춘 그림 타입 */
 const REPORT_ART_TYPES = [
@@ -4212,8 +4715,9 @@ const REPORT_ART_TYPES = [
     groupLabel: "사업 구조",
     name: "핵심사업 개요도",
     desc: "선정사유·트랙·교과·산업연계가 한눈에 보이는 개요 플로우",
+    icon: "fi-rr-overview",
     visual:
-      "academic report overview flowchart with rounded module boxes, directional arrows, left foundation icons to center track paths to industry outcome, navy and light-blue boxes",
+      "grayscale academic report overview, section numbers 1 and 2, nested gray header bars, four-column nested boxes, three bordered process panels with block arrows, white background, no color",
   },
   {
     id: "governance",
@@ -4221,8 +4725,9 @@ const REPORT_ART_TYPES = [
     groupLabel: "사업 구조",
     name: "추진체계도",
     desc: "거버넌스·위원회·협력 단계가 연결되는 추진체계",
+    icon: "fi-rr-organization-chart",
     visual:
-      "numbered circular stage bubbles 1-5 connected by lines, governance process ladder, clean institutional flowchart",
+      "grayscale governance ascending process bars numbered 1-5, vertical timeline with circular nodes and horizontal rows, institutional report style, white background",
   },
   {
     id: "certification",
@@ -4230,8 +4735,9 @@ const REPORT_ART_TYPES = [
     groupLabel: "사업 구조",
     name: "인증단계모형",
     desc: "기본·품질·혁신 등 단계형 인증 배지 구조",
+    icon: "fi-rr-diploma",
     visual:
-      "three stacked circular certification badges basic quality innovation, vertical capability ladder, report diagram style",
+      "grayscale three certification stage panels basic quality innovation with large circles and block arrows between panels, report style, white background",
   },
   {
     id: "icc-matrix",
@@ -4239,8 +4745,9 @@ const REPORT_ART_TYPES = [
     groupLabel: "협력·특성화",
     name: "ICC 특성화 매트릭스",
     desc: "시장확장×직무역량 축에 ICC·특성화를 배치한 매트릭스",
+    icon: "fi-rr-grid",
     visual:
-      "2-axis matrix chart with plotted cluster nodes for industry-coupled centers, quadrant mapping, clean academic strategy map",
+      "grayscale 2x2 strategy matrix with axis labels market expansion vs competency depth, labeled dots, stacked strategy boxes on right, academic report, white background",
   },
   {
     id: "platform",
@@ -4248,8 +4755,9 @@ const REPORT_ART_TYPES = [
     groupLabel: "협력·특성화",
     name: "플랫폼 순환도",
     desc: "중앙 플랫폼과 주변 프로그램이 순환하는 구조",
+    icon: "fi-rr-chart-network",
     visual:
-      "central hub circle with four surrounding program quadrants and circular arrows, innovation growth platform diagram",
+      "grayscale hub and spoke platform diagram, dark center hexagon card, four surrounding program cards with circular icons and arrows toward center, white background",
   },
   {
     id: "diffusion",
@@ -4257,8 +4765,9 @@ const REPORT_ART_TYPES = [
     groupLabel: "성과·일정",
     name: "성과확산모형",
     desc: "성과공유·포럼·확산을 나타내는 확산 구조",
+    icon: "fi-rr-share",
     visual:
-      "performance diffusion boxes with outward sharing arrows, forum and spillover modules, report-style process map",
+      "grayscale four process panels with numbered circles and block arrows left to right, performance diffusion report diagram, white background",
   },
   {
     id: "improvement",
@@ -4266,8 +4775,9 @@ const REPORT_ART_TYPES = [
     groupLabel: "성과·일정",
     name: "성과향상모형",
     desc: "지표·역량이 연도별로 올라가는 향상 구조",
+    icon: "fi-rr-arrow-trend-up",
     visual:
-      "ascending year steps 2025-2027 with KPI uplift arrows, improvement ladder, clean quantitative growth diagram",
+      "grayscale ascending year bars 2025-2027 with capsule totals, comparison bars for university vs averages, monochrome chart report style, white background",
   },
   {
     id: "roadmap",
@@ -4275,10 +4785,17 @@ const REPORT_ART_TYPES = [
     groupLabel: "성과·일정",
     name: "3개년 추진 로드맵",
     desc: "2025–2027 마일스톤·활동 타임라인",
+    icon: "fi-rr-roadmap",
     visual:
-      "horizontal three-year roadmap timeline with milestone gates and activity blocks, navy headers light-blue cards",
+      "grayscale hierarchical vision goal strategy bars, three pillars, three-year roadmap table with dark headers, academic report layout, white background",
   },
 ];
+
+function flaticonIcon(name, extraClass = "") {
+  const cls = String(name || "fi-rr-picture").replace(/[^\w-]/g, "");
+  const extra = String(extraClass || "").replace(/[^\w\s-]/g, "");
+  return `<i class="fi ${cls}${extra ? ` ${extra}` : ""}" aria-hidden="true"></i>`;
+}
 
 function reportArtTypeById(id) {
   return REPORT_ART_TYPES.find((t) => t.id === id) || REPORT_ART_TYPES[0];
@@ -4297,10 +4814,14 @@ function artTypesByGroup() {
   return [...map.values()];
 }
 
-function buildYeonsungStyleGuide(type, frame) {
+function buildYeonsungStyleGuide(type, frame, kind = getReportDocKind()) {
   const t = type || reportArtTypeById(state._aiArtType);
   const f = frame || reportFrameById(state._aiArtFrame || "core-project");
+  const doc = reportDocKindMeta(kind);
   return `${YEONSUNG_STYLE_GUIDE_DEFAULT}
+
+【보고서 대구분】${doc.name} (${doc.tone})
+${doc.focus}
 
 【선택 작성 방향】${f.name}
 ${f.desc}
@@ -4320,6 +4841,10 @@ function renderAiArt() {
   const frame = reportFrameById(selectedFrame);
   const selectedType = state._aiArtType || frame.defaultType || "overview";
   const type = reportArtTypeById(selectedType);
+  // 예전 네이비/컬러 가이드가 남아 있으면 흑백 기본으로 교체
+  if (state._aiArtStyleGuide && /0B2C5F|딥네이비|라이트블루|D6E6F5/i.test(state._aiArtStyleGuide)) {
+    state._aiArtStyleGuide = "";
+  }
   const styleGuide = state._aiArtStyleGuide || buildYeonsungStyleGuide(type, frame);
   const contextSeed = state._aiArtContextSeed || frame.contextGuide;
   const prefillBriefId = state._aiArtBriefId || "";
@@ -4333,23 +4858,70 @@ function renderAiArt() {
     )
     .join("");
   const groups = artTypesByGroup();
+  // 단일 선택: 이전 다중 선택이 남아 있으면 첫 항목만 유지
+  const selectedLayoutId = Array.isArray(state._reportLayoutIds)
+    ? state._reportLayoutIds[0] || ""
+    : "";
+  if (state._reportLayoutIds?.length > 1) state._reportLayoutIds = selectedLayoutId ? [selectedLayoutId] : [];
 
   el.innerHTML = `
     <div class="ai-page">
-      <section class="panel ai-art-hero">
+      <section class="panel layout-ppt-panel">
         <div class="panel-head">
           <div>
-            <h2 class="panel-title">연성대 계획서 도식 생성</h2>
-            <p class="muted" style="margin:4px 0 0">작성 방향 틀을 고르면 내용 가이드가, 스타일 가이드는 자동으로 채워집니다. 수정한 뒤 그림을 생성하고 PPT로 받으세요.</p>
+            <h2 class="panel-title">${flaticonIcon("fi-rr-table-layout", "panel-title-icon")} 보고서 양식 레이아웃 PPT</h2>
+            <p class="muted" style="margin:4px 0 0">자율혁신계획서 스타일(장번호·요약박스·회색 표·추이 그래프)을 학습한 <strong>편집 가능</strong> 기본 레이아웃입니다. <strong>하나만</strong> 고른 뒤 PPT로 받아 수치·문장만 바꿔 쓰세요.</p>
+          </div>
+        </div>
+        <div class="layout-ppt-grid" role="radiogroup" aria-label="보고서 레이아웃">
+          ${REPORT_LAYOUTS.map(
+            (l) => `
+            <label class="layout-ppt-card ${l.id === selectedLayoutId ? "is-on" : ""}" data-layout-card="${escapeAttr(l.id)}" data-layout-name="${escapeAttr(l.name)}">
+              <input type="radio" name="report-layout" data-layout-id="${escapeAttr(l.id)}" ${l.id === selectedLayoutId ? "checked" : ""} />
+              <div class="layout-card-icon" aria-hidden="true">${flaticonIcon(l.icon || "fi-rr-table-layout")}</div>
+              <div class="layout-thumb" aria-hidden="true">${layoutPreviewWireHtml(l.id)}</div>
+              <span class="layout-ppt-preview">${escapeHtml(l.preview)}</span>
+              <strong>${escapeHtml(l.name)}</strong>
+              <span class="layout-ppt-desc">${escapeHtml(l.desc)}</span>
+            </label>`
+          ).join("")}
+        </div>
+        <div class="layout-float" id="layoutFloat" hidden aria-hidden="true">
+          <p class="layout-float-title" id="layoutFloatTitle"></p>
+          <div class="layout-float-stage" id="layoutFloatStage"></div>
+          <p class="layout-float-hint">대략 구성 미리보기 · PPT에서 문장·수치를 수정해 사용</p>
+        </div>
+        <div class="form-grid two" style="margin-top:12px">
+          <label class="field">장번호 (예: 3, Ⅱ)
+            <input id="layoutChapterNo" value="${escapeAttr(state._layoutChapterNo || "3")}" maxlength="6" />
+          </label>
+          <label class="field">파일명 접두어
+            <input id="layoutFilePrefix" value="${escapeAttr(state._layoutFilePrefix || "연성대_보고서_양식_레이아웃")}" />
+          </label>
+        </div>
+        <div class="row" style="margin-top:12px;gap:8px;flex-wrap:wrap">
+          <button type="button" class="btn btn-primary" id="layoutPptDownload">${flaticonIcon("fi-rr-download")} 선택 레이아웃 PPT 다운로드</button>
+          <button type="button" class="btn btn-sm" id="layoutPptNone">${flaticonIcon("fi-rr-rectangle-xmark")} 선택 해제</button>
+          <span class="muted" id="layoutPptStatus"></span>
+        </div>
+        <p class="flaticon-credit muted" style="margin-top:10px">Icons by <a href="https://www.flaticon.com/uicons" target="_blank" rel="noopener noreferrer">Flaticon</a></p>
+      </section>
+
+      <section class="panel diagram-wizard">
+        <div class="panel-head">
+          <div>
+            <h2 class="panel-title">${flaticonIcon("fi-rr-paintbrush-pencil", "panel-title-icon")} 보고서용 그림 만들기</h2>
+            <p class="muted" style="margin:4px 0 0">아래 단계를 고른 뒤 최하단 버튼으로 작성합니다. 흑백·편집 가능 PPT로 나오며, 진행 과정이 결과 화면에 그려집니다.</p>
           </div>
         </div>
 
-        <div class="field full" style="margin-bottom:14px">
-          <span class="ai-type-label">1) 보고서 작성 방향 틀 (그룹)</span>
+        <div class="diagram-step" data-step="1">
+          <div class="diagram-step-head"><span class="diagram-step-num">1</span><strong>작성 방향 틀</strong></div>
           <div class="ai-type-grid ai-frame-grid" role="radiogroup" aria-label="보고서 작성 방향 틀">
             ${REPORT_FRAME_GROUPS.map(
               (g) => `
               <button type="button" class="ai-type-card ai-frame-card ${g.id === selectedFrame ? "active" : ""}" data-art-frame="${escapeAttr(g.id)}" aria-pressed="${g.id === selectedFrame ? "true" : "false"}">
+                <span class="ai-type-icon">${flaticonIcon(g.icon || "fi-rr-diagram-project")}</span>
                 <strong>${escapeHtml(g.name)}</strong>
                 <span>${escapeHtml(g.desc)}</span>
               </button>`
@@ -4357,8 +4929,8 @@ function renderAiArt() {
           </div>
         </div>
 
-        <div class="field full" style="margin-bottom:14px">
-          <span class="ai-type-label">2) 도식 타입 (그룹별)</span>
+        <div class="diagram-step" data-step="2">
+          <div class="diagram-step-head"><span class="diagram-step-num">2</span><strong>도식 타입</strong></div>
           ${groups
             .map(
               (g) => `
@@ -4369,6 +4941,7 @@ function renderAiArt() {
                   .map(
                     (t) => `
                   <button type="button" class="ai-type-card ${t.id === selectedType ? "active" : ""}" data-art-type="${escapeAttr(t.id)}" aria-pressed="${t.id === selectedType ? "true" : "false"}">
+                    <span class="ai-type-icon">${flaticonIcon(t.icon || "fi-rr-diagram-project")}</span>
                     <strong>${escapeHtml(t.name)}</strong>
                     <span>${escapeHtml(t.desc)}</span>
                   </button>`
@@ -4380,36 +4953,46 @@ function renderAiArt() {
             .join("")}
         </div>
 
-        <div class="form-grid two">
-          <label class="field">슬라이드 제목
-            <input id="aiArtTitle" value="${escapeAttr(type.name)}" />
-          </label>
-          <label class="field">AI 취합분석 불러오기 (선택)
-            <select id="aiArtBrief">
-              <option value="">직접 입력 / 작성 틀 가이드 사용</option>
-              ${briefOpts}
-            </select>
-          </label>
-          <label class="field full">연성대 스타일 · 생성 기본 가이드 <span class="muted">(자동 입력 · 수정 가능)</span>
-            <textarea id="aiArtStyleGuide" rows="8">${escapeHtml(styleGuide)}</textarea>
-          </label>
-          <div class="field full row" style="gap:8px;margin:-4px 0 4px">
-            <button type="button" class="btn btn-sm" id="aiArtStyleReset">스타일 가이드 기본값으로</button>
-            <button type="button" class="btn btn-sm" id="aiArtContextReset">작성 틀 가이드 다시 넣기</button>
+        <div class="diagram-step" data-step="3">
+          <div class="diagram-step-head"><span class="diagram-step-num">3</span><strong>제목·내용</strong></div>
+          <div class="form-grid two">
+            <label class="field">슬라이드 제목
+              <input id="aiArtTitle" value="${escapeAttr(type.name)}" />
+            </label>
+            <label class="field">AI 취합분석 불러오기 (선택)
+              <select id="aiArtBrief">
+                <option value="">직접 입력 / 작성 틀 가이드 사용</option>
+                ${briefOpts}
+              </select>
+            </label>
+            <label class="field full">보고서 내용 / 요약
+              <textarea id="aiArtContext" rows="5" placeholder="그림으로 표현할 성과·프로그램·키워드">${escapeHtml(contextSeed)}</textarea>
+            </label>
+            <details class="field full diagram-advanced">
+              <summary>고급 · 스타일 가이드 / 연출 지시</summary>
+              <textarea id="aiArtStyleGuide" rows="5" style="margin-top:8px">${escapeHtml(styleGuide)}</textarea>
+              <div class="row" style="gap:8px;margin:8px 0">
+                <button type="button" class="btn btn-sm" id="aiArtStyleReset">스타일 기본값</button>
+                <button type="button" class="btn btn-sm" id="aiArtContextReset">작성 틀 다시 넣기</button>
+              </div>
+              <input id="aiArtPrompt" placeholder="추가 연출 (선택)" />
+            </details>
           </div>
-          <label class="field full">보고서 내용 / 요약 <span class="muted">(작성 방향 틀이 기본으로 채워짐)</span>
-            <textarea id="aiArtContext" rows="8" placeholder="그림으로 표현할 성과·프로그램·키워드를 적어 주세요.">${escapeHtml(contextSeed)}</textarea>
-          </label>
-          <label class="field full">추가 연출 지시 (선택)
-            <input id="aiArtPrompt" placeholder="예: 왼쪽은 현황, 오른쪽은 추진체계 / ICC를 4개 노드로" />
-          </label>
         </div>
-        <div class="ai-art-actions">
-          <div class="row" style="gap:8px;flex-wrap:wrap">
-            <button type="button" class="btn btn-primary" id="aiArtRun">그림 생성</button>
-            <button type="button" class="btn" id="aiArtPpt" ${arts.length ? "" : "disabled"}>선택/전체 PPT 다운로드</button>
+
+        <div class="diagram-cta">
+          <button type="button" class="btn btn-primary btn-lg" id="diagramBuildBtn">${flaticonIcon("fi-rr-magic-wand")} 보고서용 그림 만들기</button>
+          <p class="muted">선택: <strong id="diagramChoiceSummary">${escapeHtml(frame.name)} · ${escapeHtml(type.name)}</strong></p>
+          <p class="muted" style="margin:4px 0 0">GPT가 보고서 내용을 먼저 구조화한 뒤, 목적에 맞는 흑백 도식 PPT를 만듭니다.</p>
+          <p class="flaticon-credit muted">Icons by <a href="https://www.flaticon.com/uicons" target="_blank" rel="noopener noreferrer">Flaticon</a></p>
+        </div>
+
+        <div class="diagram-result" id="diagramResult">
+          <div class="diagram-result-head">
+            <h3>최종 결과</h3>
+            <span class="muted" id="diagramResultMeta">옵션을 고른 뒤 위 버튼을 누르면 여기에 그려집니다.</span>
           </div>
-          <div class="ai-art-progress" id="aiArtProgress" hidden aria-hidden="true">
+          <div class="ai-art-progress diagram-build-progress" id="aiArtProgress" hidden aria-hidden="true">
             <div class="ai-art-progress-meta">
               <span class="muted" id="aiArtStatus"></span>
               <span class="ai-art-progress-pct" id="aiArtProgressPct">0%</span>
@@ -4419,20 +5002,32 @@ function renderAiArt() {
             </div>
             <p class="ai-art-progress-step muted" id="aiArtProgressStep"></p>
           </div>
+          <ul class="diagram-build-log" id="diagramBuildLog" aria-live="polite"></ul>
+          <div class="diagram-canvas-wrap">
+            <div class="diagram-canvas phase-0" id="diagramCanvas" aria-label="도식 미리보기">
+              ${diagramPreviewWireHtml(selectedType)}
+            </div>
+          </div>
+          <div class="diagram-result-actions row" style="gap:8px;flex-wrap:wrap;margin-top:14px">
+            <button type="button" class="btn btn-primary" id="aiArtEditablePpt" disabled>편집용 PPT 다운로드</button>
+            <button type="button" class="btn" id="aiArtRun">AI 참고 그림도 만들기 (선택)</button>
+            <button type="button" class="btn" id="aiArtPpt" ${arts.length ? "" : "disabled"}>참고 그림 PPT</button>
+            <span class="muted" id="diagramBuildDoneHint"></span>
+          </div>
         </div>
       </section>
 
-      <section class="panel">
+      ${
+        arts.length
+          ? `<section class="panel">
         <div class="panel-head">
-          <h2 class="panel-title">생성된 그림</h2>
-          <span class="muted">${arts.length}장 · 최대 8장 보관</span>
+          <h2 class="panel-title">AI 참고 그림 (비트맵)</h2>
+          <span class="muted">${arts.length}장 · 수치 수정은 편집용 PPT 권장</span>
         </div>
         <div class="ai-art-grid">
-          ${
-            arts.length
-              ? arts
-                  .map(
-                    (a) => `
+          ${arts
+            .map(
+              (a) => `
             <article class="ai-art-card">
               <label class="ai-art-check">
                 <input type="checkbox" data-art-pick="${escapeAttr(a.id)}" checked />
@@ -4448,12 +5043,12 @@ function renderAiArt() {
                 <button type="button" class="btn btn-sm btn-danger" data-del-art="${escapeAttr(a.id)}">삭제</button>
               </div>
             </article>`
-                  )
-                  .join("")
-              : `<div class="empty">아직 생성된 그림이 없습니다.</div>`
-          }
+            )
+            .join("")}
         </div>
-      </section>
+      </section>`
+          : ""
+      }
     </div>
   `;
 
@@ -4463,6 +5058,118 @@ function renderAiArt() {
     const guide = buildYeonsungStyleGuide(t, f);
     state._aiArtStyleGuide = guide;
     if ($("#aiArtStyleGuide")) $("#aiArtStyleGuide").value = guide;
+  };
+
+  const collectLayoutIds = () => {
+    const checked = el.querySelector("[data-layout-id]:checked");
+    return checked?.dataset.layoutId ? [checked.dataset.layoutId] : [];
+  };
+
+  const syncLayoutCards = () => {
+    el.querySelectorAll(".layout-ppt-card").forEach((card) => {
+      const on = card.querySelector("input")?.checked;
+      card.classList.toggle("is-on", Boolean(on));
+    });
+    state._reportLayoutIds = collectLayoutIds();
+  };
+
+  el.querySelectorAll("[data-layout-id]").forEach((inp) => {
+    inp.addEventListener("change", syncLayoutCards);
+  });
+
+  const layoutFloat = $("#layoutFloat");
+  const layoutFloatTitle = $("#layoutFloatTitle");
+  const layoutFloatStage = $("#layoutFloatStage");
+  const placeLayoutFloat = (card, clientX, clientY) => {
+    if (!layoutFloat) return;
+    const pad = 16;
+    const fw = layoutFloat.offsetWidth || 360;
+    const fh = layoutFloat.offsetHeight || 260;
+    let left = clientX + 18;
+    let top = clientY + 18;
+    if (left + fw > window.innerWidth - pad) left = clientX - fw - 12;
+    if (top + fh > window.innerHeight - pad) top = clientY - fh - 12;
+    left = Math.max(pad, left);
+    top = Math.max(pad, top);
+    layoutFloat.style.left = `${left}px`;
+    layoutFloat.style.top = `${top}px`;
+  };
+  const showLayoutFloat = (card, e) => {
+    if (!layoutFloat || !layoutFloatStage) return;
+    const id = card.dataset.layoutCard;
+    layoutFloatStage.innerHTML = layoutPreviewWireHtml(id);
+    if (layoutFloatTitle) layoutFloatTitle.textContent = card.dataset.layoutName || "";
+    layoutFloat.hidden = false;
+    layoutFloat.setAttribute("aria-hidden", "false");
+    layoutFloat.classList.add("is-open");
+    placeLayoutFloat(card, e.clientX, e.clientY);
+  };
+  const hideLayoutFloat = () => {
+    if (!layoutFloat) return;
+    layoutFloat.hidden = true;
+    layoutFloat.setAttribute("aria-hidden", "true");
+    layoutFloat.classList.remove("is-open");
+  };
+  el.querySelectorAll("[data-layout-card]").forEach((card) => {
+    card.addEventListener("mouseenter", (e) => showLayoutFloat(card, e));
+    card.addEventListener("mousemove", (e) => {
+      if (layoutFloat?.classList.contains("is-open")) placeLayoutFloat(card, e.clientX, e.clientY);
+    });
+    card.addEventListener("mouseleave", hideLayoutFloat);
+    card.addEventListener("focusin", (e) => showLayoutFloat(card, e));
+    card.addEventListener("focusout", (e) => {
+      if (!card.contains(e.relatedTarget)) hideLayoutFloat();
+    });
+  });
+
+  $("#layoutPptNone")?.addEventListener("click", () => {
+    el.querySelectorAll("[data-layout-id]").forEach((c) => {
+      c.checked = false;
+    });
+    syncLayoutCards();
+  });
+  $("#layoutPptDownload")?.addEventListener("click", async () => {
+    const ids = collectLayoutIds();
+    const status = $("#layoutPptStatus");
+    const btn = $("#layoutPptDownload");
+    if (!ids.length) {
+      alert("내려받을 레이아웃을 하나 선택해 주세요.");
+      return;
+    }
+    try {
+      if (btn) btn.disabled = true;
+      if (status) status.textContent = "PPT 작성 중…";
+      state._layoutChapterNo = ($("#layoutChapterNo")?.value || "3").trim();
+      state._layoutFilePrefix = ($("#layoutFilePrefix")?.value || "연성대_보고서_양식_레이아웃").trim();
+      state._reportLayoutIds = ids;
+      await downloadReportLayoutPpt({
+        layoutIds: ids,
+        chapterNo: state._layoutChapterNo,
+        titlePrefix: state._layoutFilePrefix,
+      });
+      if (status) status.textContent = `${ids.length}종 레이아웃 다운로드 완료`;
+    } catch (err) {
+      if (status) status.textContent = "";
+      alert(err.message || "레이아웃 PPT 저장에 실패했습니다.");
+    } finally {
+      if (btn) btn.disabled = false;
+    }
+  });
+
+  const refreshDiagramChoiceUi = () => {
+    const f = reportFrameById(state._aiArtFrame || selectedFrame);
+    const t = reportArtTypeById(state._aiArtType || selectedType);
+    const sum = $("#diagramChoiceSummary");
+    if (sum) sum.textContent = `${f.name} · ${t.name}`;
+    const canvas = $("#diagramCanvas");
+    if (canvas && !canvas.classList.contains("is-building")) {
+      canvas.innerHTML = diagramPreviewWireHtml(t.id);
+      canvas.className = "diagram-canvas phase-0";
+    }
+    const meta = $("#diagramResultMeta");
+    if (meta && !el.querySelector("#aiArtProgress:not([hidden])")) {
+      meta.textContent = `선택 반영 대기 · ${f.name} / ${t.name}`;
+    }
   };
 
   el.querySelectorAll("[data-art-frame]").forEach((btn) => {
@@ -4482,7 +5189,6 @@ function renderAiArt() {
         b.setAttribute("aria-pressed", on ? "true" : "false");
       });
       if ($("#aiArtTitle")) $("#aiArtTitle").value = reportArtTypeById(f.defaultType).name;
-      // 취합분석을 불러오지 않았거나, 아직 작성 틀 가이드 상태면 새 틀로 교체
       const briefId = $("#aiArtBrief")?.value || "";
       const ctxVal = $("#aiArtContext")?.value || "";
       if ($("#aiArtContext") && (!briefId || ctxVal.includes("【작성 방향】"))) {
@@ -4490,6 +5196,7 @@ function renderAiArt() {
         state._aiArtContextSeed = f.contextGuide;
       }
       syncStyleGuideField();
+      refreshDiagramChoiceUi();
     });
   });
 
@@ -4507,6 +5214,7 @@ function renderAiArt() {
         titleEl.value = t.name;
       }
       syncStyleGuideField();
+      refreshDiagramChoiceUi();
     });
   });
 
@@ -4631,6 +5339,155 @@ function renderAiArt() {
     };
   };
 
+  const pushBuildLog = (text) => {
+    const log = $("#diagramBuildLog");
+    if (!log) return;
+    const li = document.createElement("li");
+    li.textContent = text;
+    li.className = "is-new";
+    log.appendChild(li);
+    log.scrollTop = log.scrollHeight;
+  };
+
+  const sleep = (ms) => new Promise((r) => setTimeout(r, ms));
+
+  $("#diagramBuildBtn")?.addEventListener("click", async () => {
+    const btn = $("#diagramBuildBtn");
+    const dlBtn = $("#aiArtEditablePpt");
+    const hint = $("#diagramBuildDoneHint");
+    const canvas = $("#diagramCanvas");
+    const log = $("#diagramBuildLog");
+    const result = $("#diagramResult");
+    const type = reportArtTypeById(state._aiArtType || el.querySelector("[data-art-type].active")?.dataset.artType);
+    const frame = reportFrameById(state._aiArtFrame || selectedFrame);
+    const titleIn = ($("#aiArtTitle")?.value || type.name).trim();
+    const context = ($("#aiArtContext")?.value || "").trim();
+    const extraPrompt = ($("#aiArtPrompt")?.value || "").trim();
+    state._aiArtStyleGuide = ($("#aiArtStyleGuide")?.value || buildYeonsungStyleGuide(type, frame)).trim();
+    state._aiArtContextSeed = context;
+
+    result?.scrollIntoView({ behavior: "smooth", block: "start" });
+    if (log) log.innerHTML = "";
+    if (hint) hint.textContent = "";
+    if (dlBtn) dlBtn.disabled = true;
+    if (canvas) {
+      canvas.innerHTML = diagramPreviewWireHtml(type.id);
+      canvas.className = "diagram-canvas is-building phase-0";
+    }
+    if ($("#diagramResultMeta")) {
+      $("#diagramResultMeta").textContent = `${frame.name} · ${type.name} · GPT 기획 중`;
+    }
+
+    try {
+      if (btn) btn.disabled = true;
+      setArtProgress(6, "보고서 목적 파악", "GPT 도식 기획 중…");
+      pushBuildLog(`0단계 · GPT가 「${type.name}」 목적을 분석합니다`);
+      if (canvas) canvas.className = "diagram-canvas is-building phase-1";
+
+      let plan = null;
+      try {
+        plan = await planReportDiagram({
+          title: titleIn,
+          context,
+          prompt: extraPrompt,
+          styleGuide: state._aiArtStyleGuide,
+          reportFrame: frame.id,
+          reportFrameName: frame.name,
+          reportType: type.id,
+          reportTypeName: type.name,
+          reportTypeDesc: type.desc,
+          reportTypeVisual: type.visual,
+        });
+      } catch (planErr) {
+        pushBuildLog(`기획 경고 · ${planErr.message || "기획 API 실패"} — 기본 골격으로 진행`);
+      }
+
+      const title = (plan?.title || titleIn || type.name).trim();
+      if ($("#aiArtTitle") && plan?.title) $("#aiArtTitle").value = title;
+
+      setArtProgress(22, "핵심 메시지 정리", "GPT 도식 기획 중…");
+      if (canvas) canvas.className = "diagram-canvas is-building phase-2";
+      if (plan?.purpose) pushBuildLog(`목적 · ${plan.purpose}`);
+      if (plan?.reasoning) pushBuildLog(`사고 · ${plan.reasoning}`);
+      (plan?.keyMessages || []).forEach((m, i) => pushBuildLog(`메시지 ${i + 1} · ${m}`));
+      await sleep(280);
+
+      setArtProgress(45, "도식 칸에 내용 배치", "구조 매핑 중…");
+      if (canvas) canvas.className = "diagram-canvas is-building phase-3";
+      pushBuildLog(`3단계 · ${type.name} 칸에 내용 매핑`);
+      await sleep(320);
+
+      setArtProgress(68, "흑백 박스·화살표 구성", "도형 배치 중…");
+      if (canvas) canvas.className = "diagram-canvas is-building phase-4";
+      pushBuildLog("4단계 · 흑백 박스·블록화살표·단계배지 배치");
+      await sleep(280);
+
+      setArtProgress(86, "편집용 PPT 작성", "PPT 생성 중…");
+      if (canvas) canvas.className = "diagram-canvas is-building phase-5";
+      pushBuildLog("5단계 · GPT 기획 라벨로 편집용 PPT 작성");
+      await downloadEditableDiagramPpt({
+        typeId: type.id,
+        title,
+        fileName: `보고서도식_${title}`,
+        labels: plan?.labels || {},
+      });
+
+      if (canvas) {
+        canvas.classList.remove("is-building");
+        canvas.classList.add("is-done");
+      }
+      setArtProgress(100, "작성 완료", "완료");
+      pushBuildLog("완료 · 한글에 삽입해 숫자·문구를 다듬으세요");
+      if ($("#diagramResultMeta")) {
+        $("#diagramResultMeta").textContent = plan?.purpose
+          ? `${frame.name} · ${type.name} · ${plan.purpose}`
+          : `${frame.name} · ${type.name} · 편집용 PPT 준비됨`;
+      }
+      if (dlBtn) dlBtn.disabled = false;
+      if (hint) {
+        hint.textContent = plan
+          ? "GPT 기획 반영 PPT가 저장되었습니다. 참고 그림도 같은 기획으로 만들 수 있습니다."
+          : "PPT가 저장되었습니다. 다시 받으려면 아래 버튼을 누르세요.";
+      }
+      state._lastDiagramBuild = {
+        typeId: type.id,
+        title,
+        at: new Date().toISOString(),
+        plan: plan || null,
+      };
+      state._lastDiagramPlan = plan || null;
+    } catch (err) {
+      const wrap = $("#aiArtProgress");
+      wrap?.classList.add("is-error");
+      setArtProgress(0, "작성 실패", "");
+      pushBuildLog(`오류 · ${err.message || "실패"}`);
+      alert(err.message || "보고서용 그림 작성에 실패했습니다.");
+    } finally {
+      if (btn) btn.disabled = false;
+    }
+  });
+
+  $("#aiArtEditablePpt")?.addEventListener("click", async () => {
+    const btn = $("#aiArtEditablePpt");
+    const type = reportArtTypeById(state._aiArtType || el.querySelector("[data-art-type].active")?.dataset.artType);
+    const title = ($("#aiArtTitle")?.value || type.name).trim();
+    const plan = state._lastDiagramPlan;
+    try {
+      if (btn) btn.disabled = true;
+      await downloadEditableDiagramPpt({
+        typeId: type.id,
+        title: plan?.title || title,
+        fileName: `보고서도식_${plan?.title || title}`,
+        labels: plan?.labels || {},
+      });
+      if ($("#diagramBuildDoneHint")) $("#diagramBuildDoneHint").textContent = "편집용 PPT 다시 저장했습니다.";
+    } catch (err) {
+      alert(err.message || "편집용 PPT 저장에 실패했습니다.");
+    } finally {
+      if (btn) btn.disabled = false;
+    }
+  });
+
   $("#aiArtRun")?.addEventListener("click", async () => {
     const btn = $("#aiArtRun");
     const type = reportArtTypeById(state._aiArtType || el.querySelector("[data-art-type].active")?.dataset.artType);
@@ -4640,18 +5497,43 @@ function renderAiArt() {
     const prompt = ($("#aiArtPrompt")?.value || "").trim();
     const styleGuideText = ($("#aiArtStyleGuide")?.value || buildYeonsungStyleGuide(type, frame)).trim();
     state._aiArtStyleGuide = styleGuideText;
-    if (!context && !prompt) {
-      alert("보고서 내용 또는 연출 지시를 입력해 주세요.");
+    if (!context && !prompt && !state._lastDiagramPlan?.imagePrompt) {
+      alert("보고서 내용 또는 연출 지시를 입력해 주세요. (또는 먼저「보고서용 그림 만들기」로 기획을 실행하세요)");
       return;
     }
     let progress = null;
     try {
       if (btn) btn.disabled = true;
       progress = startArtProgress(`${frame.name} · ${type.name} 생성 중…`);
+
+      let plan = state._lastDiagramPlan;
+      if (!plan?.imagePrompt && (context || prompt)) {
+        try {
+          plan = await planReportDiagram({
+            title,
+            context,
+            prompt,
+            styleGuide: styleGuideText,
+            reportFrame: frame.id,
+            reportFrameName: frame.name,
+            reportType: type.id,
+            reportTypeName: type.name,
+            reportTypeDesc: type.desc,
+            reportTypeVisual: type.visual,
+          });
+          state._lastDiagramPlan = plan;
+        } catch {
+          /* 이미지 API 자체 프롬프트 생성으로 폴백 */
+        }
+      }
+
       const data = await generateYeonsungImage({
-        title,
+        title: plan?.title || title,
         context,
         prompt,
+        plannedPrompt: plan?.imagePrompt || "",
+        purpose: plan?.purpose || "",
+        keyMessages: plan?.keyMessages || [],
         styleGuide: styleGuideText,
         reportFrame: frame.id,
         reportFrameName: frame.name,
@@ -4673,6 +5555,7 @@ function renderAiArt() {
         typeName: `${frame.name} · ${type.name}`,
         imageBase64: data.imageBase64,
         prompt: data.prompt || "",
+        purpose: plan?.purpose || data.purpose || "",
         createdAt: new Date().toISOString(),
         by: sessionUser || "",
       });
@@ -5376,8 +6259,8 @@ function renderAll() {
   applyRoleUi();
   updateRemindBell();
   updateRequestPlane();
-  const active = $(".tab-btn.active")?.dataset.view || "dashboard";
-  renderView(active);
+  renderView(activeViewName || "dashboard");
+  renderSubNav(activeNavId || "home", activeViewName || "dashboard");
 }
 
 function openMetaModal() {
@@ -5726,42 +6609,64 @@ function openBudgetTotalModal() {
   });
 }
 
-function budgetFormFieldsHtml(item, { includeAssignee = false, fullEdit = true } = {}) {
+function budgetFormFieldsHtml(item, { includeAssignee = false, fullEdit = true, mode = "both" } = {}) {
   const suffix = uid("dl");
   const readOnly = !fullEdit;
   const ro = readOnly ? "readonly" : "";
+  const showPlan = true;
+  const showResult = mode === "both" || mode === "result";
+  const lockPlan = mode === "result";
+  const lockMeta = mode === "result" && !includeAssignee;
+  const planAmountRo = lockPlan || readOnly ? "readonly" : "";
+  const planCalcRo = lockPlan ? "readonly" : "";
+  const metaFieldsRo = lockMeta ? "readonly" : ro;
+  const metaRequired = fullEdit && !lockMeta;
   return `
       <div class="form-grid two">
         <label class="field">연번
-          <input name="no" ${ro} value="${escapeAttr(item?.no || "")}" placeholder="예: 14" />
+          <input name="no" ${metaFieldsRo} value="${escapeAttr(item?.no || "")}" placeholder="예: 14" />
         </label>
         <label class="field">영역
-          <input name="area" list="budgetAreas_${suffix}" ${fullEdit ? "required" : "readonly"} value="${escapeAttr(item?.area || "")}" />
+          <input name="area" list="budgetAreas_${suffix}" ${metaRequired ? "required" : "readonly"} value="${escapeAttr(item?.area || "")}" />
         </label>
         <label class="field full">세부내용명
-          <input name="content" list="budgetContents_${suffix}" ${ro} value="${escapeAttr(item?.content || "")}" />
+          <input name="content" list="budgetContents_${suffix}" ${metaFieldsRo} value="${escapeAttr(item?.content || "")}" />
         </label>
         <label class="field full">세부과제명
-          <input name="task" ${ro} value="${escapeAttr(item?.task || "")}" />
+          <input name="task" ${metaFieldsRo} value="${escapeAttr(item?.task || "")}" />
         </label>
         <label class="field full">세부프로그램(Activity)
-          <input name="activity" ${fullEdit ? "required" : "readonly"} value="${escapeAttr(item?.activity || item?.title || "")}" />
+          <input name="activity" ${metaRequired ? "required" : "readonly"} value="${escapeAttr(item?.activity || item?.title || "")}" />
         </label>
         <label class="field">담당부서
-          <input name="dept" list="budgetDepts_${suffix}" ${ro} value="${escapeAttr(item?.dept || "")}" />
+          <input name="dept" list="budgetDepts_${suffix}" ${metaFieldsRo} value="${escapeAttr(item?.dept || "")}" />
         </label>
         <label class="field">실무부서
-          <input name="workDept" list="budgetWorkDepts_${suffix}" ${ro} value="${escapeAttr(item?.workDept || "")}" />
-        </label>
-        <label class="field">편성금액 (원)
-          <input name="planned" type="number" min="0" step="1000" ${fullEdit ? "required" : "readonly"} value="${item?.planned ?? 0}" />
+          <input name="workDept" list="budgetWorkDepts_${suffix}" ${metaFieldsRo} value="${escapeAttr(item?.workDept || "")}" />
         </label>
         <label class="field">비목
-          <input name="expenseType" list="budgetExpense_${suffix}" required value="${escapeAttr(item?.expenseType || "")}" placeholder="선택 또는 직접 입력" />
+          <input name="expenseType" list="budgetExpense_${suffix}" ${lockMeta ? "readonly" : "required"} value="${escapeAttr(item?.expenseType || "")}" placeholder="선택 또는 직접 입력" />
         </label>
-        <label class="field full">세부 산출내역
-          <textarea name="calcText" rows="4" placeholder="예: 강사료 000원 × N회 + 회의비 ...">${escapeHtml(item?.calcText || "")}</textarea>
+        ${
+          showPlan
+            ? `<label class="field">편성금액 (원) · 운영계획
+          <input name="planned" type="number" min="0" step="1000" ${planAmountRo || (fullEdit ? "required" : "readonly")} value="${item?.planned ?? 0}" />
         </label>
+        <label class="field full">세부 산출내역 · 운영계획(예산)
+          <textarea name="calcText" rows="3" ${planCalcRo} placeholder="예: 강사료 000원 × N회 + 회의비 ...">${escapeHtml(item?.calcText || "")}</textarea>
+        </label>`
+            : ""
+        }
+        ${
+          showResult
+            ? `<label class="field">실적금액 (원) · 결과보고
+          <input name="spent" type="number" min="0" step="1000" value="${item?.spent ?? 0}" />
+        </label>
+        <label class="field full">실적 산출내역 · 결과보고
+          <textarea name="actualCalcText" rows="3" placeholder="예: 실제 집행액·정산 내역 ...">${escapeHtml(item?.actualCalcText || "")}</textarea>
+        </label>`
+            : ""
+        }
         <label class="field full">메모
           <input name="note" value="${escapeAttr(item?.note || "")}" />
         </label>
@@ -5789,10 +6694,10 @@ function budgetFormFieldsHtml(item, { includeAssignee = false, fullEdit = true }
   `;
 }
 
-function readBudgetItemFields(fd, prev = {}) {
+function readBudgetItemFields(fd, prev = {}, { mode = "both" } = {}) {
   const activity = (fd.get("activity") || "").toString().trim();
   const area = (fd.get("area") || "").toString().trim();
-  return normalizeBudgetItem({
+  const next = {
     ...prev,
     no: (fd.get("no") || "").toString().trim(),
     area,
@@ -5801,15 +6706,27 @@ function readBudgetItemFields(fd, prev = {}) {
     activity,
     dept: (fd.get("dept") || "").toString().trim(),
     workDept: (fd.get("workDept") || "").toString().trim(),
-    planned: Number(fd.get("planned")) || 0,
-    calcText: (fd.get("calcText") || "").toString().trim(),
     note: (fd.get("note") || "").toString().trim(),
     expenseType: (fd.get("expenseType") || "").toString().trim(),
     assigneeId: fd.has("assigneeId") ? fd.get("assigneeId") || "" : prev.assigneeId || "",
-    spent: Number(prev.spent) || 0,
     partId: prev.partId || "",
     id: prev.id,
-  });
+  };
+  if (mode === "both" || mode === "plan") {
+    next.planned = Number(fd.get("planned")) || 0;
+    next.calcText = (fd.get("calcText") || "").toString().trim();
+  } else {
+    next.planned = Number(prev.planned) || 0;
+    next.calcText = (prev.calcText || "").trim();
+  }
+  if (mode === "both" || mode === "result") {
+    next.spent = Number(fd.get("spent")) || 0;
+    next.actualCalcText = (fd.get("actualCalcText") || "").toString().trim();
+  } else {
+    next.spent = Number(prev.spent) || 0;
+    next.actualCalcText = (prev.actualCalcText || "").trim();
+  }
+  return normalizeBudgetItem(next);
 }
 
 function openBudgetItemModal(id) {
@@ -5817,14 +6734,15 @@ function openBudgetItemModal(id) {
   ensureBudget();
   const item = id ? state.budget.items.find((i) => i.id === id) : null;
   const prevAssignee = item?.assigneeId || "";
+  const modeMeta = budgetModeMeta();
   openModal({
     title: item ? "예산 항목 수정 (관리자)" : "예산 항목 추가",
     bodyHtml: `
-      ${budgetFormFieldsHtml(item, { includeAssignee: true, fullEdit: true })}
-      <p class="muted">입력담당자를 지정하면 「예산을 입력하세요」 요청이 자동 발송됩니다.</p>
+      ${budgetFormFieldsHtml(item, { includeAssignee: true, fullEdit: true, mode: "both" })}
+      <p class="muted">입력담당자를 지정하면 「${escapeHtml(modeMeta.requestTitle)}」 요청이 자동 발송됩니다. 예산·실적 금액을 함께 관리할 수 있습니다.</p>
     `,
     onSubmit: (fd) => {
-      const data = readBudgetItemFields(fd, item || {});
+      const data = readBudgetItemFields(fd, item || {}, { mode: "both" });
       if (!data.activity) {
         alert("세부프로그램을 입력해 주세요.");
         return false;
@@ -5844,7 +6762,7 @@ function openBudgetItemModal(id) {
       saveAndRender("budget");
       if (nextAssignee && nextAssignee !== prevAssignee) {
         const m = memberById(nextAssignee);
-        if (m) alert(`${m.name}님에게 「예산을 입력하세요」 요청을 보냈습니다.`);
+        if (m) alert(`${m.name}님에게 「${modeMeta.requestTitle}」 요청을 보냈습니다.`);
       }
       return true;
     },
@@ -5856,14 +6774,20 @@ function openBudgetEntryModal(itemId) {
   const item = state.budget.items.find((i) => i.id === itemId);
   if (!item || !canEditBudgetItem(item)) return;
   const keepAssignee = item.assigneeId || "";
+  const mode = getBudgetInputMode();
+  const meta = budgetModeMeta(mode);
   openModal({
-    title: `예산 입력 · ${budgetItemLabel(item)}`,
+    title: `${meta.short} 입력 · ${budgetItemLabel(item)}`,
     bodyHtml: `
-      <p class="muted" style="margin:0 0 10px">각 항목을 선택하거나 직접 입력한 뒤 <strong>저장</strong>을 누르세요.</p>
-      ${budgetFormFieldsHtml(item, { includeAssignee: false, fullEdit: true })}
+      <p class="muted" style="margin:0 0 10px">${escapeHtml(meta.entryHint)}</p>
+      ${budgetFormFieldsHtml(item, {
+        includeAssignee: false,
+        fullEdit: true,
+        mode,
+      })}
     `,
     onSubmit: (fd) => {
-      const data = readBudgetItemFields(fd, item);
+      const data = readBudgetItemFields(fd, item, { mode });
       if (!canManageBudget()) data.assigneeId = keepAssignee;
       Object.assign(item, data);
       saveAndRender("budget");
@@ -5875,14 +6799,15 @@ function openBudgetEntryModal(itemId) {
 function openBudgetBulkUploadModal() {
   if (!isAdmin()) return;
   ensureBudget();
+  const modeMeta = budgetModeMeta();
   openModal({
     title: "예산 일괄 수정·업로드 (관리자)",
     bodyHtml: `
-      <p class="muted">CSV 한 줄에 한 항목:<br>
-      <code>연번,영역,세부내용명,세부과제명,세부프로그램,담당부서,실무부서,편성금액,세부산출내역,입력담당자,메모</code></p>
-      <p class="muted">입력담당자는 대상자 이름(예: 김남인). 헤더 행은 자동 건너뜁니다.</p>
+      <p class="muted">CSV 한 줄에 한 항목 (권장):<br>
+      <code>연번,영역,세부내용명,세부과제명,세부프로그램,담당부서,실무부서,편성금액,세부산출내역,실적금액,실적산출내역,입력담당자,메모</code></p>
+      <p class="muted">기존 11열 형식(실적 열 없음)도 그대로 받을 수 있습니다. 입력담당자는 대상자 이름. 헤더 행은 자동 건너뜁니다.</p>
       <label class="field full">CSV 내용
-        <textarea name="csv" rows="10" placeholder="14,2. 고등직업교육,가. 핵심역량...,1) ...,가) ...,교무처,교육혁신본부,9483680,,김남인,"></textarea>
+        <textarea name="csv" rows="10" placeholder="14,2. 고등직업교육,가. 핵심역량...,1) ...,가) ...,교무처,교육혁신본부,9483680,,,0,,김남인,"></textarea>
       </label>
       <label class="alt-submit-check">
         <input type="checkbox" name="replaceAll" />
@@ -5890,7 +6815,7 @@ function openBudgetBulkUploadModal() {
       </label>
       <label class="alt-submit-check">
         <input type="checkbox" name="notifyAssignees" checked />
-        <span>새로 지정된 담당자에게 「예산을 입력하세요」 요청 보내기</span>
+        <span>새로 지정된 담당자에게 「${escapeHtml(modeMeta.requestTitle)}」 요청 보내기</span>
       </label>
     `,
     onSubmit: (fd) => {
@@ -5904,6 +6829,7 @@ function openBudgetBulkUploadModal() {
       const lines = raw.split(/\r?\n/).map((l) => l.trim()).filter(Boolean);
       const parsed = [];
       const notifyIds = [];
+      const toNum = (v) => Number(String(v ?? "").replace(/[^\d.-]/g, "")) || 0;
       for (const line of lines) {
         if (/^연번\s*,/.test(line) || /^영역\s*,/.test(line)) continue;
         const cols = line.split(",").map((c) => c.trim());
@@ -5911,20 +6837,23 @@ function openBudgetBulkUploadModal() {
           alert(`형식 오류(열 부족): ${line}`);
           return false;
         }
-        const [
-          no,
-          area,
-          content,
-          task,
-          activity,
-          dept,
-          workDept,
-          plannedStr,
-          calcText = "",
-          assigneeName = "",
-          note = "",
-        ] = cols;
-        const planned = Number(String(plannedStr).replace(/[^\d.-]/g, "")) || 0;
+        const [no, area, content, task, activity, dept, workDept, plannedStr] = cols;
+        let calcText = "";
+        let spent = 0;
+        let actualCalcText = "";
+        let assigneeName = "";
+        let note = "";
+        if (cols.length >= 13) {
+          calcText = cols[8] || "";
+          spent = toNum(cols[9]);
+          actualCalcText = cols[10] || "";
+          assigneeName = cols[11] || "";
+          note = cols[12] || "";
+        } else {
+          calcText = cols[8] || "";
+          assigneeName = cols[9] || "";
+          note = cols[10] || "";
+        }
         const assignee = assigneeName ? memberByName(assigneeName) : null;
         const row = normalizeBudgetItem({
           id: uid("b"),
@@ -5935,8 +6864,10 @@ function openBudgetBulkUploadModal() {
           activity: activity || "항목",
           dept,
           workDept,
-          planned,
+          planned: toNum(plannedStr),
           calcText,
+          spent,
+          actualCalcText,
           note,
           assigneeId: assignee?.id || "",
         });
@@ -5957,7 +6888,7 @@ function openBudgetBulkUploadModal() {
       persist();
       updateRequestPlane();
       saveAndRender("budget");
-      if (notifyIds.length) alert(`${notifyIds.length}명(건)에게 예산 입력 요청을 보냈습니다.`);
+      if (notifyIds.length) alert(`${notifyIds.length}명(건)에게 ${modeMeta.short} 입력 요청을 보냈습니다.`);
       return true;
     },
   });
@@ -6101,11 +7032,11 @@ async function boot() {
 
   openFoodPollFromLocation();
 
-  $$(".tab-btn").forEach((btn) => {
-    btn.addEventListener("click", () => setView(btn.dataset.view));
+  $$("#mainNav .tab-btn").forEach((btn) => {
+    btn.addEventListener("click", () => setView(btn.dataset.nav || btn.dataset.view));
   });
 
-  $("#btnHome")?.addEventListener("click", () => setView("dashboard"));
+  $("#btnHome")?.addEventListener("click", () => setView("home"));
   $("#btnLogout")?.addEventListener("click", logout);
   $("#btnRemindBell")?.addEventListener("click", () => openRemindPopup(true));
   $("#btnRequestPlane")?.addEventListener("click", () => openRequestPopup(true));
@@ -6117,6 +7048,13 @@ async function boot() {
     closeRequestPopup();
     setView("requests");
   });
+  $("#requestBackdrop .request-popup-card")?.addEventListener(
+    "pointerdown",
+    () => {
+      cancelRequestPopupAutoClose();
+    },
+    { capture: true }
+  );
   $("#remindSnoozeAll")?.addEventListener("click", () => {
     getUpcomingReminders().forEach((s) => snoozeReminder(s.id));
     closeRemindPopup();
