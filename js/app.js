@@ -88,8 +88,8 @@ const VIEW_META = {
   food: { title: "오늘 뭐먹지", desc: "보고서 쓰다 배고플 때, 돌림판으로 메뉴를 정해 보세요." },
   members: { title: "대상자", desc: "관리자 마스터: 보고서 작성 참여 대상자를 등록·관리합니다." },
   "ai-art": {
-    title: "그림",
-    desc: "보고서 양식 레이아웃 PPT를 내려받거나, AI로 도식을 만들어 PPT에 담습니다.",
+    title: "보고서 만들기",
+    desc: "양식 레이아웃·도식·참고 그림을 한곳에서 만듭니다.",
   },
   guide: {
     title: "사용방법",
@@ -107,7 +107,7 @@ const NAV_GROUPS = {
   report: {
     label: "보고서",
     views: ["collections", "review", "ai-art"],
-    labels: { collections: "취합", review: "윤독·리뷰", "ai-art": "그림" },
+    labels: { collections: "취합", review: "윤독·리뷰", "ai-art": "보고서 만들기" },
     defaultView: "collections",
   },
   ops: {
@@ -4223,7 +4223,7 @@ const GUIDE_SECTIONS = [
       "관리자: 목차·할당, 대상자, 공통 요청, 취합 현황의 AI 분석, JSON 백업 등 전체 설정",
       "예산담당자: 예산 항목 취합·통계·엑셀 내려받기",
       "식사담당: 종목·업체·대표메뉴 등록, 돌림판 후 TF 공지·투표 링크",
-      "대상자: 담당 파트 취합 입력, 받은 요청 처리, 배정 예산 산출 입력, 보고서 그림 활용",
+      "대상자: 담당 파트 취합 입력, 받은 요청 처리, 배정 예산 산출 입력, 보고서 만들기 활용",
     ],
   },
 ];
@@ -4237,7 +4237,7 @@ const GUIDE_MENU = [
   {
     tab: "collections",
     name: "보고서",
-    how: "취합 · 윤독·리뷰 · 그림을 한 메뉴에서 사용합니다. 그림 탭에서는 계획서 양식 레이아웃 PPT와 AI 도식을 내려받을 수 있습니다.",
+    how: "취합 · 윤독·리뷰 · 보고서 만들기를 한 메뉴에서 사용합니다. 보고서 만들기에서는 양식 레이아웃 PPT와 AI 도식을 내려받을 수 있습니다.",
   },
   {
     tab: "schedule",
@@ -4864,13 +4864,49 @@ function renderAiArt() {
     : "";
   if (state._reportLayoutIds?.length > 1) state._reportLayoutIds = selectedLayoutId ? [selectedLayoutId] : [];
 
+  ensureReportDoc();
+  const doc = reportDocKindMeta();
+  const docKind = getReportDocKind();
+  const sub = ["layout", "diagram", "result"].includes(state._aiArtSub) ? state._aiArtSub : "diagram";
+  state._aiArtSub = sub;
+  const who = sessionUser || "작성자";
+  const layoutName = selectedLayoutId
+    ? REPORT_LAYOUTS.find((l) => l.id === selectedLayoutId)?.name || "선택됨"
+    : "미선택";
+
   el.innerHTML = `
-    <div class="ai-page">
-      <section class="panel layout-ppt-panel">
+    <div class="ai-page report-make">
+      <header class="report-make-hero">
+        <p class="report-make-kicker">보고서 만들기</p>
+        <h2 class="report-make-title"><span class="mine-name">${escapeHtml(who)}</span> 님, 양식과 도식을 골라 보고서를 만드세요.</h2>
+        <p class="report-make-desc">흑백 편집 PPT · GPT 기획 · 참고 그림을 한곳에서 다룹니다.</p>
+        <div class="report-make-chips" aria-label="현재 선택 요약">
+          <span class="rm-chip is-accent">${escapeHtml(doc.name)}</span>
+          <span class="rm-chip">양식 · ${escapeHtml(layoutName)}</span>
+          <span class="rm-chip">도식 · ${escapeHtml(frame.name)} / ${escapeHtml(type.name)}</span>
+          <span class="rm-chip">${arts.length ? `참고 ${arts.length}장` : "참고 없음"}</span>
+        </div>
+        ${
+          isAdmin()
+            ? `<div class="report-make-mode" role="group" aria-label="작성 기준">
+                <button type="button" class="btn btn-sm ${docKind === "plan" ? "btn-primary" : ""}" data-doc-kind="plan">운영계획서</button>
+                <button type="button" class="btn btn-sm ${docKind === "result" ? "btn-primary" : ""}" data-doc-kind="result">결과보고서</button>
+              </div>`
+            : ""
+        }
+      </header>
+
+      <nav class="report-make-tabs" role="tablist" aria-label="보고서 만들기 단계">
+        <button type="button" class="report-make-tab ${sub === "layout" ? "active" : ""}" data-art-sub="layout" role="tab" aria-selected="${sub === "layout"}">양식 레이아웃</button>
+        <button type="button" class="report-make-tab ${sub === "diagram" ? "active" : ""}" data-art-sub="diagram" role="tab" aria-selected="${sub === "diagram"}">도식 만들기</button>
+        <button type="button" class="report-make-tab ${sub === "result" ? "active" : ""}" data-art-sub="result" role="tab" aria-selected="${sub === "result"}">결과·참고</button>
+      </nav>
+
+      <section class="panel layout-ppt-panel report-make-panel" data-art-panel="layout" ${sub === "layout" ? "" : "hidden"}>
         <div class="panel-head">
           <div>
-            <h2 class="panel-title">${flaticonIcon("fi-rr-table-layout", "panel-title-icon")} 보고서 양식 레이아웃 PPT</h2>
-            <p class="muted" style="margin:4px 0 0">자율혁신계획서 스타일(장번호·요약박스·회색 표·추이 그래프)을 학습한 <strong>편집 가능</strong> 기본 레이아웃입니다. <strong>하나만</strong> 고른 뒤 PPT로 받아 수치·문장만 바꿔 쓰세요.</p>
+            <h2 class="panel-title">${flaticonIcon("fi-rr-table-layout", "panel-title-icon")} 보고서 양식 레이아웃</h2>
+            <p class="panel-desc">장번호·요약박스·표 스타일 기본 레이아웃입니다. <strong>하나만</strong> 고른 뒤 PPT로 받아 수치·문장만 바꾸세요.</p>
           </div>
         </div>
         <div class="layout-ppt-grid" role="radiogroup" aria-label="보고서 레이아웃">
@@ -4899,7 +4935,7 @@ function renderAiArt() {
             <input id="layoutFilePrefix" value="${escapeAttr(state._layoutFilePrefix || "연성대_보고서_양식_레이아웃")}" />
           </label>
         </div>
-        <div class="row" style="margin-top:12px;gap:8px;flex-wrap:wrap">
+        <div class="report-make-actions">
           <button type="button" class="btn btn-primary" id="layoutPptDownload">${flaticonIcon("fi-rr-download")} 선택 레이아웃 PPT 다운로드</button>
           <button type="button" class="btn btn-sm" id="layoutPptNone">${flaticonIcon("fi-rr-rectangle-xmark")} 선택 해제</button>
           <span class="muted" id="layoutPptStatus"></span>
@@ -4907,11 +4943,11 @@ function renderAiArt() {
         <p class="flaticon-credit muted" style="margin-top:10px">Icons by <a href="https://www.flaticon.com/uicons" target="_blank" rel="noopener noreferrer">Flaticon</a></p>
       </section>
 
-      <section class="panel diagram-wizard">
+      <section class="panel diagram-wizard report-make-panel" data-art-panel="diagram" ${sub === "diagram" ? "" : "hidden"}>
         <div class="panel-head">
           <div>
-            <h2 class="panel-title">${flaticonIcon("fi-rr-paintbrush-pencil", "panel-title-icon")} 보고서용 그림 만들기</h2>
-            <p class="muted" style="margin:4px 0 0">아래 단계를 고른 뒤 최하단 버튼으로 작성합니다. 흑백·편집 가능 PPT로 나오며, 진행 과정이 결과 화면에 그려집니다.</p>
+            <h2 class="panel-title">${flaticonIcon("fi-rr-paintbrush-pencil", "panel-title-icon")} 도식 만들기</h2>
+            <p class="panel-desc">작성 틀 → 도식 타입 → 내용 순으로 고른 뒤, 아래에서 흑백 편집 PPT를 만듭니다.</p>
           </div>
         </div>
 
@@ -4980,17 +5016,20 @@ function renderAiArt() {
           </div>
         </div>
 
-        <div class="diagram-cta">
+        <div class="diagram-cta report-make-cta">
           <button type="button" class="btn btn-primary btn-lg" id="diagramBuildBtn">${flaticonIcon("fi-rr-magic-wand")} 보고서용 그림 만들기</button>
           <p class="muted">선택: <strong id="diagramChoiceSummary">${escapeHtml(frame.name)} · ${escapeHtml(type.name)}</strong></p>
           <p class="muted" style="margin:4px 0 0">GPT가 보고서 내용을 먼저 구조화한 뒤, 목적에 맞는 흑백 도식 PPT를 만듭니다.</p>
-          <p class="flaticon-credit muted">Icons by <a href="https://www.flaticon.com/uicons" target="_blank" rel="noopener noreferrer">Flaticon</a></p>
         </div>
+      </section>
 
+      <section class="panel report-make-panel" data-art-panel="result" ${sub === "result" ? "" : "hidden"}>
         <div class="diagram-result" id="diagramResult">
           <div class="diagram-result-head">
-            <h3>최종 결과</h3>
-            <span class="muted" id="diagramResultMeta">옵션을 고른 뒤 위 버튼을 누르면 여기에 그려집니다.</span>
+            <div>
+              <h3 class="panel-title" style="margin:0">결과·참고</h3>
+              <span class="muted" id="diagramResultMeta">도식 만들기를 실행하면 미리보기와 다운로드가 여기에 모입니다.</span>
+            </div>
           </div>
           <div class="ai-art-progress diagram-build-progress" id="aiArtProgress" hidden aria-hidden="true">
             <div class="ai-art-progress-meta">
@@ -5008,19 +5047,17 @@ function renderAiArt() {
               ${diagramPreviewWireHtml(selectedType)}
             </div>
           </div>
-          <div class="diagram-result-actions row" style="gap:8px;flex-wrap:wrap;margin-top:14px">
+          <div class="diagram-result-actions report-make-actions">
             <button type="button" class="btn btn-primary" id="aiArtEditablePpt" disabled>편집용 PPT 다운로드</button>
             <button type="button" class="btn" id="aiArtRun">AI 참고 그림도 만들기 (선택)</button>
             <button type="button" class="btn" id="aiArtPpt" ${arts.length ? "" : "disabled"}>참고 그림 PPT</button>
             <span class="muted" id="diagramBuildDoneHint"></span>
           </div>
         </div>
-      </section>
 
-      ${
-        arts.length
-          ? `<section class="panel">
-        <div class="panel-head">
+        ${
+          arts.length
+            ? `<div class="panel-head" style="margin-top:18px">
           <h2 class="panel-title">AI 참고 그림 (비트맵)</h2>
           <span class="muted">${arts.length}장 · 수치 수정은 편집용 PPT 권장</span>
         </div>
@@ -5045,12 +5082,38 @@ function renderAiArt() {
             </article>`
             )
             .join("")}
-        </div>
-      </section>`
-          : ""
-      }
+        </div>`
+            : `<div class="empty" style="margin-top:12px">아직 참고 그림이 없습니다. 도식 만들기 후 「AI 참고 그림도 만들기」를 실행하세요.</div>`
+        }
+        <p class="flaticon-credit muted" style="margin-top:12px">Icons by <a href="https://www.flaticon.com/uicons" target="_blank" rel="noopener noreferrer">Flaticon</a></p>
+      </section>
     </div>
   `;
+
+  const showArtSub = (next) => {
+    const id = ["layout", "diagram", "result"].includes(next) ? next : "diagram";
+    state._aiArtSub = id;
+    el.querySelectorAll("[data-art-sub]").forEach((btn) => {
+      const on = btn.dataset.artSub === id;
+      btn.classList.toggle("active", on);
+      btn.setAttribute("aria-selected", on ? "true" : "false");
+    });
+    el.querySelectorAll("[data-art-panel]").forEach((panel) => {
+      panel.hidden = panel.dataset.artPanel !== id;
+    });
+  };
+
+  el.querySelectorAll("[data-art-sub]").forEach((btn) => {
+    btn.addEventListener("click", () => showArtSub(btn.dataset.artSub));
+  });
+  el.querySelectorAll("[data-doc-kind]").forEach((btn) => {
+    btn.addEventListener("click", () => {
+      if (!isAdmin()) return;
+      setReportDocKind(btn.dataset.docKind);
+      persist();
+      renderAiArt();
+    });
+  });
 
   const syncStyleGuideField = () => {
     const t = reportArtTypeById(state._aiArtType || selectedType);
@@ -5366,6 +5429,7 @@ function renderAiArt() {
     state._aiArtStyleGuide = ($("#aiArtStyleGuide")?.value || buildYeonsungStyleGuide(type, frame)).trim();
     state._aiArtContextSeed = context;
 
+    showArtSub("result");
     result?.scrollIntoView({ behavior: "smooth", block: "start" });
     if (log) log.innerHTML = "";
     if (hint) hint.textContent = "";

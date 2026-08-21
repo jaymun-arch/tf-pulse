@@ -1,0 +1,23 @@
+---
+description: GitHub push + Vercel prod deploy + return URL on ship commands
+alwaysApply: true
+---
+
+# Ship set (자동)
+
+사용자가 아래처럼 **배포·푸시·업데이트**를 요청하면, 따로 확인하지 말고 이 세트를 바로 실행한다.
+
+트리거 예: `깃허브에 푸시`, `버셀에 업데이트`, `배포해`, `푸시하고 링크`, `올려줘`, `ship`, `publish`
+
+## 절차
+
+1. 변경이 있으면 커밋 (메시지: 왜 바꿨는지 중심, HEREDOC/`-m` 사용)
+2. `git push -u origin HEAD` (권한 `all`)
+3. `vercel --prod --yes` (권한 `all`)
+4. 최종 응답에 **프로덕션 링크**를 포함: https://tf-pulse.vercel.app
+
+## 주의
+
+- `.env` / 비밀키는 커밋하지 않음
+- `git config` 변경·force push·`--no-verify` 금지 (사용자가 명시하지 않는 한)
+- 커밋 작성자: 환경변수로만 `jaymun-arch <308241624+jaymun-arch@users.noreply.github.com>`
