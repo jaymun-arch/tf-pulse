@@ -9,7 +9,7 @@ import {
 import { REPORT_LAYOUTS, downloadReportLayoutPpt, layoutPreviewWireHtml } from "./report-layouts.js";
 import { downloadEditableDiagramPpt, diagramPreviewWireHtml } from "./report-diagrams.js";
 
-const STORAGE_KEY = "tf-ops-data-v10";
+const STORAGE_KEY = "tf-ops-data-v11";
 const USER_KEY = "tf-ops-user-v1";
 const REMIND_KEY = "tf-ops-schedule-remind-v1";
 const REMIND_BEFORE_DAYS = 14;
@@ -80,7 +80,7 @@ const VIEW_META = {
   requests: { title: "요청", desc: "관리자 공통 요청을 보내거나, 받은 요청을 확인하고 완료 처리합니다." },
   budget: {
     title: "예산",
-    desc: "운영계획수립용(예산)과 결과보고작성용(실적)을 구분해 입력·취합합니다.",
+    desc: "카드에서 항목을 고르고, Work Pulse형 입력창으로 편성·실적을 등록합니다.",
   },
   schedule: { title: "일정", desc: "TF 일정을 한눈에 보고 일정을 추가합니다." },
   drive: { title: "드라이브", desc: "주요 문서가 있는 구글드라이브 링크를 확인합니다." },
@@ -2539,9 +2539,7 @@ function renderBudget() {
   const remainPctLabel = Number.isInteger(expenseStatus.remainPct)
     ? `${expenseStatus.remainPct}`
     : Number(expenseStatus.remainPct || 0).toFixed(1);
-  const execPct = sum.planned ? Math.round((sum.spent / sum.planned) * 1000) / 10 : 0;
 
-  const myAmount = myItems.reduce((s, i) => s + budgetAmountOf(i, mode), 0);
   const myFilled = myItems.filter((i) => budgetCalcOf(i, mode)).length;
 
   const byAssignee = {};
@@ -2554,274 +2552,156 @@ function renderBudget() {
     if (budgetCalcOf(item, mode)) byAssignee[key].filled += 1;
   });
 
-  const colSpan = mode === "result" ? 11 : 10;
   const incompleteOnly = state._budgetShowIncomplete === true;
   const listItems = incompleteOnly
     ? visibleItems.filter((i) => !budgetCalcOf(i, mode))
     : visibleItems;
-  const doc = reportDocKindMeta();
 
   el.innerHTML = `
-    <div class="panel budget-mode-panel hub-doc-banner" data-kind="${escapeAttr(mode)}" style="margin-bottom:10px">
-      <div class="panel-head" style="align-items:flex-start">
-        <div class="hub-doc-banner-main">
-          <span class="hub-doc-kicker">입력 구분 · ${escapeHtml(doc.name)}</span>
-          <strong class="hub-doc-title" style="font-size:1.35rem">${escapeHtml(meta.tabLabel)}</strong>
-          <p class="muted" style="margin:4px 0 0">홈의 작성 기준과 같습니다. ${
-            mode === "plan"
-              ? "편성금액·세부 산출내역만 입력합니다."
-              : "실적금액·실적 산출내역을 입력합니다. 편성금액은 참고입니다."
-          }</p>
-        </div>
+    <div class="budget-page">
+      <div class="budget-mode-tabs" role="tablist" aria-label="예산 입력 구분">
+        <button type="button" class="budget-mode-tab ${mode === "plan" ? "active" : ""}" data-budget-mode="plan">운영계획 (예산)</button>
+        <button type="button" class="budget-mode-tab ${mode === "result" ? "active" : ""}" data-budget-mode="result">결과보고 (실적)</button>
       </div>
-      <div class="review-subtabs budget-mode-tabs" role="tablist">
-        <button type="button" class="review-subtab ${mode === "plan" ? "active" : ""}" data-budget-mode="plan">운영계획수립용 (예산)</button>
-        <button type="button" class="review-subtab ${mode === "result" ? "active" : ""}" data-budget-mode="result">결과보고작성용 (실적)</button>
-      </div>
-    </div>
+      <p class="budget-mode-desc muted">${
+        mode === "plan"
+          ? "편성금액·세부 산출내역을 입력합니다. 홈의 작성 기준과 같습니다."
+          : "실적금액·실적 산출내역을 입력합니다. 편성금액은 참고입니다."
+      }</p>
 
-    ${
-      !manage
-        ? `<div class="panel" style="margin-bottom:10px">
-      <div class="panel-head">
-        <div>
-          <h2 class="panel-title">내 배정 ${escapeHtml(meta.short)}</h2>
-          <p class="muted" style="margin:4px 0 0">나에게 지정된 항목만 입력·저장합니다. 완료/미입력이 바로 보입니다.</p>
-        </div>
-        <button type="button" class="btn btn-sm ${incompleteOnly ? "btn-primary" : ""}" id="budgetIncompleteToggle">${
-          incompleteOnly ? "전체 보기" : "미입력만"
-        }</button>
-      </div>
-      <div class="metrics" style="margin:0;grid-template-columns:repeat(3,1fr)">
+      <div class="metrics budget-metrics">
         <div class="stat accent">
-          <div class="label">내 배정 항목</div>
-          <div class="value">${myItems.length}</div>
-          <div class="sub">입력 담당</div>
+          <div class="label">사업비 총액</div>
+          <div class="value" style="font-size:1.1rem">${formatWon(sum.total)}</div>
+          <div class="sub">${escapeHtml(yearLabel)}</div>
         </div>
         <div class="stat">
-          <div class="label">내 ${escapeHtml(meta.amountLabel)}</div>
-          <div class="value" style="font-size:1.05rem">${formatWon(myAmount)}</div>
-          <div class="sub">배정 합계</div>
+          <div class="label">${escapeHtml(meta.enteredLabel)}</div>
+          <div class="value" style="font-size:1.1rem">${formatWon(expenseStatus.enteredTotal)}</div>
+          <div class="sub">총액 대비 ${enteredPctLabel}%</div>
+        </div>
+        <div class="stat">
+          <div class="label">${escapeHtml(meta.remainLabel)}</div>
+          <div class="value" style="font-size:1.1rem">${formatWon(expenseStatus.remain)}</div>
+          <div class="sub">${remainPctLabel}%</div>
         </div>
         <div class="stat">
           <div class="label">${escapeHtml(meta.filledLabel)}</div>
-          <div class="value">${myFilled}<small>/${myItems.length || 0}</small></div>
-          <div class="sub">${myItems.length ? Math.round((myFilled / myItems.length) * 100) : 0}% 완료 · 미입력 ${Math.max(0, myItems.length - myFilled)}</div>
+          <div class="value" style="font-size:1.1rem">${detailStats.filled}<small>/${state.budget.items.length}</small></div>
+          <div class="sub">${!manage ? `내 배정 ${myItems.length} · 완료 ${myFilled}` : `담당 지정 ${state.budget.items.filter((i) => i.assigneeId).length}`}</div>
         </div>
       </div>
-    </div>`
-        : `<div class="row" style="margin:0 0 10px;justify-content:flex-end">
-        <button type="button" class="btn btn-sm ${incompleteOnly ? "btn-primary" : ""}" id="budgetIncompleteToggle">${
-          incompleteOnly ? "전체 항목 보기" : "미입력만 보기"
-        }</button>
-      </div>`
-    }
 
-    <div class="metrics">
-      <div class="stat accent">
-        <div class="label">사업비 총액</div>
-        <div class="value" style="font-size:1.1rem">${formatWon(sum.total)}</div>
-        <div class="sub">${escapeHtml(yearLabel)}${mode === "result" ? ` · 편성 ${formatWon(sum.planned)}` : ""}</div>
-      </div>
-      <div class="stat">
-        <div class="label">${escapeHtml(meta.enteredLabel)}</div>
-        <div class="value" style="font-size:1.1rem">${formatWon(expenseStatus.enteredTotal)}</div>
-        <div class="sub">총액 대비 ${enteredPctLabel}% · ${state.budget.items.length}항목${
-          mode === "result" ? ` · 집행률 ${execPct}%` : ""
-        }</div>
-      </div>
-      <div class="stat">
-        <div class="label">${escapeHtml(meta.remainLabel)}</div>
-        <div class="value" style="font-size:1.1rem">${formatWon(expenseStatus.remain)}</div>
-        <div class="sub">총액 대비 ${remainPctLabel}%</div>
-      </div>
-      <div class="stat">
-        <div class="label">${escapeHtml(meta.filledLabel)}</div>
-        <div class="value" style="font-size:1.1rem">${detailStats.filled}/${state.budget.items.length}</div>
-        <div class="sub">담당자 지정 ${state.budget.items.filter((i) => i.assigneeId).length}건</div>
-      </div>
-    </div>
-
-    <div class="panel budget-summary-banner" style="margin-bottom:10px">
-      <p class="budget-summary-text">
-        ${escapeHtml(meta.bannerLead)} <strong>${enteredPctLabel}%</strong>가 입력되었고,
-        <strong>${formatWon(expenseStatus.remain)}(${remainPctLabel}%)</strong>${escapeHtml(meta.bannerTail)}
-      </p>
-      <div class="progress budget-summary-progress" title="입력 ${enteredPctLabel}%">
-        <span style="width:${Math.min(100, expenseStatus.enteredPct)}%"></span>
-      </div>
-    </div>
-
-    <div class="panel" style="margin-bottom:10px">
-      <div class="panel-head">
-        <div>
-          <h2 class="panel-title">${escapeHtml(meta.tableTitle)}</h2>
-          <p class="muted" style="margin:4px 0 0">${escapeHtml(yearLabel)} · ${escapeHtml(meta.tableSub)}</p>
-        </div>
-        <div class="row">
-          ${manage ? `<button class="btn btn-sm budget-manage-only" id="downloadBudgetExcel">엑셀 다운로드</button>` : ""}
-          ${admin ? `<button class="btn btn-sm" id="bulkBudgetUpload">일괄 수정·업로드</button>` : ""}
-          ${manage ? `<button class="btn btn-sm budget-manage-only" id="editBudgetTotal">총액·비고 수정</button>` : ""}
-          ${manage ? `<button class="btn btn-primary budget-manage-only" id="addBudgetItem">항목 추가</button>` : ""}
+      <div class="panel budget-summary-banner">
+        <p class="budget-summary-text">
+          ${escapeHtml(meta.bannerLead)} <strong>${enteredPctLabel}%</strong>가 입력되었고,
+          <strong>${formatWon(expenseStatus.remain)}(${remainPctLabel}%)</strong>${escapeHtml(meta.bannerTail)}
+        </p>
+        <div class="progress budget-summary-progress" title="입력 ${enteredPctLabel}%">
+          <span style="width:${Math.min(100, expenseStatus.enteredPct)}%"></span>
         </div>
       </div>
-      <div class="table-wrap">
-        <table class="budget-bimok-table">
-          <thead>
-            <tr>
-              <th>비목</th>
-              <th>현재 입력액</th>
-              <th>입력 비중</th>
-              <th>총액 대비</th>
-              <th>${escapeHtml(meta.filledLabel)}</th>
-              <th>진행</th>
-            </tr>
-          </thead>
-          <tbody>
-            ${expenseStatus.rows
-              .filter((row) => row.entered > 0 || row.count > 0)
-              .map((row) => {
-                const pct = Math.min(100, Math.round(row.shareOfTotal));
-                return `<tr>
-                  <td><strong>${escapeHtml(row.name)}</strong></td>
-                  <td class="page-range">${formatWon(row.entered)}</td>
-                  <td class="page-range">${row.entered ? `${row.shareEntered.toFixed(1)}%` : "-"}</td>
-                  <td class="page-range">${row.entered ? `${row.shareOfTotal.toFixed(1)}%` : "-"}</td>
-                  <td class="page-range">${row.filled}/${row.count}</td>
-                  <td style="min-width:120px">
-                    <div class="progress" title="총액 대비 ${pct}%"><span style="width:${pct}%"></span></div>
-                    <div class="muted" style="font-size:0.75rem;margin-top:4px">${pct}%</div>
-                  </td>
-                </tr>`;
-              })
-              .join("")}
-            <tr class="budget-bimok-total">
-              <td><strong>입력 합계</strong></td>
-              <td class="page-range"><strong>${formatWon(expenseStatus.enteredTotal)}</strong></td>
-              <td class="page-range"><strong>${expenseStatus.enteredTotal ? "100%" : "-"}</strong></td>
-              <td class="page-range"><strong>${enteredPctLabel}%</strong></td>
-              <td class="page-range"><strong>${detailStats.filled}/${state.budget.items.length}</strong></td>
-              <td></td>
-            </tr>
-            <tr>
-              <td><strong class="muted">${escapeHtml(meta.remainLabel)}</strong></td>
-              <td class="page-range"><strong>${formatWon(expenseStatus.remain)}</strong></td>
-              <td class="page-range">-</td>
-              <td class="page-range"><strong>${remainPctLabel}%</strong></td>
-              <td class="page-range">-</td>
-              <td></td>
-            </tr>
-          </tbody>
-        </table>
-      </div>
-    </div>
 
-    ${!manage ? `<p class="muted" style="margin:0 0 10px">배정된 항목에서 <strong>${escapeHtml(meta.amountLabel)}</strong>·<strong>${escapeHtml(meta.calcLabel)}</strong>을 입력한 뒤 <strong>저장</strong>해 주세요.</p>` : ""}
-
-    <div class="panel" style="margin-bottom:10px">
-      <div class="panel-head"><h2 class="panel-title">${escapeHtml(meta.assigneeTitle)}</h2></div>
-      ${
-        Object.keys(byAssignee).length
-          ? `<div class="bar-list">${Object.entries(byAssignee)
-              .sort((a, b) => b[1].amount - a[1].amount)
-              .map(([name, v]) => {
-                const pct = expenseStatus.enteredTotal
-                  ? Math.min(100, Math.round((v.amount / expenseStatus.enteredTotal) * 100))
-                  : 0;
-                return `<div class="bar-item">
-                  <div class="meta"><strong>${escapeHtml(name)}</strong>
-                    <span>${formatWon(v.amount)} · 산출 ${v.filled}/${v.count}</span></div>
-                  <div class="progress"><span style="width:${pct}%"></span></div>
-                </div>`;
-              })
-              .join("")}</div>`
-          : `<div class="empty">담당자 배정 전입니다.</div>`
-      }
-    </div>
-
-    <div class="panel" style="margin-bottom:10px">
-      <div class="panel-head">
-        <h2 class="panel-title">${escapeHtml(manage ? meta.detailTitleManage : meta.detailTitleMine)}</h2>
-        <div class="row">
-          <button class="btn btn-sm" id="downloadBudgetExcel2">${manage ? "엑셀 다운로드" : "내 항목 엑셀 다운로드"}</button>
+      <div class="panel budget-list-panel">
+        <div class="panel-head">
+          <div>
+            <h2 class="panel-title">${escapeHtml(manage ? meta.detailTitleManage : meta.detailTitleMine)}</h2>
+            <p class="muted" style="margin:4px 0 0">${escapeHtml(yearLabel)} · 카드에서 바로 입력합니다.</p>
+          </div>
+          <div class="row budget-toolbar">
+            <button type="button" class="btn btn-sm ${incompleteOnly ? "btn-primary" : ""}" id="budgetIncompleteToggle">${
+              incompleteOnly ? "전체 보기" : "미입력만"
+            }</button>
+            ${manage ? `<button class="btn btn-sm" id="downloadBudgetExcel">엑셀</button>` : `<button class="btn btn-sm" id="downloadBudgetExcel2">내 엑셀</button>`}
+            ${admin ? `<button class="btn btn-sm" id="bulkBudgetUpload">일괄 업로드</button>` : ""}
+            ${manage ? `<button class="btn btn-sm" id="editBudgetTotal">총액</button>` : ""}
+            ${manage ? `<button class="btn btn-primary" id="addBudgetItem">항목 추가</button>` : ""}
+          </div>
         </div>
-      </div>
-      <div class="table-wrap budget-table-wrap">
-        <table class="budget-table">
-          <thead>
-            <tr>
-              <th>연번</th>
-              <th>영역</th>
-              <th>세부내용명</th>
-              <th>세부과제명</th>
-              <th class="budget-activity-col">세부프로그램</th>
-              <th>비목</th>
-              ${mode === "result" ? `<th class="budget-amount-col">편성(참고)</th>` : ""}
-              <th class="budget-amount-col">${escapeHtml(meta.amountLabel)}</th>
-              <th class="budget-calc-col">${escapeHtml(meta.calcLabel)}</th>
-              <th>입력담당자</th>
-              <th class="budget-actions-col"></th>
-            </tr>
-          </thead>
-          <tbody>
-            ${
-              listItems.length
-                ? listItems
-                    .map((item) => {
-                      const assignee = item.assigneeId ? memberById(item.assigneeId) : null;
-                      const canEdit = canEditBudgetItem(item);
-                      const calcPreview = budgetCalcOf(item, mode);
-                      const amount = budgetAmountOf(item, mode);
-                      const filled = Boolean(calcPreview);
-                      return `
-                      <tr class="${filled ? "" : "row-todo"}">
-                        <td class="budget-no-col">${escapeHtml(item.no || "-")}</td>
-                        <td class="budget-area-col"><span class="badge">${escapeHtml(item.area || item.category || "-")}</span></td>
-                        <td class="muted budget-content-col"><div class="budget-wrap">${escapeHtml(item.content || "-")}</div></td>
-                        <td class="muted budget-task-col"><div class="budget-wrap">${escapeHtml(item.task || "-")}</div></td>
-                        <td class="budget-activity-col budget-key-cell"><div class="budget-wrap">${escapeHtml(item.activity || item.title || "-")}</div></td>
-                        <td class="budget-bimok-col"><div class="budget-wrap">${escapeHtml(item.expenseType || "-")}</div></td>
+
+        <div class="budget-card-list">
+          ${
+            listItems.length
+              ? listItems
+                  .map((item) => {
+                    const assignee = item.assigneeId ? memberById(item.assigneeId) : null;
+                    const canEdit = canEditBudgetItem(item);
+                    const calcPreview = budgetCalcOf(item, mode);
+                    const amount = budgetAmountOf(item, mode);
+                    const filled = Boolean(calcPreview);
+                    return `
+                    <article class="budget-item-card ${filled ? "is-done" : "is-todo"}">
+                      <div class="budget-item-top">
+                        <div>
+                          <span class="budget-item-kicker">${escapeHtml(item.no ? `${item.no} · ` : "")}${escapeHtml(item.expenseType || "비목 미정")}</span>
+                          <h3 class="budget-item-title">${escapeHtml(item.activity || item.title || "항목")}</h3>
+                          <p class="budget-item-meta muted">${escapeHtml(item.area || "-")} · ${escapeHtml(item.content || "세부내용 없음")}</p>
+                        </div>
+                        <span class="badge ${filled ? "ok" : "pending"}">${filled ? "완료" : "미입력"}</span>
+                      </div>
+                      <div class="budget-item-grid">
+                        <div><span class="muted">금액</span><strong>${formatWon(amount)}</strong></div>
+                        <div><span class="muted">담당</span><strong>${escapeHtml(assignee?.name || "미지정")}</strong></div>
+                        <div><span class="muted">부서</span><strong>${escapeHtml(item.workDept || item.dept || "-")}</strong></div>
                         ${
                           mode === "result"
-                            ? `<td class="page-range budget-amount-col muted">${formatWon(item.planned)}</td>`
+                            ? `<div><span class="muted">편성(참고)</span><strong class="muted">${formatWon(item.planned)}</strong></div>`
                             : ""
                         }
-                        <td class="page-range budget-amount-col budget-key-cell">${formatWon(amount)}</td>
-                        <td class="budget-calc-col budget-key-cell">
-                          <span class="badge ${filled ? "ok" : "pending"}">${filled ? "완료" : "미입력"}</span>
-                          ${
-                            filled
-                              ? `<div class="budget-wrap budget-calc-text" style="margin-top:4px">${escapeHtml(calcPreview)}</div>`
-                              : ""
-                          }
-                        </td>
-                        <td class="budget-assignee-col">${escapeHtml(assignee?.name || "미지정")}</td>
-                        <td class="budget-actions-col">
-                          <div class="row">
-                            ${canEdit ? `<button class="btn btn-sm btn-primary" data-entry="${item.id}">${filled ? "수정" : "입력"}</button>` : ""}
-                            ${
-                              manage
-                                ? `<button class="btn btn-sm budget-manage-only" data-edit="${item.id}">수정</button>
-                                   <button class="btn btn-sm budget-manage-only" data-ask="${item.id}">요청</button>
-                                   <button class="btn btn-sm btn-danger budget-manage-only" data-del="${item.id}">삭제</button>`
-                                : ""
-                            }
-                          </div>
-                        </td>
-                      </tr>`;
-                    })
-                    .join("")
-                : `<tr><td colspan="${colSpan}"><div class="empty">${
-                    incompleteOnly
-                      ? "미입력 항목이 없습니다."
-                      : manage
-                        ? "항목을 추가하거나 일괄 업로드한 뒤, 입력담당자를 지정하세요."
-                        : `배정된 ${meta.short} 항목이 없습니다. 관리자 지정 후 「${meta.requestTitle}」 요청을 확인하세요.`
-                  }</div></td></tr>`
-            }
-          </tbody>
-        </table>
+                      </div>
+                      ${
+                        filled
+                          ? `<p class="budget-item-calc">${escapeHtml(calcPreview)}</p>`
+                          : `<p class="budget-item-calc muted">산출내역을 입력해 주세요.</p>`
+                      }
+                      <div class="budget-item-actions">
+                        ${canEdit ? `<button type="button" class="btn btn-primary btn-sm" data-entry="${item.id}">${filled ? "수정" : "입력"}</button>` : ""}
+                        ${
+                          manage
+                            ? `<button type="button" class="btn btn-sm" data-edit="${item.id}">관리 수정</button>
+                               <button type="button" class="btn btn-sm" data-ask="${item.id}">요청</button>
+                               <button type="button" class="btn btn-sm btn-danger" data-del="${item.id}">삭제</button>`
+                            : ""
+                        }
+                      </div>
+                    </article>`;
+                  })
+                  .join("")
+              : `<div class="empty">${
+                  incompleteOnly
+                    ? "미입력 항목이 없습니다."
+                    : manage
+                      ? "「항목 추가」로 예산을 등록하세요."
+                      : `배정된 ${meta.short} 항목이 없습니다.`
+                }</div>`
+          }
+        </div>
       </div>
+
+      ${
+        manage
+          ? `<div class="panel">
+        <div class="panel-head"><h2 class="panel-title">${escapeHtml(meta.assigneeTitle)}</h2></div>
+        ${
+          Object.keys(byAssignee).length
+            ? `<div class="bar-list">${Object.entries(byAssignee)
+                .sort((a, b) => b[1].amount - a[1].amount)
+                .map(([name, v]) => {
+                  const pct = expenseStatus.enteredTotal
+                    ? Math.min(100, Math.round((v.amount / expenseStatus.enteredTotal) * 100))
+                    : 0;
+                  return `<div class="bar-item">
+                    <div class="meta"><strong>${escapeHtml(name)}</strong>
+                      <span>${formatWon(v.amount)} · 산출 ${v.filled}/${v.count}</span></div>
+                    <div class="progress"><span style="width:${pct}%"></span></div>
+                  </div>`;
+                })
+                .join("")}</div>`
+            : `<div class="empty">담당자 배정 전입니다.</div>`
+        }
+      </div>`
+          : ""
+      }
     </div>
   `;
 
@@ -6357,14 +6237,16 @@ function openMetaModal() {
 
 /* ---------- Modals ---------- */
 
-function openModal({ title, bodyHtml, onSubmit }) {
+function openModal({ title, kicker = "입력", submitLabel = "저장", bodyHtml, onSubmit }) {
   const dialog = $("#modal");
+  const kickerEl = $("#modalKicker");
+  if (kickerEl) kickerEl.textContent = kicker;
   $("#modalTitle").textContent = title;
   $("#modalBody").innerHTML = bodyHtml;
   modalHandler = onSubmit;
   const submitBtn = $("#modalSubmit");
   if (submitBtn) {
-    submitBtn.textContent = "저장";
+    submitBtn.textContent = submitLabel;
     submitBtn.classList.remove("btn-ghost");
   }
   dialog.showModal();
@@ -6653,14 +6535,18 @@ function openBudgetTotalModal() {
   if (!canManageBudget()) return;
   ensureBudget();
   openModal({
-    title: "총예산 설정",
+    kicker: "총예산",
+    title: "사업비 총액을 설정합니다.",
+    submitLabel: "저장",
     bodyHtml: `
-      <div class="form-grid">
-        <label class="field">총예산 (원)
-          <input name="total" type="number" min="0" step="1000" required value="${state.budget.total}" />
+      <div class="wp-form">
+        <label class="wp-field">
+          <span class="wp-label">총예산 (원)</span>
+          <input name="total" type="number" min="0" step="1000" required class="wp-input wp-amount" value="${state.budget.total}" />
         </label>
-        <label class="field">비고
-          <input name="note" value="${escapeAttr(state.budget.note || "")}" placeholder="예: 보고서 TF 운영비" />
+        <label class="wp-field">
+          <span class="wp-label">비고</span>
+          <input name="note" class="wp-input" value="${escapeAttr(state.budget.note || "")}" placeholder="예: 보고서 TF 운영비" />
         </label>
       </div>
     `,
@@ -6685,70 +6571,112 @@ function budgetFormFieldsHtml(item, { includeAssignee = false, fullEdit = true, 
   const planCalcRo = lockPlan ? "readonly" : "";
   const metaFieldsRo = lockMeta ? "readonly" : ro;
   const metaRequired = fullEdit && !lockMeta;
+  const expense = item?.expenseType || "";
+  const expenseChips = BUDGET_CATALOG.expenseTypes
+    .map(
+      (name) =>
+        `<button type="button" class="wp-chip ${expense === name ? "is-on" : ""}" data-expense-chip="${escapeAttr(name)}">${escapeHtml(name)}</button>`
+    )
+    .join("");
+
   return `
-      <div class="form-grid two">
-        <label class="field">연번
-          <input name="no" ${metaFieldsRo} value="${escapeAttr(item?.no || "")}" placeholder="예: 14" />
+      <div class="wp-form">
+        <label class="wp-field">
+          <span class="wp-label">세부프로그램</span>
+          <input name="activity" class="wp-input" ${metaRequired ? "required" : "readonly"} value="${escapeAttr(item?.activity || item?.title || "")}" placeholder="예: AI 교수법 워크숍 운영" />
         </label>
-        <label class="field">영역
-          <input name="area" list="budgetAreas_${suffix}" ${metaRequired ? "required" : "readonly"} value="${escapeAttr(item?.area || "")}" />
+
+        <label class="wp-field">
+          <span class="wp-label">비목</span>
+          <input name="expenseType" id="budgetExpenseInput_${suffix}" list="budgetExpense_${suffix}" class="wp-input" ${lockMeta ? "readonly" : "required"} value="${escapeAttr(expense)}" placeholder="선택 또는 직접 입력" />
+          ${lockMeta ? "" : `<div class="wp-chips" data-expense-chips>${expenseChips}</div>`}
         </label>
-        <label class="field full">세부내용명
-          <input name="content" list="budgetContents_${suffix}" ${metaFieldsRo} value="${escapeAttr(item?.content || "")}" />
+
+        <div class="wp-grid-2">
+          <label class="wp-field">
+            <span class="wp-label">영역</span>
+            <input name="area" list="budgetAreas_${suffix}" class="wp-input" ${metaRequired ? "required" : "readonly"} value="${escapeAttr(item?.area || "")}" placeholder="예: 2. 고등직업교육" />
+          </label>
+          <label class="wp-field">
+            <span class="wp-label">연번</span>
+            <input name="no" class="wp-input" ${metaFieldsRo} value="${escapeAttr(item?.no || "")}" placeholder="예: 14" />
+          </label>
+        </div>
+
+        <label class="wp-field">
+          <span class="wp-label">세부내용명</span>
+          <input name="content" list="budgetContents_${suffix}" class="wp-input" ${metaFieldsRo} value="${escapeAttr(item?.content || "")}" />
         </label>
-        <label class="field full">세부과제명
-          <input name="task" ${metaFieldsRo} value="${escapeAttr(item?.task || "")}" />
+
+        <label class="wp-field">
+          <span class="wp-label">세부과제명</span>
+          <input name="task" class="wp-input" ${metaFieldsRo} value="${escapeAttr(item?.task || "")}" />
         </label>
-        <label class="field full">세부프로그램(Activity)
-          <input name="activity" ${metaRequired ? "required" : "readonly"} value="${escapeAttr(item?.activity || item?.title || "")}" />
-        </label>
-        <label class="field">담당부서
-          <input name="dept" list="budgetDepts_${suffix}" ${metaFieldsRo} value="${escapeAttr(item?.dept || "")}" />
-        </label>
-        <label class="field">실무부서
-          <input name="workDept" list="budgetWorkDepts_${suffix}" ${metaFieldsRo} value="${escapeAttr(item?.workDept || "")}" />
-        </label>
-        <label class="field">비목
-          <input name="expenseType" list="budgetExpense_${suffix}" ${lockMeta ? "readonly" : "required"} value="${escapeAttr(item?.expenseType || "")}" placeholder="선택 또는 직접 입력" />
-        </label>
-        ${
-          showPlan
-            ? `<label class="field">편성금액 (원) · 운영계획
-          <input name="planned" type="number" min="0" step="1000" ${planAmountRo || (fullEdit ? "required" : "readonly")} value="${item?.planned ?? 0}" />
-        </label>
-        <label class="field full">세부 산출내역 · 운영계획(예산)
-          <textarea name="calcText" rows="3" ${planCalcRo} placeholder="예: 강사료 000원 × N회 + 회의비 ...">${escapeHtml(item?.calcText || "")}</textarea>
-        </label>`
-            : ""
-        }
-        ${
-          showResult
-            ? `<label class="field">실적금액 (원) · 결과보고
-          <input name="spent" type="number" min="0" step="1000" value="${item?.spent ?? 0}" />
-        </label>
-        <label class="field full">실적 산출내역 · 결과보고
-          <textarea name="actualCalcText" rows="3" placeholder="예: 실제 집행액·정산 내역 ...">${escapeHtml(item?.actualCalcText || "")}</textarea>
-        </label>`
-            : ""
-        }
-        <label class="field full">메모
-          <input name="note" value="${escapeAttr(item?.note || "")}" />
-        </label>
+
+        <div class="wp-grid-2">
+          <label class="wp-field">
+            <span class="wp-label">담당부서</span>
+            <input name="dept" list="budgetDepts_${suffix}" class="wp-input" ${metaFieldsRo} value="${escapeAttr(item?.dept || "")}" />
+          </label>
+          <label class="wp-field">
+            <span class="wp-label">실무부서</span>
+            <input name="workDept" list="budgetWorkDepts_${suffix}" class="wp-input" ${metaFieldsRo} value="${escapeAttr(item?.workDept || "")}" />
+          </label>
+        </div>
+
         ${
           includeAssignee
-            ? `<label class="field full">입력담당자
-          <select name="assigneeId">
-            <option value="">미지정</option>
-            ${inputAssignees()
-              .map(
-                (m) =>
-                  `<option value="${m.id}" ${item?.assigneeId === m.id ? "selected" : ""}>${escapeHtml(m.name)}</option>`
-              )
-              .join("")}
-          </select>
+            ? `<label class="wp-field">
+            <span class="wp-label">입력담당자</span>
+            <select name="assigneeId" class="wp-input wp-select">
+              <option value="">미지정</option>
+              ${inputAssignees()
+                .map(
+                  (m) =>
+                    `<option value="${m.id}" ${item?.assigneeId === m.id ? "selected" : ""}>${escapeHtml(m.name)}</option>`
+                )
+                .join("")}
+            </select>
+          </label>`
+            : ""
+        }
+
+        ${
+          showPlan
+            ? `<div class="wp-grid-2">
+          <label class="wp-field">
+            <span class="wp-label">편성금액 (원)</span>
+            <input name="planned" type="number" min="0" step="1000" class="wp-input wp-amount" ${planAmountRo || (fullEdit ? "required" : "readonly")} value="${item?.planned ?? 0}" />
+          </label>
+          <label class="wp-field wp-check-inline">
+            <span class="wp-label">상태</span>
+            <span class="wp-status-pill ${(item?.calcText || "").trim() ? "is-ok" : "is-wait"}">${(item?.calcText || "").trim() ? "산출 완료" : "입력 대기"}</span>
+          </label>
+        </div>
+        <label class="wp-field">
+          <span class="wp-label">세부 산출내역 · 운영계획</span>
+          <textarea name="calcText" rows="4" class="wp-input" ${planCalcRo} placeholder="예: 강사료 000원 × N회 + 회의비 ...">${escapeHtml(item?.calcText || "")}</textarea>
         </label>`
             : ""
         }
+
+        ${
+          showResult
+            ? `<label class="wp-field">
+            <span class="wp-label">실적금액 (원)</span>
+            <input name="spent" type="number" min="0" step="1000" class="wp-input wp-amount" value="${item?.spent ?? 0}" />
+          </label>
+          <label class="wp-field">
+            <span class="wp-label">실적 산출내역 · 결과보고</span>
+            <textarea name="actualCalcText" rows="4" class="wp-input" placeholder="예: 실제 집행액·정산 내역 ...">${escapeHtml(item?.actualCalcText || "")}</textarea>
+          </label>`
+            : ""
+        }
+
+        <label class="wp-field">
+          <span class="wp-label">메모</span>
+          <textarea name="note" rows="2" class="wp-input" placeholder="참고 메모">${escapeHtml(item?.note || "")}</textarea>
+        </label>
       </div>
       ${datalistOptions(`budgetAreas_${suffix}`, BUDGET_CATALOG.areas)}
       ${datalistOptions(`budgetContents_${suffix}`, BUDGET_CATALOG.contents)}
@@ -6793,6 +6721,26 @@ function readBudgetItemFields(fd, prev = {}, { mode = "both" } = {}) {
   return normalizeBudgetItem(next);
 }
 
+function bindBudgetFormChips(root = document) {
+  const input = root.querySelector("[name='expenseType']");
+  root.querySelectorAll("[data-expense-chip]").forEach((btn) => {
+    btn.addEventListener("click", () => {
+      if (!input || input.readOnly) return;
+      input.value = btn.dataset.expenseChip || "";
+      root.querySelectorAll("[data-expense-chip]").forEach((b) => {
+        b.classList.toggle("is-on", b === btn);
+      });
+      input.dispatchEvent(new Event("input", { bubbles: true }));
+    });
+  });
+  input?.addEventListener("input", () => {
+    const v = input.value.trim();
+    root.querySelectorAll("[data-expense-chip]").forEach((b) => {
+      b.classList.toggle("is-on", b.dataset.expenseChip === v);
+    });
+  });
+}
+
 function openBudgetItemModal(id) {
   if (!canManageBudget()) return;
   ensureBudget();
@@ -6800,10 +6748,12 @@ function openBudgetItemModal(id) {
   const prevAssignee = item?.assigneeId || "";
   const modeMeta = budgetModeMeta();
   openModal({
-    title: item ? "예산 항목 수정 (관리자)" : "예산 항목 추가",
+    kicker: item ? "예산 수정" : "새 예산",
+    title: item ? "예산 항목을 수정합니다." : "예산 항목을 입력합니다.",
+    submitLabel: item ? "저장" : "항목 등록",
     bodyHtml: `
       ${budgetFormFieldsHtml(item, { includeAssignee: true, fullEdit: true, mode: "both" })}
-      <p class="muted">입력담당자를 지정하면 「${escapeHtml(modeMeta.requestTitle)}」 요청이 자동 발송됩니다. 예산·실적 금액을 함께 관리할 수 있습니다.</p>
+      <p class="muted wp-form-hint">입력담당자를 지정하면 「${escapeHtml(modeMeta.requestTitle)}」 요청이 자동 발송됩니다.</p>
     `,
     onSubmit: (fd) => {
       const data = readBudgetItemFields(fd, item || {}, { mode: "both" });
@@ -6831,6 +6781,7 @@ function openBudgetItemModal(id) {
       return true;
     },
   });
+  bindBudgetFormChips($("#modalBody"));
 }
 
 function openBudgetEntryModal(itemId) {
@@ -6841,9 +6792,11 @@ function openBudgetEntryModal(itemId) {
   const mode = getBudgetInputMode();
   const meta = budgetModeMeta(mode);
   openModal({
-    title: `${meta.short} 입력 · ${budgetItemLabel(item)}`,
+    kicker: `${meta.short} 입력`,
+    title: "예산·실적을 입력합니다.",
+    submitLabel: "저장",
     bodyHtml: `
-      <p class="muted" style="margin:0 0 10px">${escapeHtml(meta.entryHint)}</p>
+      <p class="muted wp-form-hint">${escapeHtml(meta.entryHint)}</p>
       ${budgetFormFieldsHtml(item, {
         includeAssignee: false,
         fullEdit: true,
@@ -6858,6 +6811,7 @@ function openBudgetEntryModal(itemId) {
       return true;
     },
   });
+  bindBudgetFormChips($("#modalBody"));
 }
 
 function openBudgetBulkUploadModal() {
@@ -6865,22 +6819,27 @@ function openBudgetBulkUploadModal() {
   ensureBudget();
   const modeMeta = budgetModeMeta();
   openModal({
-    title: "예산 일괄 수정·업로드 (관리자)",
+    kicker: "일괄 업로드",
+    title: "예산 항목을 일괄 등록합니다.",
+    submitLabel: "업로드",
     bodyHtml: `
-      <p class="muted">CSV 한 줄에 한 항목 (권장):<br>
+      <p class="muted wp-form-hint">CSV 한 줄에 한 항목 (권장):<br>
       <code>연번,영역,세부내용명,세부과제명,세부프로그램,담당부서,실무부서,편성금액,세부산출내역,실적금액,실적산출내역,입력담당자,메모</code></p>
       <p class="muted">기존 11열 형식(실적 열 없음)도 그대로 받을 수 있습니다. 입력담당자는 대상자 이름. 헤더 행은 자동 건너뜁니다.</p>
-      <label class="field full">CSV 내용
-        <textarea name="csv" rows="10" placeholder="14,2. 고등직업교육,가. 핵심역량...,1) ...,가) ...,교무처,교육혁신본부,9483680,,,0,,김남인,"></textarea>
-      </label>
-      <label class="alt-submit-check">
-        <input type="checkbox" name="replaceAll" />
-        <span>기존 예산 항목을 모두 지우고 새로 업로드</span>
-      </label>
-      <label class="alt-submit-check">
-        <input type="checkbox" name="notifyAssignees" checked />
-        <span>새로 지정된 담당자에게 「${escapeHtml(modeMeta.requestTitle)}」 요청 보내기</span>
-      </label>
+      <div class="wp-form">
+        <label class="wp-field">
+          <span class="wp-label">CSV 내용</span>
+          <textarea name="csv" rows="10" class="wp-input" placeholder="14,2. 고등직업교육,가. 핵심역량...,1) ...,가) ...,교무처,교육혁신본부,9483680,,,0,,김남인,"></textarea>
+        </label>
+        <label class="alt-submit-check">
+          <input type="checkbox" name="replaceAll" />
+          <span>기존 예산 항목을 모두 지우고 새로 업로드</span>
+        </label>
+        <label class="alt-submit-check">
+          <input type="checkbox" name="notifyAssignees" checked />
+          <span>새로 지정된 담당자에게 「${escapeHtml(modeMeta.requestTitle)}」 요청 보내기</span>
+        </label>
+      </div>
     `,
     onSubmit: (fd) => {
       const raw = (fd.get("csv") || "").toString().trim();

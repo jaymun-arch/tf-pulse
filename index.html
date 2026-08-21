@@ -43,11 +43,10 @@
         <div class="brand">
           <button type="button" class="home-btn" id="btnHome" title="메인으로" aria-label="메인(요약)으로 이동">
             <span class="home-btn-icon" aria-hidden="true">⌂</span>
-            <span class="home-btn-text">홈</span>
           </button>
-          <div class="brand-mark">TF Pulse</div>
+          <div class="brand-mark">TF Pulse · 함께 쓰는 보고서</div>
         </div>
-        <div class="user-chip">
+        <div class="header-tools user-chip">
           <span class="api-dot ok" id="saveDot" title="로컬 저장"></span>
           <span class="save-hint" id="saveHint">저장됨</span>
           <button type="button" class="remind-bell" id="btnRemindBell" hidden title="다가오는 일정 알람" aria-label="다가오는 일정 알람">
@@ -81,13 +80,13 @@
       <nav class="sub-tab-bar" id="subNav" hidden aria-label="세부 메뉴"></nav>
     </div>
 
-    <header class="page-hero">
+    <header class="page-hero" id="pageHero">
       <div class="page-hero-main">
         <p class="load-kicker" id="tfName">TF 운영 허브</p>
         <h1 class="load-title" id="viewTitle">요약</h1>
         <p class="load-desc" id="viewDesc">TF 운영 현황을 한눈에 확인합니다.</p>
       </div>
-      <aside class="report-deadline" aria-live="polite">
+      <aside class="hero-aside report-deadline" id="heroAside" aria-live="polite">
         <p class="deadline-remain">
           보고서 제출까지
           <strong id="deadlineRemain">00일 00시간 00분</strong>
@@ -166,15 +165,18 @@
     </div>
   </div>
 
-  <dialog id="modal">
+  <dialog id="modal" class="wp-modal">
     <form method="dialog" id="modalForm" class="modal-card">
       <header class="modal-head">
-        <h2 id="modalTitle">항목 추가</h2>
-        <button type="button" class="icon-btn" id="modalClose" aria-label="닫기">×</button>
+        <div class="modal-head-main">
+          <p class="modal-kicker" id="modalKicker">입력</p>
+          <h2 id="modalTitle">항목 추가</h2>
+        </div>
+        <button type="button" class="modal-close-text" id="modalClose">닫기</button>
       </header>
       <div class="modal-body" id="modalBody"></div>
       <footer class="modal-foot">
-        <button type="button" class="btn btn-ghost" id="modalCancel">취소</button>
+        <button type="button" class="btn" id="modalCancel">취소</button>
         <button type="submit" class="btn btn-primary" id="modalSubmit">저장</button>
       </footer>
     </form>
