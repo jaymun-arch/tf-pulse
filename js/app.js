@@ -2750,42 +2750,88 @@ function workFeedRowHtml(s, admin) {
   const urgency = scheduleUrgency(s);
   const glowLabel =
     bucket === "overdue" ? "지연" : bucket === "today" ? "오늘까지" : bucket === "week" ? "이번주" : "";
+  const dueWindow =
+    bucket === "overdue"
+      ? "지연"
+      : bucket === "today"
+        ? "오늘까지"
+        : bucket === "week"
+          ? "이번주까지"
+          : bucket === "month"
+            ? "이번달까지"
+            : "";
+  const origin =
+    s.createdBy === sessionUser
+      ? { tag: "나혼자", tone: "solo", from: "" }
+      : s.createdBy
+        ? { tag: "요청받음", tone: "requested", from: `${s.createdBy}으로부터` }
+        : { tag: "나혼자", tone: "solo", from: "" };
+  const metaBits = [
+    glowLabel || dueWindow || "일정",
+    s.note ? String(s.note).slice(0, 48) : "",
+    days < 0 ? `${Math.abs(days)}일 지남` : days === 0 ? "오늘" : `${days}일 남음`,
+  ].filter(Boolean);
+  const statusTone =
+    (s.status || "준비") === "완료" ? "done" : (s.status || "준비") === "진행" ? "active" : "planned";
+
   return `
-    <article class="work-feed-row">
-      ${
-        canManage
-          ? `<button type="button" class="work-edit-btn" data-edit="${s.id}" title="수정"><span>수정</span></button>`
-          : `<span class="work-edit-btn is-disabled">조회</span>`
-      }
-      <div class="work-feed-main">
-        <span class="work-feed-from">${escapeHtml(
-          s.createdBy === sessionUser ? "내가요청" : s.createdBy ? `${s.createdBy}로부터` : "TF 일정"
-        )}</span>
-        <div class="work-feed-title-row">
-          <strong>${escapeHtml(s.title)}</strong>
-        </div>
-        ${s.note ? `<p class="work-feed-note muted">${escapeHtml(s.note)}</p>` : ""}
-        <div class="work-feed-tags">
-          <span class="remind-tag">${escapeHtml(typeLabel(s.type))}</span>
-          ${s.createdBy ? `<span class="remind-tag is-person">${escapeHtml(s.createdBy)}</span>` : ""}
-          <span class="remind-tag">${escapeHtml(scheduleStatusLabel(s.status))}</span>
-          ${
-            glowLabel
-              ? `<span class="urg-pill is-glow ${urgency === "urgent" ? "is-urgent" : "is-warn"}">${glowLabel}</span>`
-              : ""
-          }
-          <span class="work-feed-date">${escapeHtml(formatKorDate(s.date))}${
-            days < 0 ? ` · ${Math.abs(days)}일 지남` : days === 0 ? " · 오늘" : ` · ${days}일 남음`
-          }</span>
-        </div>
+    <div class="swipe-row ${canManage ? "has-edit-handle has-delete-handle" : ""}">
+      <div class="swipe-front">
+        ${
+          canManage
+            ? `<button type="button" class="swipe-handle swipe-handle-edit" data-edit="${s.id}" title="수정" aria-label="수정">
+                <span class="swipe-handle-arrow" aria-hidden="true">›</span>
+                <span class="swipe-handle-label">수정</span>
+              </button>`
+            : ""
+        }
+        <article class="task-row tone-${statusTone}">
+          <span class="origin-stack">
+            ${origin.from ? `<span class="from-owner">${escapeHtml(origin.from)}</span>` : ""}
+            <span class="origin-tag ${origin.tone}">${escapeHtml(origin.tag)}</span>
+          </span>
+          <div class="task-row-main">
+            <p class="task-title">
+              ${escapeHtml(s.title)}
+              <span class="kind-tag dept-tag">${escapeHtml(typeLabel(s.type))}</span>
+              ${s.createdBy ? `<span class="kind-tag owner-tag">${escapeHtml(s.createdBy)}</span>` : ""}
+              <span class="kind-tag work-kind">${escapeHtml(scheduleStatusLabel(s.status))}</span>
+              ${
+                urgency === "check"
+                  ? `<span class="kind-tag check-tag">✓ 체크</span>`
+                  : urgency === "warn"
+                    ? `<span class="kind-tag warn-tag">주의</span>`
+                    : ""
+              }
+            </p>
+            <p class="task-meta">${escapeHtml(metaBits.join(" · "))}</p>
+          </div>
+          <span class="due-cluster">
+            ${
+              glowLabel
+                ? `<span class="remind-title-glow due-glow">${escapeHtml(glowLabel)}</span>`
+                : dueWindow
+                  ? `<span class="kind-tag due-window due-${escapeAttr(bucket)}">${escapeHtml(dueWindow)}</span>`
+                  : ""
+            }
+            <span class="due-badge">${escapeHtml(formatKorDate(s.endDate || s.date))}</span>
+          </span>
+          <select class="status-select status-${statusTone}" data-status="${s.id}" ${canManage ? "" : "disabled"}>
+            ${["준비", "진행", "완료"]
+              .map((st) => `<option value="${st}" ${(s.status || "준비") === st ? "selected" : ""}>${st}</option>`)
+              .join("")}
+          </select>
+        </article>
+        ${
+          canManage
+            ? `<button type="button" class="swipe-handle swipe-handle-delete" data-del="${s.id}" title="삭제" aria-label="삭제">
+                <span class="swipe-handle-arrow" aria-hidden="true">‹</span>
+                <span class="swipe-handle-label">삭제</span>
+              </button>`
+            : ""
+        }
       </div>
-      <select class="work-status-select" data-status="${s.id}" ${canManage ? "" : "disabled"}>
-        ${["준비", "진행", "완료"]
-          .map((st) => `<option value="${st}" ${(s.status || "준비") === st ? "selected" : ""}>${st}</option>`)
-          .join("")}
-      </select>
-      ${canManage ? `<button type="button" class="work-del-btn" data-del="${s.id}">삭제</button>` : ""}
-    </article>`;
+    </div>`;
 }
 
 function renderDrive() {
