@@ -11,7 +11,7 @@
   <meta name="mobile-web-app-capable" content="yes" />
   <meta name="format-detection" content="telephone=no" />
   <meta name="theme-color" content="#f5f5f7" />
-  <title>TF Pulse — 보고서 TF 운영</title>
+  <title>연어회 — TF Pulse</title>
   <link rel="stylesheet" href="https://cdn.jsdelivr.net/gh/orioncactus/pretendard@v1.3.9/dist/web/variable/pretendardvariable-dynamic-subset.min.css" />
   <link rel="stylesheet" href="https://cdn-uicons.flaticon.com/2.6.0/uicons-regular-rounded/css/uicons-regular-rounded.css" />
   <link rel="stylesheet" href="css/style.css" />
@@ -29,8 +29,8 @@
     </div>
     <div class="login-card">
       <div class="login-hero">
-        <p class="login-kicker">2026년 혁신지원사업 연차평가보고서</p>
-        <h1>TF에 참여해 주셔서 감사드립니다.</h1>
+        <p class="login-kicker">연어회 · 2026 혁신지원사업 연차평가보고서</p>
+        <h1>연셩의 말(어)가 모여<br />회(모임)를 이루면 못할 일이 없다.</h1>
         <p class="login-prompt"><strong>내 이름을 선택하여 접속하세요</strong></p>
       </div>
       <div class="member-list" id="loginMemberList"></div>
@@ -44,7 +44,7 @@
           <button type="button" class="home-btn" id="btnHome" title="메인으로" aria-label="메인(요약)으로 이동">
             <span class="home-btn-icon" aria-hidden="true">⌂</span>
           </button>
-          <div class="brand-mark">TF Pulse · 함께 쓰는 보고서</div>
+          <div class="brand-mark">연어회 · TF Pulse</div>
         </div>
         <div class="header-tools user-chip">
           <span class="api-dot ok" id="saveDot" title="로컬 저장"></span>
@@ -72,9 +72,10 @@
       <nav class="tab-bar" id="mainNav" aria-label="주요 메뉴">
         <button type="button" class="tab-btn active" data-nav="home">홈</button>
         <button type="button" class="tab-btn" data-nav="report">보고서</button>
-        <button type="button" class="tab-btn" data-nav="ops">운영</button>
+        <button type="button" class="tab-btn" data-nav="request">요청</button>
         <button type="button" class="tab-btn" data-nav="budget">예산</button>
-        <button type="button" class="tab-btn" data-nav="library">자료</button>
+        <button type="button" class="tab-btn" data-nav="kpi">성과지표</button>
+        <button type="button" class="tab-btn" data-nav="food">오늘 뭐먹지</button>
         <button type="button" class="tab-btn admin-only" data-nav="setup">설정</button>
       </nav>
       <nav class="sub-tab-bar" id="subNav" hidden aria-label="세부 메뉴"></nav>
@@ -103,6 +104,7 @@
     <section class="view" id="view-ai-art"></section>
     <section class="view" id="view-requests"></section>
     <section class="view" id="view-budget"></section>
+    <section class="view" id="view-kpi"></section>
     <section class="view" id="view-schedule"></section>
     <section class="view" id="view-drive"></section>
     <section class="view" id="view-resources"></section>

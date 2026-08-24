@@ -6564,3 +6564,192 @@ dialog#modal::backdrop {
   .due-cluster { grid-area: due; justify-content: flex-start; }
   .status-select { grid-area: status; justify-self: start; }
 }
+/* —— 연어회 홈 · 성과지표 —— */
+.yeonu-hero {
+  display: grid;
+  grid-template-columns: 1.15fr 1fr;
+  gap: 0;
+  margin: 0 0 18px;
+  border-radius: 22px;
+  overflow: hidden;
+  background: linear-gradient(135deg, #e8f4f8 0%, #f7f3ea 55%, #fff 100%);
+  border: 1px solid var(--line);
+  min-height: min(42vh, 380px);
+}
+.yeonu-hero-visual {
+  position: relative;
+  min-height: 260px;
+  background: #d7eef5;
+}
+.yeonu-hero-visual img {
+  width: 100%;
+  height: 100%;
+  object-fit: cover;
+  display: block;
+}
+.yeonu-hero-copy {
+  display: flex;
+  flex-direction: column;
+  justify-content: center;
+  padding: 28px 28px 32px;
+}
+.yeonu-kicker {
+  margin: 0 0 6px;
+  font-size: var(--text-xs);
+  font-weight: 700;
+  letter-spacing: 0.04em;
+  color: #0a7ea4;
+  text-transform: uppercase;
+}
+.yeonu-title {
+  margin: 0;
+  font-size: clamp(2.4rem, 5vw, 3.4rem);
+  font-weight: 900;
+  letter-spacing: -0.04em;
+  color: #123;
+  line-height: 1.05;
+}
+.yeonu-story {
+  margin: 14px 0 0;
+  font-size: clamp(1.05rem, 2.2vw, 1.25rem);
+  font-weight: 650;
+  letter-spacing: -0.03em;
+  line-height: 1.45;
+  color: #1d1d1f;
+}
+.yeonu-story strong { color: #0a7ea4; font-weight: 800; }
+.yeonu-sub { margin: 10px 0 0; font-size: var(--text-sm); line-height: 1.45; }
+.yeonu-deadline {
+  margin: 18px 0 0;
+  padding: 12px 14px;
+  border-radius: 12px;
+  background: rgba(0, 113, 227, 0.08);
+  color: var(--ink);
+  font-size: var(--text-sm);
+  font-weight: 600;
+}
+.yeonu-deadline strong {
+  display: inline-block;
+  margin: 0 4px;
+  color: var(--accent);
+  font-variant-numeric: tabular-nums;
+  font-weight: 800;
+}
+.home-flow {
+  display: grid;
+  grid-template-columns: repeat(auto-fit, minmax(120px, 1fr));
+  gap: 8px;
+  margin-bottom: 14px;
+}
+.home-flow-card {
+  display: flex;
+  flex-direction: column;
+  align-items: flex-start;
+  gap: 4px;
+  padding: 12px 12px 14px;
+  border: 1px solid var(--line);
+  border-radius: 14px;
+  background: var(--bg-elevated, #fff);
+  cursor: pointer;
+  text-align: left;
+  font: inherit;
+  color: inherit;
+  transition: border-color 140ms var(--ease), transform 140ms var(--ease);
+}
+.home-flow-card:hover {
+  border-color: rgba(0, 113, 227, 0.35);
+  transform: translateY(-1px);
+}
+.home-flow-card span {
+  display: inline-grid;
+  place-items: center;
+  width: 22px;
+  height: 22px;
+  border-radius: 980px;
+  background: rgba(10, 126, 164, 0.12);
+  color: #0a7ea4;
+  font-size: 0.72rem;
+  font-weight: 800;
+}
+.home-flow-card strong { font-size: var(--text-sm); letter-spacing: -0.02em; }
+.home-flow-card em { font-style: normal; font-size: var(--text-xs); color: var(--ink-faint); }
+.home-todo-strip { margin-bottom: 12px; }
+.home-todo-inline { list-style: none; margin: 0; padding: 0; display: flex; flex-direction: column; gap: 6px; }
+.home-todo-inline button {
+  width: 100%;
+  display: flex;
+  justify-content: space-between;
+  gap: 10px;
+  border: none;
+  background: var(--bg);
+  border-radius: 10px;
+  padding: 10px 12px;
+  cursor: pointer;
+  font: inherit;
+  text-align: left;
+}
+.home-todo-inline span { color: var(--ink-faint); font-size: var(--text-xs); }
+.home-urgency { margin-bottom: 10px; }
+.home-cal-panel { margin-bottom: 12px; }
+
+.kpi-grid {
+  display: grid;
+  grid-template-columns: repeat(auto-fit, minmax(260px, 1fr));
+  gap: 12px;
+}
+.kpi-card {
+  border: 1px solid var(--line);
+  border-radius: 14px;
+  padding: 14px;
+  background: var(--bg-elevated, #fff);
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+}
+.kpi-card-head { display: flex; justify-content: space-between; align-items: center; gap: 8px; }
+.kpi-card-head h3 { margin: 0; font-size: var(--text-md); letter-spacing: -0.02em; }
+.kpi-meta { display: grid; grid-template-columns: repeat(3, 1fr); gap: 6px; margin: 0; }
+.kpi-meta dt { font-size: 0.62rem; color: var(--ink-faint); }
+.kpi-meta dd { margin: 2px 0 0; font-weight: 750; font-size: var(--text-sm); }
+.kpi-note { margin: 0; font-size: var(--text-xs); }
+.kpi-formula { margin: 0; }
+.kpi-formula code {
+  display: block;
+  padding: 6px 8px;
+  border-radius: 8px;
+  background: var(--bg-chip);
+  font-size: 0.72rem;
+}
+.kpi-sim-bar {
+  height: 8px;
+  border-radius: 999px;
+  background: rgba(142, 142, 147, 0.18);
+  overflow: hidden;
+  margin-bottom: 6px;
+}
+.kpi-sim-bar i {
+  display: block;
+  height: 100%;
+  background: linear-gradient(90deg, #0a7ea4, var(--accent));
+  border-radius: inherit;
+}
+.kpi-actual-label {
+  display: flex;
+  flex-direction: column;
+  gap: 4px;
+  font-size: var(--text-xs);
+  font-weight: 650;
+  color: var(--ink-soft);
+}
+.kpi-actual-input {
+  border: 1px solid var(--line);
+  border-radius: 10px;
+  padding: 8px 10px;
+  font: inherit;
+}
+
+@media (max-width: 840px) {
+  .yeonu-hero { grid-template-columns: 1fr; }
+  .yeonu-hero-visual { min-height: 200px; max-height: 240px; }
+  .yeonu-hero-copy { padding: 20px 18px 24px; }
+}

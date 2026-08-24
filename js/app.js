@@ -9,7 +9,7 @@ import {
 import { REPORT_LAYOUTS, downloadReportLayoutPpt, layoutPreviewWireHtml } from "./report-layouts.js";
 import { downloadEditableDiagramPpt, diagramPreviewWireHtml } from "./report-diagrams.js";
 
-const STORAGE_KEY = "tf-ops-data-v12";
+const STORAGE_KEY = "tf-ops-data-v13";
 const USER_KEY = "tf-ops-user-v1";
 const REMIND_KEY = "tf-ops-schedule-remind-v1";
 const REMIND_BEFORE_DAYS = 14;
@@ -67,40 +67,47 @@ const BUDGET_CATALOG = {
 };
 
 const VIEW_META = {
-  dashboard: { title: "홈", desc: "내 할 일·팀 취합 진도·작성 기준(계획/실적)을 한눈에 봅니다." },
-  parts: { title: "목차·할당", desc: "관리자 마스터: 사업보고서 목차와 페이지 할당을 세팅합니다." },
+  dashboard: {
+    title: "연어회",
+    desc: "연셩의 말(어)가 모여 회(모임)를 이루면 못할 일이 없습니다.",
+  },
+  parts: { title: "목차·할당", desc: "보고서 목차와 파트별 할당 분량을 관리합니다." },
   collections: {
     title: "취합",
-    desc: "취합 입력과 연성대 자율혁신계획서 틀 기준 AI 검증·브리핑을 한 화면에서 다룹니다.",
+    desc: "1·2·3차 내 파트를 업로드하면 분량·구성 요약을 바로 확인합니다.",
   },
   review: {
-    title: "윤독·리뷰",
-    desc: "목차·할당 파트 구분으로 PDF 요약표를 보고, 같은 구분 순서대로 윤독 코멘트를 남깁니다.",
+    title: "윤독",
+    desc: "취합본의 주요 검토사항을 인터랙티브하게 남기고 관리합니다.",
   },
-  requests: { title: "요청", desc: "관리자 공통 요청을 보내거나, 받은 요청을 확인하고 완료 처리합니다." },
+  requests: { title: "요청", desc: "관리자가 작업을 요청하고, 담당자는 일정을 확인하며 진행합니다." },
   budget: {
     title: "예산",
-    desc: "카드에서 항목을 고르고, Work Pulse형 입력창으로 편성·실적을 등록합니다.",
+    desc: "영역·프로그램별 예산·산출내역 입력, 엑셀 일괄 업/다운로드, 비목별 자동 합산.",
   },
   schedule: {
     title: "일정",
-    desc: "캘린더·긴급 알람·주요 업무 피드로 TF 일정을 관리합니다.",
+    desc: "보고서 제출일까지 달력으로 일정을 보고 진행도를 관리합니다.",
   },
-  drive: { title: "드라이브", desc: "주요 문서가 있는 구글드라이브 링크를 확인합니다." },
-  resources: { title: "공통 서식", desc: "교육부 지침·스타일 가이드·공통 서식을 한곳에 모읍니다." },
+  drive: { title: "드라이브", desc: "주요 문서 구글드라이브 링크입니다." },
+  resources: { title: "양식", desc: "공통양식·스타일 가이드를 공유합니다." },
   food: { title: "오늘 뭐먹지", desc: "보고서 쓰다 배고플 때, 돌림판으로 메뉴를 정해 보세요." },
-  members: { title: "대상자", desc: "관리자 마스터: 보고서 작성 참여 대상자를 등록·관리합니다." },
+  members: { title: "구성원", desc: "TF 참여 구성원을 등록·관리합니다." },
   "ai-art": {
-    title: "보고서 만들기",
-    desc: "양식 레이아웃·도식·참고 그림을 한곳에서 만듭니다.",
+    title: "그림",
+    desc: "조건에 맞춰 보고서용 그림을 자동 생성합니다.",
+  },
+  kpi: {
+    title: "성과지표",
+    desc: "성과지표명·기준값·근거·산식으로 목표 달성 시뮬레이션을 합니다.",
   },
   guide: {
     title: "사용방법",
-    desc: "시스템의 방향과 메뉴별 사용법을 짧게 정리했습니다. 처음이라면 홈부터 시작해 보세요.",
+    desc: "심플한 TF 운영 흐름을 메뉴별로 안내합니다.",
   },
 };
 
-/** 상단 메뉴를 단순화한 그룹 구조 (세부 기능은 하위 탭) */
+/** 심플 TF 운영 메뉴: 홈(달력) → 보고서 → 요청 → 예산 → 성과 → 식사 → 설정 */
 const NAV_GROUPS = {
   home: {
     label: "홈",
@@ -109,33 +116,43 @@ const NAV_GROUPS = {
   },
   report: {
     label: "보고서",
-    views: ["collections", "review", "ai-art"],
-    labels: { collections: "취합", review: "윤독·리뷰", "ai-art": "보고서 만들기" },
+    views: ["resources", "parts", "collections", "review", "ai-art"],
+    labels: {
+      resources: "양식",
+      parts: "목차·할당",
+      collections: "취합",
+      review: "윤독",
+      "ai-art": "그림",
+    },
+    adminViews: ["parts"],
     defaultView: "collections",
   },
-  ops: {
-    label: "운영",
-    views: ["schedule", "requests", "food"],
-    labels: { schedule: "일정", requests: "요청", food: "오늘 뭐먹지" },
-    defaultView: "schedule",
+  request: {
+    label: "요청",
+    views: ["requests"],
+    defaultView: "requests",
   },
   budget: {
     label: "예산",
     views: ["budget"],
     defaultView: "budget",
   },
-  library: {
-    label: "자료",
-    views: ["drive", "resources", "guide"],
-    labels: { drive: "드라이브", resources: "공통 서식", guide: "사용방법" },
-    defaultView: "drive",
+  kpi: {
+    label: "성과지표",
+    views: ["kpi"],
+    defaultView: "kpi",
+  },
+  food: {
+    label: "오늘 뭐먹지",
+    views: ["food"],
+    defaultView: "food",
   },
   setup: {
     label: "설정",
     adminOnly: true,
-    views: ["parts", "members"],
-    labels: { parts: "목차·할당", members: "대상자" },
-    defaultView: "parts",
+    views: ["members", "drive", "guide"],
+    labels: { members: "구성원", drive: "드라이브", guide: "사용방법" },
+    defaultView: "members",
   },
 };
 
@@ -823,8 +840,15 @@ function renderSubNav(navId, viewName) {
     bar.innerHTML = "";
     return;
   }
+  const adminOnlyViews = new Set(group.adminViews || []);
+  const views = group.views.filter((v) => !adminOnlyViews.has(v) || isAdmin());
+  if (views.length <= 1) {
+    bar.hidden = true;
+    bar.innerHTML = "";
+    return;
+  }
   bar.hidden = false;
-  bar.innerHTML = group.views
+  bar.innerHTML = views
     .map((v) => {
       const label = group.labels?.[v] || VIEW_META[v]?.title || v;
       const on = v === viewName;
@@ -841,12 +865,19 @@ function setView(name) {
   if (!isAdmin() && (viewName === "parts" || viewName === "members")) {
     viewName = "dashboard";
   }
+  let navId = navGroupOf(viewName);
+  const groupProbe = NAV_GROUPS[navId];
+  if (groupProbe?.adminViews?.includes(viewName) && !isAdmin()) {
+    viewName = groupProbe.defaultView || "dashboard";
+    navId = navGroupOf(viewName);
+  }
   if (!isAdmin() && navGroupOf(viewName) === "setup") {
     viewName = "dashboard";
   }
-  const navId = navGroupOf(viewName);
+  navId = navGroupOf(viewName);
   if (NAV_GROUPS[navId]?.adminOnly && !isAdmin()) {
     viewName = "dashboard";
+    navId = "home";
   }
   const resolvedNav = navGroupOf(viewName);
   activeNavId = resolvedNav;
@@ -869,10 +900,10 @@ function setView(name) {
       ? "취합 현황을 확인하고, 문서를 올리면 AI가 포함 내용을 브리핑합니다."
       : "본인 담당 파트의 작성 페이지·제출 상태를 입력합니다.";
   }
-  if (!isAdmin() && viewName === "dashboard") {
-    desc = isBudgetManager()
-      ? "예산 배정·세부산출 통계를 확인합니다."
-      : "나에게 할당된 파트와 진행 현황을 확인합니다.";
+  if (viewName === "dashboard") {
+    desc = isAdmin()
+      ? "달력으로 일정을 보고, 구성원에게 요청·목차 할당으로 TF를 운영합니다."
+      : "보고서 제출까지 남은 기간을 확인하고, 일정에 맞춰 내 파트를 진행합니다.";
   }
   if (viewName === "budget") {
     const modeMeta = budgetModeMeta();
@@ -886,6 +917,8 @@ function setView(name) {
   }
   $("#viewTitle").textContent = title;
   $("#viewDesc").textContent = desc;
+  const hero = $("#pageHero");
+  if (hero) hero.hidden = viewName === "dashboard";
   renderView(viewName);
 }
 
@@ -1807,193 +1840,224 @@ function renderDashboard() {
   ensureBudget();
   ensureRequests();
   const admin = isAdmin();
-  const doc = reportDocKindMeta();
-  const docKind = getReportDocKind();
-  const budMeta = budgetModeMeta();
+  const who = sessionUser || "작성자";
   const actions = buildMyActionItems();
   const col = latestCollection();
   const board = buildTeamCollectionBoard(col);
   const doneCount = board.filter((r) => r.status.id === "done").length;
-  const wipCount = board.filter((r) => r.status.id === "wip").length;
-  const todoCount = board.filter((r) => r.status.id === "todo").length;
   const pendingReq = myPendingRequests();
-  const overdueReq = pendingReq.filter((r) => r.dueDate && daysUntil(r.dueDate) < 0);
-  const monthEvents = state.schedule.filter((s) => {
-    const now = new Date();
-    const y = now.getFullYear();
-    const m = String(now.getMonth() + 1).padStart(2, "0");
-    const prefix = `${y}-${m}`;
-    return (s.date || "").startsWith(prefix) || (s.endDate || "").startsWith(prefix);
-  });
+
+  if (!state._calCursor) state._calCursor = today().slice(0, 7) + "-01";
+  if (!state._calSelected) state._calSelected = today();
+  if (!state._calRange) state._calRange = "month";
+  const cursor = parseIsoDate(state._calCursor);
+  const mode = state._calRange;
+  const stepIndex = HEAT_RANGE_STEPS.indexOf(mode);
+  const selected = state._calSelected;
+  const { start, end } = getHeatVisibleRange(mode, cursor);
+  const counts = countOpenByUrgencyInRange(toIsoDate(start), toIsoDate(end));
+  const nearest = nearestDeadlineItem(state.schedule);
+  const peakIso = nearest ? nearest.endDate || nearest.date : "";
+  const dayItems = selected
+    ? eventsOnDate(selected).filter((s) => (s.status || "") !== "완료")
+    : [];
 
   el.innerHTML = `
-    <div class="panel hub-doc-banner" data-kind="${escapeAttr(docKind)}">
-      <div class="hub-doc-banner-main">
-        <span class="hub-doc-kicker">지금 작성 기준</span>
-        <strong class="hub-doc-title">${escapeHtml(doc.name)}</strong>
-        <p class="hub-doc-desc muted">${
-          docKind === "plan"
-            ? "운영계획(예산)·추진 계획 중심으로 취합·예산을 맞춥니다."
-            : "결과보고(실적)·성과 중심으로 취합·예산을 맞춥니다."
-        } · 예산 탭과 같은 기준입니다.</p>
+    <section class="yeonu-hero" aria-label="연어회">
+      <div class="yeonu-hero-visual">
+        <img src="assets/yeonuhue-hero.png" alt="연어들이 모여 회를 이루는 일러스트" width="1280" height="720" />
       </div>
-      <div class="hub-doc-actions">
-        ${
-          admin
-            ? `<div class="hub-doc-toggle" role="group" aria-label="보고서 작성 기준">
-                <button type="button" class="btn btn-sm ${docKind === "plan" ? "btn-primary" : ""}" data-doc-kind="plan">운영계획서</button>
-                <button type="button" class="btn btn-sm ${docKind === "result" ? "btn-primary" : ""}" data-doc-kind="result">결과보고서</button>
-              </div>
-              <p class="muted hub-doc-admin-hint">관리자만 기준을 바꿉니다. 바꾼 뒤 JSON을 내보내 팀에 공유하세요.</p>`
-            : `<span class="hub-doc-chip">${escapeHtml(doc.short)} · ${escapeHtml(budMeta.short)}</span>`
-        }
+      <div class="yeonu-hero-copy">
+        <p class="yeonu-kicker">Yeonuhue · TF</p>
+        <h1 class="yeonu-title">연어회</h1>
+        <p class="yeonu-story">
+          <strong>연셩</strong>의 <strong>말(어)</strong>가 모여<br />
+          <strong>회(모임)</strong>을 이루면 못할 일이 없다.
+        </p>
+        <p class="yeonu-sub muted">말과 사람이 모이면 보고서도, 일정도, 예산도 함께 완성됩니다.</p>
+        <p class="yeonu-deadline">
+          보고서 제출까지
+          <strong id="homeDeadlineRemain">—</strong>
+          남았습니다.
+        </p>
       </div>
-    </div>
+    </section>
 
-    <div class="grid grid-2 hub-top-grid">
-      <div class="panel hub-todo-panel">
-        <div class="panel-head">
-          <div>
-            <h2 class="panel-title">나에게 할 일</h2>
-            <p class="muted" style="margin:4px 0 0">미제출 취합 · 미처리 요청 · ${escapeHtml(budMeta.short)} 미입력</p>
-          </div>
-          <span class="badge ${actions.length ? "warn" : "ok"}">${actions.length}건</span>
-        </div>
-        ${
-          actions.length
-            ? `<ul class="hub-todo-list">
-                ${actions
-                  .map(
-                    (a) => `
-                  <li class="hub-todo-item ${a.urgent ? "is-urgent" : ""}">
-                    <div>
-                      <strong>${escapeHtml(a.title)}</strong>
-                      <span class="muted">${escapeHtml(a.meta)}</span>
-                    </div>
-                    <button type="button" class="btn btn-sm btn-primary" data-goto="${escapeAttr(a.goto)}">바로가기</button>
-                  </li>`
-                  )
-                  .join("")}
-              </ul>`
-            : `<div class="empty hub-empty-ok">지금은 밀린 할 일이 없습니다.</div>`
-        }
-      </div>
-
-      <div class="panel">
-        <div class="panel-head">
-          <div>
-            <h2 class="panel-title">요청·일정 요약</h2>
-            <p class="muted" style="margin:4px 0 0">서로 놓치기 쉬운 운영 신호</p>
-          </div>
-        </div>
-        <div class="hub-signal-grid">
-          <button type="button" class="hub-signal" data-goto="requests">
-            <span class="hub-signal-label">내 미완료 요청</span>
-            <strong class="hub-signal-value">${pendingReq.length}</strong>
-            <span class="muted">${overdueReq.length ? `기한 지남 ${overdueReq.length}` : "요청 탭에서 완료"}</span>
-          </button>
-          <button type="button" class="hub-signal" data-goto="schedule">
-            <span class="hub-signal-label">이번 달 일정</span>
-            <strong class="hub-signal-value">${monthEvents.length}</strong>
-            <span class="muted">운영 · 일정</span>
-          </button>
-          <button type="button" class="hub-signal" data-goto="budget">
-            <span class="hub-signal-label">예산 기준</span>
-            <strong class="hub-signal-value" style="font-size:1.1rem">${escapeHtml(budMeta.short)}</strong>
-            <span class="muted">${escapeHtml(doc.name)}</span>
-          </button>
-          ${
-            admin
-              ? `<button type="button" class="hub-signal" data-goto="parts">
-            <span class="hub-signal-label">목차·할당</span>
-            <strong class="hub-signal-value" style="font-size:1.05rem">원본</strong>
-            <span class="muted">팀 기준 표</span>
-          </button>`
-              : `<button type="button" class="hub-signal" data-goto="collections">
-            <span class="hub-signal-label">취합 진도</span>
-            <strong class="hub-signal-value">${doneCount}<small>/${board.length || 0}</small></strong>
-            <span class="muted">제출 완료</span>
-          </button>`
-          }
-        </div>
-      </div>
-    </div>
-
-    <div class="panel hub-board-panel">
-      <div class="panel-head">
-        <div>
-          <h2 class="panel-title">팀 취합 진도${col ? ` · ${escapeHtml(col.name)}` : ""}</h2>
-          <p class="muted" style="margin:4px 0 0">파트 · 담당 · 상태만 봅니다. 입력은 취합 탭에서.</p>
-        </div>
-        <div class="row hub-board-legend">
-          <span class="badge pending">미착수 ${todoCount}</span>
-          <span class="badge warn">작성중 ${wipCount}</span>
-          <span class="badge ok">제출 ${doneCount}</span>
-          <button type="button" class="btn btn-sm btn-primary" data-goto="collections">취합 열기</button>
-        </div>
-      </div>
-      <div class="table-wrap">
-        <table class="hub-board-table">
-          <thead>
-            <tr>
-              <th>파트</th>
-              <th>담당</th>
-              <th>페이지</th>
-              <th>상태</th>
-            </tr>
-          </thead>
-          <tbody>
-            ${
-              board.length
-                ? board
-                    .map(
-                      (r) => `
-              <tr class="${r.isMine ? "is-mine" : ""} ${r.status.id === "todo" ? "is-late" : ""}">
-                <td>
-                  <strong>${escapeHtml(r.section)}. ${escapeHtml(r.title)}</strong>
-                  ${r.isMine ? `<span class="badge admin">내 담당</span>` : ""}
-                </td>
-                <td>${escapeHtml(r.assignee)}</td>
-                <td class="page-range">${r.pages}<small>/${r.alloc}p</small></td>
-                <td><span class="badge ${r.status.cls}">${escapeHtml(r.status.label)}</span></td>
-              </tr>`
-                    )
-                    .join("")
-                : `<tr><td colspan="4"><div class="empty">취합 차수가 없습니다.</div></td></tr>`
-            }
-          </tbody>
-        </table>
-      </div>
+    <div class="home-flow" aria-label="TF 운영 흐름">
+      ${
+        admin
+          ? `
+        <button type="button" class="home-flow-card" data-goto="resources"><span>1</span><strong>양식 공유</strong><em>스타일 가이드</em></button>
+        <button type="button" class="home-flow-card" data-goto="parts"><span>2</span><strong>목차·할당</strong><em>분량 조절</em></button>
+        <button type="button" class="home-flow-card" data-goto="requests"><span>3</span><strong>작업 요청</strong><em>구성원별</em></button>
+        <button type="button" class="home-flow-card" data-goto="collections"><span>4</span><strong>취합 점검</strong><em>${doneCount}/${board.length || 0}</em></button>
+        <button type="button" class="home-flow-card" data-goto="review"><span>5</span><strong>윤독</strong><em>검토사항</em></button>
+        <button type="button" class="home-flow-card" data-goto="budget"><span>6</span><strong>예산</strong><em>취합·엑셀</em></button>
+        <button type="button" class="home-flow-card" data-goto="kpi"><span>7</span><strong>성과지표</strong><em>시뮬레이션</em></button>
+      `
+          : `
+        <button type="button" class="home-flow-card" data-goto="resources"><span>1</span><strong>양식 확인</strong><em>공통 서식</em></button>
+        <button type="button" class="home-flow-card" data-goto="collections"><span>2</span><strong>내 파트 업로드</strong><em>1·2·3차</em></button>
+        <button type="button" class="home-flow-card" data-goto="requests"><span>3</span><strong>받은 요청</strong><em>${pendingReq.length}건</em></button>
+        <button type="button" class="home-flow-card" data-goto="ai-art"><span>4</span><strong>그림 생성</strong><em>보고서용</em></button>
+        <button type="button" class="home-flow-card" data-goto="budget"><span>5</span><strong>예산 입력</strong><em>내 담당</em></button>
+        <button type="button" class="home-flow-card" data-goto="kpi"><span>6</span><strong>성과지표</strong><em>목표 확인</em></button>
+      `
+      }
     </div>
 
     ${
-      admin
-        ? `<div class="panel" style="margin-bottom:0">
+      actions.length
+        ? `<div class="panel home-todo-strip">
         <div class="panel-head">
-          <div>
-            <h2 class="panel-title">관리자 · 원본 유지</h2>
-            <p class="muted" style="margin:4px 0 0">목차·할당을 고친 뒤 JSON을 내보내 팀과 맞추세요. 데이터는 브라우저에 저장됩니다.</p>
-          </div>
-          <div class="row">
-            <button class="btn btn-primary btn-sm" data-goto="parts">목차·할당</button>
-            <button class="btn btn-sm" data-goto="members">대상자</button>
-            <button class="btn btn-sm" data-goto="requests">요청 보내기</button>
-          </div>
+          <h2 class="panel-title">${escapeHtml(who)}님, 지금 챙길 일</h2>
+          <span class="badge warn">${actions.length}건</span>
         </div>
+        <ul class="home-todo-inline">
+          ${actions
+            .slice(0, 4)
+            .map(
+              (a) =>
+                `<li><button type="button" data-goto="${escapeAttr(a.goto)}"><strong>${escapeHtml(a.title)}</strong><span>${escapeHtml(a.meta)}</span></button></li>`
+            )
+            .join("")}
+        </ul>
       </div>`
         : ""
     }
+
+    <div class="urgency-strip home-urgency" aria-label="마감 요약">
+      <button type="button" class="urgency-pill critical" data-goto="schedule"><strong>${counts.urgent}</strong><span>긴급</span></button>
+      <button type="button" class="urgency-pill watch" data-goto="schedule"><strong>${counts.warn}</strong><span>주의</span></button>
+      <button type="button" class="urgency-pill calm" data-goto="schedule"><strong>${counts.check}</strong><span>체크</span></button>
+      ${
+        peakIso
+          ? `<p class="urgency-peak">가장 급한 마감 · <button type="button" class="linkish" id="homePeakDay">${escapeHtml(formatKorDate(peakIso))}</button></p>`
+          : ""
+      }
+    </div>
+
+    <section class="panel heatmap-panel home-cal-panel">
+      <div class="range-navigator">
+        <div class="range-zoom">
+          <button type="button" class="btn btn-sm zoom-btn" id="homeCalMinus" ${stepIndex <= 0 ? "disabled" : ""} aria-label="기간 줄이기">−</button>
+          <div class="range-track" role="group" aria-label="기간 설정">
+            ${HEAT_RANGE_STEPS.map(
+              (step, i) =>
+                `<button type="button" class="range-step ${mode === step ? "active" : ""} ${i < stepIndex ? "passed" : ""}" data-home-range="${step}">${HEAT_RANGE_META[step].label}</button>`
+            ).join("")}
+          </div>
+          <button type="button" class="btn btn-sm zoom-btn" id="homeCalPlus" ${
+            stepIndex >= HEAT_RANGE_STEPS.length - 1 ? "disabled" : ""
+          } aria-label="기간 늘리기">+</button>
+        </div>
+        <div class="cal-nav">
+          <button type="button" class="btn btn-sm" id="homeCalPrev" aria-label="한 달 전">‹</button>
+          <div class="cal-range">
+            ${escapeHtml(heatRangeCaption(mode, cursor))}
+            <span class="range-hint">${escapeHtml(HEAT_RANGE_META[mode].hint)}</span>
+          </div>
+          <button type="button" class="btn btn-sm" id="homeCalNext" aria-label="한 달 후">›</button>
+          <button type="button" class="btn btn-sm" id="homeCalToday">오늘</button>
+        </div>
+      </div>
+      <div class="heat-legend" aria-hidden="true">
+        <span class="leg-swatch urgent"></span><span>긴급</span>
+        <span class="leg-swatch warn"></span><span>주의</span>
+        <span class="leg-swatch check"></span><span>체크</span>
+      </div>
+      ${buildHeatCalendarHtml(cursor, { mode, selectedIso: selected, bandFilter: null })}
+    </section>
+
+    ${
+      dayItems.length
+        ? `<section class="panel">
+        <div class="panel-head">
+          <h2 class="panel-title">${escapeHtml(formatKorDate(selected))} 일정</h2>
+          <button type="button" class="btn btn-sm btn-primary" id="homeAddSchedule">일정 추가</button>
+        </div>
+        <div class="work-feed">${dayItems.map((s) => workFeedRowHtml(s, admin)).join("")}</div>
+      </section>`
+        : `<div class="row" style="justify-content:flex-end;margin-top:8px">
+            <button type="button" class="btn btn-primary" id="homeAddSchedule">일정 추가</button>
+          </div>`
+    }
   `;
+
+  const tickHomeDeadline = () => {
+    const strong = $("#homeDeadlineRemain");
+    const src = $("#deadlineRemain");
+    if (strong && src) strong.innerHTML = src.innerHTML;
+  };
+  tickHomeDeadline();
 
   el.querySelectorAll("[data-goto]").forEach((btn) => {
     btn.addEventListener("click", () => setView(btn.dataset.goto));
   });
-  el.querySelectorAll("[data-doc-kind]").forEach((btn) => {
+
+  const shiftMonth = (delta) => {
+    state._calCursor = toIsoDate(addMonthsDate(parseIsoDate(state._calCursor), delta));
+    renderDashboard();
+  };
+  $("#homeCalPrev")?.addEventListener("click", () => shiftMonth(-1));
+  $("#homeCalNext")?.addEventListener("click", () => shiftMonth(1));
+  $("#homeCalToday")?.addEventListener("click", () => {
+    state._calCursor = `${today().slice(0, 7)}-01`;
+    state._calSelected = today();
+    renderDashboard();
+  });
+  el.querySelectorAll("[data-home-range]").forEach((btn) => {
     btn.addEventListener("click", () => {
-      if (!isAdmin()) return;
-      setReportDocKind(btn.dataset.docKind);
+      state._calRange = btn.dataset.homeRange;
+      renderDashboard();
+    });
+  });
+  $("#homeCalMinus")?.addEventListener("click", () => {
+    const i = Math.max(0, HEAT_RANGE_STEPS.indexOf(state._calRange) - 1);
+    state._calRange = HEAT_RANGE_STEPS[i];
+    renderDashboard();
+  });
+  $("#homeCalPlus")?.addEventListener("click", () => {
+    const i = Math.min(HEAT_RANGE_STEPS.length - 1, HEAT_RANGE_STEPS.indexOf(state._calRange) + 1);
+    state._calRange = HEAT_RANGE_STEPS[i];
+    renderDashboard();
+  });
+  el.querySelectorAll("[data-cal-day]").forEach((btn) => {
+    btn.addEventListener("click", () => {
+      state._calSelected = btn.dataset.calDay;
+      renderDashboard();
+    });
+  });
+  $("#homePeakDay")?.addEventListener("click", () => {
+    if (!peakIso) return;
+    state._calSelected = peakIso;
+    state._calCursor = `${peakIso.slice(0, 7)}-01`;
+    renderDashboard();
+  });
+  $("#homeAddSchedule")?.addEventListener("click", () => openScheduleModal());
+  el.querySelectorAll("[data-edit]").forEach((btn) =>
+    btn.addEventListener("click", (e) => {
+      e.stopPropagation();
+      openScheduleModal(btn.dataset.edit);
+    })
+  );
+  el.querySelectorAll("[data-del]").forEach((btn) =>
+    btn.addEventListener("click", (e) => {
+      e.stopPropagation();
+      if (!confirm("이 일정을 삭제할까요?")) return;
+      state.schedule = state.schedule.filter((s) => s.id !== btn.dataset.del);
+      saveAndRender("dashboard");
+      updateRemindBell();
+    })
+  );
+  el.querySelectorAll("[data-status]").forEach((sel) => {
+    sel.addEventListener("change", () => {
+      const item = state.schedule.find((s) => s.id === sel.dataset.status);
+      if (!item) return;
+      item.status = sel.value;
       persist();
       renderDashboard();
+      updateRemindBell();
     });
   });
 }
@@ -4812,32 +4876,37 @@ const GUIDE_MENU = [
   {
     tab: "dashboard",
     name: "홈",
-    how: "파트·취합·예산·일정을 한눈에 봅니다. 로그인 후 가장 먼저 보면 좋은 화면입니다.",
+    how: "연어회 스토리와 제출 D-day, 달력으로 TF 일정을 한눈에 봅니다.",
   },
   {
     tab: "collections",
     name: "보고서",
-    how: "취합 · 윤독·리뷰 · 보고서 만들기를 한 메뉴에서 사용합니다. 보고서 만들기에서는 양식 레이아웃 PPT와 AI 도식을 내려받을 수 있습니다.",
+    how: "양식 → 목차·할당 → 취합(1·2·3차) → 윤독 → 그림 생성 순으로 보고서를 만듭니다.",
   },
   {
-    tab: "schedule",
-    name: "운영",
-    how: "일정 · 요청 · 오늘 뭐먹지를 묶었습니다. 마감·공통 요청·식사 공지를 여기서 돌립니다.",
+    tab: "requests",
+    name: "요청",
+    how: "관리자는 구성원별 작업을 요청하고, 담당자는 일정을 확인하며 완료합니다.",
   },
   {
     tab: "budget",
     name: "예산",
-    how: "운영계획수립용(예산)과 결과보고작성용(실적) 탭을 나눠 입력합니다. 담당자는 배정 항목의 편성·실적 산출내역을 저장합니다.",
+    how: "영역·프로그램별 예산·산출내역을 입력하고 엑셀로 일괄 업/다운로드합니다. 비목·영역 합산과 미입력 규모를 봅니다.",
   },
   {
-    tab: "drive",
-    name: "자료",
-    how: "드라이브 · 공통 서식 · 사용방법을 모았습니다. 링크·지침·도움말을 여기서 엽니다.",
+    tab: "kpi",
+    name: "성과지표",
+    how: "지표명·기준값·근거·산식으로 목표 달성률을 시뮬레이션합니다.",
   },
   {
-    tab: "parts",
+    tab: "food",
+    name: "오늘 뭐먹지",
+    how: "돌림판·식사 공지·투표를 유지합니다.",
+  },
+  {
+    tab: "members",
     name: "설정",
-    how: "관리자 전용. 목차·할당과 대상자 관리를 설정합니다.",
+    how: "관리자 전용. 구성원·드라이브·사용방법을 관리합니다.",
     adminOnly: true,
   },
 ];
@@ -6879,6 +6948,185 @@ function renderReview() {
   });
 }
 
+function ensureKpis() {
+  if (!Array.isArray(state.kpis)) state.kpis = [];
+  if (!state.kpis.length) {
+    state.kpis = [
+      {
+        id: uid("kpi"),
+        name: "재학생 취업률",
+        baseline: 62,
+        baselineNote: "전년도 공시 취업률",
+        formula: "actual / target * 100",
+        target: 70,
+        actual: 0,
+        unit: "%",
+      },
+      {
+        id: uid("kpi"),
+        name: "비교과 프로그램 이수자 수",
+        baseline: 1200,
+        baselineNote: "전년도 이수 실적",
+        formula: "actual",
+        target: 1500,
+        actual: 0,
+        unit: "명",
+      },
+    ];
+  }
+}
+
+/** 허용 산식: actual, target, baseline 변수와 + - * / ( ) */
+function evalKpiFormula(formula, vars) {
+  const src = String(formula || "actual / target * 100").trim();
+  if (!/^[\d\s.+\-*/()actualtargetbaseline]+$/i.test(src.replace(/\s+/g, " "))) {
+    return { ok: false, error: "산식에는 actual, target, baseline과 사칙연산만 쓸 수 있습니다." };
+  }
+  const expr = src
+    .replace(/\bactual\b/gi, String(vars.actual ?? 0))
+    .replace(/\btarget\b/gi, String(vars.target ?? 0))
+    .replace(/\bbaseline\b/gi, String(vars.baseline ?? 0));
+  try {
+    // eslint-disable-next-line no-new-func
+    const value = Function(`"use strict"; return (${expr});`)();
+    if (!Number.isFinite(value)) return { ok: false, error: "계산 결과가 유효하지 않습니다." };
+    return { ok: true, value };
+  } catch {
+    return { ok: false, error: "산식을 계산할 수 없습니다." };
+  }
+}
+
+function kpiSimRow(k) {
+  const sim = evalKpiFormula(k.formula, {
+    actual: Number(k.actual) || 0,
+    target: Number(k.target) || 0,
+    baseline: Number(k.baseline) || 0,
+  });
+  const rate =
+    Number(k.target) > 0 ? ((Number(k.actual) || 0) / Number(k.target)) * 100 : null;
+  return { ...k, sim, rate };
+}
+
+function renderKpi() {
+  const el = $("#view-kpi");
+  ensureKpis();
+  const admin = isAdmin();
+  const rows = state.kpis.map(kpiSimRow);
+
+  el.innerHTML = `
+    <div class="panel">
+      <div class="panel-head">
+        <div>
+          <h2 class="panel-title">성과지표 시뮬레이션</h2>
+          <p class="muted" style="margin:4px 0 0">지표명 · 기준값 · 근거 · 산식(actual / target / baseline)으로 달성도를 미리 봅니다.</p>
+        </div>
+        ${admin ? `<button type="button" class="btn btn-primary" id="addKpi">지표 추가</button>` : ""}
+      </div>
+      <div class="kpi-grid">
+        ${
+          rows.length
+            ? rows
+                .map((k) => {
+                  const pct = k.sim.ok ? k.sim.value : null;
+                  const bar = k.rate != null ? Math.max(0, Math.min(120, k.rate)) : 0;
+                  return `
+              <article class="kpi-card" data-kpi="${escapeAttr(k.id)}">
+                <header class="kpi-card-head">
+                  <h3>${escapeHtml(k.name)}</h3>
+                  ${admin ? `<button type="button" class="btn btn-sm" data-edit-kpi="${escapeAttr(k.id)}">수정</button>` : ""}
+                </header>
+                <dl class="kpi-meta">
+                  <div><dt>기준값</dt><dd>${escapeHtml(String(k.baseline))} ${escapeHtml(k.unit || "")}</dd></div>
+                  <div><dt>목표</dt><dd>${escapeHtml(String(k.target))} ${escapeHtml(k.unit || "")}</dd></div>
+                  <div><dt>실적(입력)</dt><dd>${escapeHtml(String(k.actual))} ${escapeHtml(k.unit || "")}</dd></div>
+                </dl>
+                <p class="kpi-note muted">${escapeHtml(k.baselineNote || "근거 없음")}</p>
+                <p class="kpi-formula"><code>${escapeHtml(k.formula || "")}</code></p>
+                <div class="kpi-sim">
+                  <div class="kpi-sim-bar"><i style="width:${bar}%"></i></div>
+                  <strong>${
+                    k.sim.ok
+                      ? `시뮬 ${Number(pct).toFixed(1)}${String(k.formula).includes("100") || k.unit === "%" ? "" : ""} · 달성률 ${k.rate != null ? k.rate.toFixed(1) + "%" : "—"}`
+                      : escapeHtml(k.sim.error || "오류")
+                  }</strong>
+                </div>
+                <label class="kpi-actual-label">실적 시뮬레이션 입력
+                  <input type="number" class="kpi-actual-input" data-kpi-actual="${escapeAttr(k.id)}" value="${escapeAttr(String(k.actual ?? 0))}" step="any" />
+                </label>
+                ${admin ? `<button type="button" class="btn btn-sm btn-danger" data-del-kpi="${escapeAttr(k.id)}">삭제</button>` : ""}
+              </article>`;
+                })
+                .join("")
+            : `<div class="empty">등록된 성과지표가 없습니다.</div>`
+        }
+      </div>
+    </div>
+  `;
+
+  el.querySelectorAll("[data-kpi-actual]").forEach((input) => {
+    input.addEventListener("change", () => {
+      const row = state.kpis.find((k) => k.id === input.dataset.kpiActual);
+      if (!row) return;
+      row.actual = Number(input.value) || 0;
+      persist();
+      renderKpi();
+    });
+  });
+  $("#addKpi")?.addEventListener("click", () => openKpiModal());
+  el.querySelectorAll("[data-edit-kpi]").forEach((btn) => {
+    btn.addEventListener("click", () => openKpiModal(btn.dataset.editKpi));
+  });
+  el.querySelectorAll("[data-del-kpi]").forEach((btn) => {
+    btn.addEventListener("click", () => {
+      if (!isAdmin()) return;
+      if (!confirm("이 성과지표를 삭제할까요?")) return;
+      state.kpis = state.kpis.filter((k) => k.id !== btn.dataset.delKpi);
+      persist();
+      renderKpi();
+    });
+  });
+}
+
+function openKpiModal(id = null) {
+  if (!isAdmin()) return;
+  ensureKpis();
+  const row = id ? state.kpis.find((k) => k.id === id) : null;
+  openModal({
+    title: row ? "성과지표 수정" : "성과지표 추가",
+    kicker: "성과지표",
+    bodyHtml: `
+      <label>성과지표명<input name="name" required value="${escapeAttr(row?.name || "")}" /></label>
+      <div class="grid grid-2">
+        <label>기준값<input name="baseline" type="number" step="any" required value="${escapeAttr(String(row?.baseline ?? 0))}" /></label>
+        <label>단위<input name="unit" value="${escapeAttr(row?.unit || "%")}" /></label>
+      </div>
+      <label>기준값 근거<textarea name="baselineNote" rows="2">${escapeHtml(row?.baselineNote || "")}</textarea></label>
+      <div class="grid grid-2">
+        <label>목표값<input name="target" type="number" step="any" required value="${escapeAttr(String(row?.target ?? 0))}" /></label>
+        <label>현재 실적<input name="actual" type="number" step="any" value="${escapeAttr(String(row?.actual ?? 0))}" /></label>
+      </div>
+      <label>산식<small class="muted"> actual, target, baseline 사용 · 예: actual / target * 100</small>
+        <input name="formula" required value="${escapeAttr(row?.formula || "actual / target * 100")}" />
+      </label>
+    `,
+    onSubmit: (fd) => {
+      const payload = {
+        name: fd.get("name").trim(),
+        baseline: Number(fd.get("baseline")) || 0,
+        baselineNote: String(fd.get("baselineNote") || "").trim(),
+        target: Number(fd.get("target")) || 0,
+        actual: Number(fd.get("actual")) || 0,
+        unit: String(fd.get("unit") || "").trim(),
+        formula: String(fd.get("formula") || "actual / target * 100").trim(),
+      };
+      if (row) Object.assign(row, payload);
+      else state.kpis.push({ id: uid("kpi"), ...payload });
+      persist();
+      renderKpi();
+    },
+  });
+}
+
 function renderView(name) {
   const map = {
     dashboard: renderDashboard,
@@ -6887,6 +7135,7 @@ function renderView(name) {
     review: renderReview,
     requests: renderRequests,
     budget: renderBudget,
+    kpi: renderKpi,
     schedule: renderSchedule,
     drive: renderDrive,
     resources: renderResources,
@@ -7745,26 +7994,34 @@ function formatDeadlineRemain(ms) {
 }
 
 function updateReportDeadline() {
-  const el = $("#deadlineRemain");
-  const line = document.querySelector(".deadline-remain");
-  if (!line) return;
   const remain = REPORT_DEADLINE.getTime() - Date.now();
+  const text = remain <= 0 ? null : formatDeadlineRemain(remain).text;
+  const line = document.querySelector(".deadline-remain");
+  const el = $("#deadlineRemain");
+  const home = $("#homeDeadlineRemain");
+
   if (remain <= 0) {
-    line.classList.add("is-over");
-    line.textContent = "보고서 제출일이 지났습니다.";
+    if (line) {
+      line.classList.add("is-over");
+      line.textContent = "보고서 제출일이 지났습니다.";
+    }
+    if (home) home.textContent = "제출일 경과";
     if (deadlineTimer) {
       window.clearInterval(deadlineTimer);
       deadlineTimer = null;
     }
     return;
   }
-  if (!el) {
+  if (line) {
     line.classList.remove("is-over");
-    line.innerHTML =
-      '보고서 제출까지 <strong id="deadlineRemain">00일 00시간 00분</strong> 남았습니다.';
+    if (!el) {
+      line.innerHTML =
+        '보고서 제출까지 <strong id="deadlineRemain">00일 00시간 00분</strong> 남았습니다.';
+    }
   }
   const strong = $("#deadlineRemain");
-  if (strong) strong.textContent = formatDeadlineRemain(remain).text;
+  if (strong) strong.textContent = text;
+  if (home) home.textContent = text;
 }
 
 function startReportDeadlineClock() {
