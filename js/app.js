@@ -1028,6 +1028,281 @@ function eventsOnDate(isoDate) {
   });
 }
 
+const HEAT_RANGE_STEPS = ["week", "fortnight", "month", "twoMonth", "threeMonth"];
+const HEAT_RANGE_META = {
+  week: { label: "1주", hint: "이번 주 집중", months: 0 },
+  fortnight: { label: "2주", hint: "가까운 2주", months: 0 },
+  month: { label: "1개월", hint: "한 달 로드", months: 1 },
+  twoMonth: { label: "2개월", hint: "중기 전망", months: 2 },
+  threeMonth: { label: "3개월", hint: "분기 전망", months: 3 },
+};
+const HEAT_DOW = ["월", "화", "수", "목", "금", "토", "일"];
+
+function parseIsoDate(iso) {
+  const [y, m, d] = String(iso || "")
+    .slice(0, 10)
+    .split("-")
+    .map(Number);
+  return new Date(y, (m || 1) - 1, d || 1);
+}
+
+function toIsoDate(d) {
+  return `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, "0")}-${String(d.getDate()).padStart(2, "0")}`;
+}
+
+function startOfWeekMon(d) {
+  const x = new Date(d.getFullYear(), d.getMonth(), d.getDate());
+  const pad = (x.getDay() + 6) % 7;
+  x.setDate(x.getDate() - pad);
+  return x;
+}
+
+function addDaysDate(d, n) {
+  const x = new Date(d.getFullYear(), d.getMonth(), d.getDate());
+  x.setDate(x.getDate() + n);
+  return x;
+}
+
+function addMonthsDate(d, n) {
+  return new Date(d.getFullYear(), d.getMonth() + n, 1);
+}
+
+function eachDayInclusive(start, end) {
+  const out = [];
+  let cur = new Date(start.getFullYear(), start.getMonth(), start.getDate());
+  const last = new Date(end.getFullYear(), end.getMonth(), end.getDate());
+  while (cur <= last) {
+    out.push(new Date(cur));
+    cur = addDaysDate(cur, 1);
+  }
+  return out;
+}
+
+function getHeatVisibleRange(mode, cursor) {
+  if (mode === "week") {
+    const start = startOfWeekMon(cursor);
+    return { start, end: addDaysDate(start, 6) };
+  }
+  if (mode === "fortnight") {
+    const start = startOfWeekMon(cursor);
+    return { start, end: addDaysDate(start, 13) };
+  }
+  const months = HEAT_RANGE_META[mode]?.months || 1;
+  const start = new Date(cursor.getFullYear(), cursor.getMonth(), 1);
+  const endMonth = addMonthsDate(start, months - 1);
+  const end = new Date(endMonth.getFullYear(), endMonth.getMonth() + 1, 0);
+  return { start, end };
+}
+
+function heatRangeCaption(mode, cursor) {
+  const { start, end } = getHeatVisibleRange(mode, cursor);
+  if (mode === "week" || mode === "fortnight") {
+    return `${start.getMonth() + 1}.${start.getDate()} – ${end.getMonth() + 1}.${end.getDate()}`;
+  }
+  if (mode === "month") return monthLabel(cursor.getFullYear(), cursor.getMonth());
+  const endMonth = addMonthsDate(new Date(cursor.getFullYear(), cursor.getMonth(), 1), (HEAT_RANGE_META[mode]?.months || 1) - 1);
+  return `${cursor.getFullYear()}.${cursor.getMonth() + 1} – ${endMonth.getFullYear()}.${endMonth.getMonth() + 1}`;
+}
+
+function isInHeatFocusMonths(day, mode, cursor) {
+  if (mode === "week" || mode === "fortnight") return true;
+  const months = HEAT_RANGE_META[mode]?.months || 1;
+  for (let i = 0; i < months; i++) {
+    const m = addMonthsDate(new Date(cursor.getFullYear(), cursor.getMonth(), 1), i);
+    if (day.getFullYear() === m.getFullYear() && day.getMonth() === m.getMonth()) return true;
+  }
+  return false;
+}
+
+function dayHeatBand(dayTasks) {
+  const open = (dayTasks || []).filter((s) => (s.status || "") !== "완료");
+  if (!open.length) return "none";
+  if (open.length >= 3) return "urgent";
+  const urgencies = open.map((s) => scheduleUrgency(s));
+  if (urgencies.includes("urgent")) return "urgent";
+  if (urgencies.includes("warn")) return "warn";
+  if (urgencies.includes("check")) return "check";
+  return "gray";
+}
+
+function heatBandStyle(band) {
+  switch (band) {
+    case "urgent":
+      return "background:rgba(255,59,48,.22);border-color:rgba(255,59,48,.45);color:#8b1a14";
+    case "warn":
+      return "background:rgba(255,204,0,.28);border-color:rgba(200,150,0,.4);color:#7a5a00";
+    case "check":
+      return "background:rgba(52,199,89,.2);border-color:rgba(40,160,70,.4);color:#1d6b35";
+    case "gray":
+      return "background:rgba(142,142,147,.16);border-color:rgba(120,120,128,.28)";
+    default:
+      return "background:var(--bg-elevated,#fff);border-color:transparent";
+  }
+}
+
+function heatBandRank(band) {
+  return { urgent: 4, warn: 3, check: 2, gray: 1, none: 0 }[band] || 0;
+}
+
+function eventsEndingOnDate(isoDate) {
+  return state.schedule.filter((s) => (s.endDate || s.date) === isoDate);
+}
+
+function countOpenByUrgencyInRange(startIso, endIso) {
+  const counts = { urgent: 0, warn: 0, check: 0, gray: 0, total: 0 };
+  state.schedule.forEach((s) => {
+    if ((s.status || "") === "완료") return;
+    const due = (s.endDate || s.date || "").slice(0, 10);
+    if (!due || due < startIso || due > endIso) return;
+    counts.total += 1;
+    const u = scheduleUrgency(s);
+    if (u === "urgent") counts.urgent += 1;
+    else if (u === "warn") counts.warn += 1;
+    else if (u === "check") counts.check += 1;
+    else counts.gray += 1;
+  });
+  return counts;
+}
+
+function buildHeatCalendarHtml(cursor, { mode = "month", selectedIso = "", bandFilter = null } = {}) {
+  const todayIso = today();
+  const { start, end } = getHeatVisibleRange(mode, cursor);
+  const allDays = eachDayInclusive(start, end);
+  const compact = mode === "twoMonth" || mode === "threeMonth";
+  const agenda = mode === "week" || mode === "fortnight";
+  const splitEdges = mode === "month" || mode === "twoMonth" || mode === "threeMonth";
+  const focusDays = splitEdges ? allDays.filter((d) => isInHeatFocusMonths(d, mode, cursor)) : allDays;
+  const weekdayIndex = (d) => (d.getDay() + 6) % 7;
+
+  const renderCell = (day, idx) => {
+    const iso = toIsoDate(day);
+    const dayTasks = eventsOnDate(iso).filter((s) => (s.status || "") !== "완료");
+    const dueTasks = eventsEndingOnDate(iso).filter((s) => (s.status || "") !== "완료");
+    const showTasks = dueTasks.length ? dueTasks : dayTasks;
+    const band = dayHeatBand(showTasks);
+    const isToday = iso === todayIso;
+    const isSelected = !bandFilter && iso === selectedIso;
+    const outside = !isInHeatFocusMonths(day, mode, cursor);
+    const dimmed = bandFilter && bandFilter !== "all" && band !== "none" && band !== bandFilter;
+    const monthStart = mode !== "week" && day.getDate() === 1;
+    const holiday = KR_HOLIDAYS[iso] || "";
+    const dow = day.getDay();
+    const red = dow === 0 || !!holiday;
+    const sat = dow === 6 && !holiday;
+    const hot = band === "urgent";
+
+    return `
+      <button type="button" class="heat-cell ${isToday ? "today" : ""} ${isSelected ? "selected" : ""} ${
+        outside && !splitEdges ? "outside" : ""
+      } ${dimmed ? "dimmed" : ""} ${hot ? "critical" : ""} ${agenda ? "tall" : ""} ${
+        monthStart ? "month-start" : ""
+      } ${holiday ? "holiday" : ""} ${red ? "red-day" : ""} ${sat ? "sat-day" : ""}"
+        style="${heatBandStyle(band)};animation-delay:${Math.min(idx, 42) * 8}ms"
+        data-cal-day="${iso}"
+        aria-label="${day.getMonth() + 1}월 ${day.getDate()}일 업무 ${showTasks.length}건">
+        ${
+          monthStart
+            ? `<span class="month-rail" aria-hidden="true"><span class="month-rail-label">${day.getMonth() + 1}월</span></span>`
+            : ""
+        }
+        <div class="heat-top">
+          <span class="heat-num">${day.getDate()}</span>
+          ${showTasks.length ? `<span class="heat-count ${hot ? "is-hot" : ""}">${showTasks.length}</span>` : ""}
+        </div>
+        ${holiday && !agenda ? `<span class="heat-holiday">${escapeHtml(holiday)}</span>` : ""}
+        ${
+          agenda
+            ? showTasks
+                .slice(0, 3)
+                .map((t) => `<span class="heat-task-chip">${escapeHtml(t.title)}</span>`)
+                .join("") +
+              (showTasks.length > 3 ? `<span class="heat-more">+${showTasks.length - 3}</span>` : "")
+            : band !== "none"
+              ? `<span class="heat-level-mark ${band}" aria-hidden="true"></span>`
+              : ""
+        }
+      </button>`;
+  };
+
+  let cells = [];
+  if (splitEdges) {
+    const first = focusDays[0];
+    if (first) {
+      for (let i = 0; i < weekdayIndex(first); i++) {
+        cells.push(`<div class="heat-cell focus-pad" aria-hidden="true"></div>`);
+      }
+    }
+    focusDays.forEach((d, i) => cells.push(renderCell(d, i)));
+    const last = focusDays[focusDays.length - 1];
+    if (last) {
+      for (let i = weekdayIndex(last) + 1; i < 7; i++) {
+        cells.push(`<div class="heat-cell focus-pad" aria-hidden="true"></div>`);
+      }
+    }
+  } else {
+    cells = allDays.map((d, i) => renderCell(d, i));
+  }
+
+  return `
+    <div class="heat-dow-row" aria-hidden="true">
+      ${HEAT_DOW.map(
+        (d) => `<div class="cal-dow ${d === "토" ? "sat" : d === "일" ? "sun" : ""}">${d}</div>`
+      ).join("")}
+    </div>
+    <div class="heat-grid ${compact ? "compact" : ""} ${agenda ? "agenda" : ""}">${cells.join("")}</div>`;
+}
+
+function buildScheduleRiskChartHtml(items = state.schedule) {
+  const open = items.filter((s) => (s.status || "") !== "완료");
+  const start = parseIsoDate(today());
+  const days = 180;
+  const counts = [];
+  let max = 1;
+  for (let i = 0; i < days; i++) {
+    const iso = toIsoDate(addDaysDate(start, i));
+    const n = open.filter((s) => {
+      const a = (s.date || "").slice(0, 10);
+      const b = (s.endDate || s.date || "").slice(0, 10);
+      return iso >= a && iso <= b;
+    }).length;
+    counts.push(n);
+    if (n > max) max = n;
+  }
+  const w = 640;
+  const h = 120;
+  const pad = 8;
+  const pts = counts
+    .map((n, i) => {
+      const x = pad + (i / (days - 1)) * (w - pad * 2);
+      const y = h - pad - (n / max) * (h - pad * 2);
+      return `${x.toFixed(1)},${y.toFixed(1)}`;
+    })
+    .join(" ");
+  const area = `${pad},${h - pad} ${pts} ${w - pad},${h - pad}`;
+  const peakIdx = counts.indexOf(Math.max(...counts));
+  const peakDay = addDaysDate(start, peakIdx);
+  return `
+    <section class="panel risk-chart">
+      <button type="button" class="risk-chart-head" id="riskChartToggle" aria-expanded="true">
+        <div>
+          <h2 class="panel-title">일정 마감 밀도</h2>
+          <p class="panel-desc">오늘 기준 · 향후 6개월 미완료 일정이 하루에 겹치는 정도</p>
+        </div>
+        <span class="risk-chart-toggle" aria-hidden="true">⌃</span>
+      </button>
+      <div class="risk-chart-body" id="riskChartBody">
+        <p class="risk-chart-summary">피크 ${peakDay.getMonth() + 1}월 ${peakDay.getDate()}일 · 하루 최대 ${max}건</p>
+        <div class="risk-chart-plot">
+          <svg viewBox="0 0 ${w} ${h}" role="img" aria-label="마감 밀도 차트">
+            <polygon points="${area}" fill="rgba(0,113,227,.12)"></polygon>
+            <polyline points="${pts}" fill="none" stroke="var(--accent)" stroke-width="2" stroke-linejoin="round" stroke-linecap="round"></polyline>
+          </svg>
+        </div>
+        <p class="risk-chart-foot">막대가 높을수록 그날 진행 중인 일정이 많습니다.</p>
+      </div>
+    </section>`;
+}
+
 function scheduleUrgency(item) {
   const days = daysUntil(item.endDate || item.date);
   if ((item.status || "") === "완료") return "ok";
@@ -1093,54 +1368,6 @@ function formatKorDate(iso) {
   if (!iso) return "";
   const [, m, d] = iso.split("-").map(Number);
   return `${m}월 ${d}일`;
-}
-
-function buildMonthCalendarHtml(refDate = new Date(), { selectedIso = "" } = {}) {
-  const year = refDate.getFullYear();
-  const month = refDate.getMonth();
-  const todayIso = today();
-  const first = new Date(year, month, 1);
-  const startPad = (first.getDay() + 6) % 7; // Monday start
-  const daysInMonth = new Date(year, month + 1, 0).getDate();
-  const weekdays = ["월", "화", "수", "목", "금", "토", "일"];
-
-  const cells = [];
-  for (let i = 0; i < startPad; i++) cells.push(`<div class="cal-cell is-empty"></div>`);
-  for (let d = 1; d <= daysInMonth; d++) {
-    const iso = `${year}-${String(month + 1).padStart(2, "0")}-${String(d).padStart(2, "0")}`;
-    const events = eventsOnDate(iso);
-    const openEvents = events.filter((e) => (e.status || "") !== "완료");
-    const urgentN = openEvents.filter((e) => scheduleUrgency(e) === "urgent").length;
-    const isToday = iso === todayIso;
-    const isSelected = iso === selectedIso;
-    const dow = new Date(year, month, d).getDay();
-    const holiday = KR_HOLIDAYS[iso] || "";
-    cells.push(`
-      <button type="button" class="cal-cell ${isToday ? "is-today" : ""} ${urgentN ? "is-urgent-day" : ""} ${isSelected ? "is-selected" : ""} ${events.length ? "has-event" : ""}" data-cal-day="${iso}">
-        ${d === 1 ? `<span class="cal-month-tab">${month + 1}월</span>` : ""}
-        ${urgentN ? `<span class="cal-badge">${urgentN}</span>` : ""}
-        <div class="cal-day ${dow === 0 || holiday ? "is-sun" : ""} ${dow === 6 ? "is-sat" : ""}">${d}</div>
-        ${holiday ? `<div class="cal-holiday">${escapeHtml(holiday)}</div>` : ""}
-        <div class="cal-events">
-          ${events
-            .slice(0, 2)
-            .map(
-              (e) =>
-                `<span class="cal-dot ${escapeAttr(e.type)} ${scheduleUrgency(e)}" title="${escapeAttr(e.title)}">${escapeHtml(e.title)}</span>`
-            )
-            .join("")}
-        </div>
-        ${urgentN ? `<span class="cal-urgent-bar" aria-hidden="true"></span>` : ""}
-      </button>`);
-  }
-
-  return `
-    <div class="month-cal pulse-cal">
-      <div class="cal-weekdays">
-        ${weekdays.map((w, i) => `<span class="${i === 6 ? "is-sun" : i === 5 ? "is-sat" : ""}">${w}</span>`).join("")}
-      </div>
-      <div class="cal-grid">${cells.join("")}</div>
-    </div>`;
 }
 
 /* ---------- Schedule remind popup ---------- */
@@ -2283,89 +2510,128 @@ function renderSchedule() {
   const items = [...state.schedule].sort((a, b) => a.date.localeCompare(b.date));
   if (!state._calCursor) state._calCursor = today().slice(0, 7) + "-01";
   if (!state._calSelected) state._calSelected = today();
-  const cursor = new Date(`${state._calCursor}T00:00:00`);
-  const counts = countScheduleByUrgency(items);
-  const nearest = nearestDeadlineItem(items);
-  const filter = state._scheduleFilter || "all";
+  if (!state._calRange) {
+    const weeks = state._calWeeks || 4;
+    state._calRange =
+      weeks <= 1 ? "week" : weeks <= 2 ? "fortnight" : weeks <= 4 ? "month" : weeks <= 8 ? "twoMonth" : "threeMonth";
+  }
+  const cursor = parseIsoDate(state._calCursor);
+  const mode = state._calRange;
+  const stepIndex = HEAT_RANGE_STEPS.indexOf(mode);
   const selected = state._calSelected;
-  const dayItems = selected ? eventsOnDate(selected) : [];
+  const bandFilter = state._scheduleFilter || null;
+  const { start, end } = getHeatVisibleRange(mode, cursor);
+  const counts = countOpenByUrgencyInRange(toIsoDate(start), toIsoDate(end));
+  const nearest = nearestDeadlineItem(items);
+  const who = sessionUser || "작성자";
 
-  const filtered = items.filter((s) => {
-    if (filter === "all") return true;
-    return scheduleBucket(s) === filter;
-  });
+  let dayItems = [];
+  let detailTitle = "";
+  if (bandFilter) {
+    const list = items.filter((s) => {
+      if ((s.status || "") === "완료") return false;
+      const due = (s.endDate || s.date || "").slice(0, 10);
+      if (due < toIsoDate(start) || due > toIsoDate(end)) return false;
+      if (bandFilter === "all") return true;
+      return scheduleUrgency(s) === bandFilter || (bandFilter === "gray" && scheduleUrgency(s) === "ok");
+    });
+    dayItems = list.sort((a, b) => heatBandRank(dayHeatBand([b])) - heatBandRank(dayHeatBand([a])));
+    detailTitle =
+      bandFilter === "urgent"
+        ? "긴급 업무"
+        : bandFilter === "warn"
+          ? "주의 업무"
+          : bandFilter === "check"
+            ? "체크 업무"
+            : bandFilter === "gray"
+              ? "그 외 업무"
+              : "기간 내 업무";
+  } else if (selected) {
+    dayItems = eventsOnDate(selected).filter((s) => (s.status || "") !== "완료");
+    detailTitle = `${formatKorDate(selected)} 일정`;
+  }
 
   const byMonth = {};
-  filtered.forEach((s) => {
+  (bandFilter ? dayItems : items).forEach((s) => {
     const key = (s.date || "").slice(0, 7);
     if (!byMonth[key]) byMonth[key] = [];
     byMonth[key].push(s);
   });
 
-  const who = sessionUser || "작성자";
+  const peakIso = nearest ? nearest.endDate || nearest.date : "";
 
   el.innerHTML = `
-    <div class="schedule-pulse">
-      <header class="schedule-pulse-hero">
-        <h2 class="schedule-pulse-title"><span class="name-honorific">${escapeHtml(who)}</span>님 오늘의 업무를 확인해 보세요.</h2>
-        <div class="schedule-urgency-chips" aria-label="긴급도">
-          <button type="button" class="urg-chip is-urgent ${filter === "overdue" || filter === "today" ? "is-on" : ""}" data-sched-filter="overdue"><strong>${counts.urgent}</strong> 긴급</button>
-          <button type="button" class="urg-chip is-warn ${filter === "week" ? "is-on" : ""}" data-sched-filter="week"><strong>${counts.warn}</strong> 주의</button>
-          <button type="button" class="urg-chip is-check ${filter === "month" ? "is-on" : ""}" data-sched-filter="month"><strong>${counts.check}</strong> 체크</button>
-          <button type="button" class="urg-chip ${filter === "all" ? "is-on" : ""}" data-sched-filter="all">전체</button>
-        </div>
-        <p class="schedule-nearest muted">가장 급한 마감 · ${
-          nearest
-            ? `<span class="glow-red-text">${escapeHtml(formatKorDate(nearest.endDate || nearest.date))}</span>`
-            : "없음"
-        }</p>
+    <div class="heatmap-dash schedule-pulse">
+      <header class="page-hero heatmap-hero">
+        <p class="load-kicker">TF Pulse</p>
+        <h2 class="load-title"><span class="name-honorific">${escapeHtml(who)}님</span> 오늘의 업무를 확인해 보세요.</h2>
+        <p class="load-desc">긴급은 지연·오늘 · 주의는 일주일 안 · 체크는 이번 달 안</p>
       </header>
 
-      <section class="panel schedule-cal-panel">
-        <div class="cal-toolbar">
-          <div class="cal-range-group" role="group" aria-label="기간">
-            <button type="button" class="btn btn-sm" id="calRangeMinus" aria-label="기간 줄이기">−</button>
-            ${[1, 2, 4, 8, 12]
-              .map((w) => {
-                const label = w === 1 ? "1주" : w === 2 ? "2주" : w === 4 ? "1개월" : w === 8 ? "2개월" : "3개월";
-                const on = (state._calWeeks || 4) === w;
-                return `<button type="button" class="cal-range-btn ${on ? "active" : ""}" data-cal-weeks="${w}">${label}</button>`;
-              })
-              .join("")}
-            <button type="button" class="btn btn-sm" id="calRangePlus" aria-label="기간 늘리기">+</button>
-          </div>
-          <div class="cal-nav-row">
-            <button type="button" class="btn btn-sm" id="calPrev" aria-label="이전 달">‹</button>
-            <div class="cal-nav-title">
-              <strong>${monthLabel(cursor.getFullYear(), cursor.getMonth())}</strong>
-              <span class="muted">한 달 로드</span>
+      <div class="urgency-strip" aria-label="마감 요약">
+        <button type="button" class="urgency-pill critical ${bandFilter === "urgent" ? "filter-on" : ""}" data-sched-filter="urgent"><strong>${counts.urgent}</strong><span>긴급</span></button>
+        <button type="button" class="urgency-pill watch ${bandFilter === "warn" ? "filter-on" : ""}" data-sched-filter="warn"><strong>${counts.warn}</strong><span>주의</span></button>
+        <button type="button" class="urgency-pill calm ${bandFilter === "check" ? "filter-on" : ""}" data-sched-filter="check"><strong>${counts.check}</strong><span>체크</span></button>
+        ${
+          peakIso
+            ? `<p class="urgency-peak">가장 급한 마감 · <button type="button" class="linkish" id="schedPeakDay">${escapeHtml(formatKorDate(peakIso))}</button></p>`
+            : ""
+        }
+      </div>
+
+      <section class="panel heatmap-panel">
+        <div class="range-navigator">
+          <div class="range-zoom">
+            <button type="button" class="btn btn-sm zoom-btn" id="calRangeMinus" ${stepIndex <= 0 ? "disabled" : ""} aria-label="기간 줄이기">−</button>
+            <div class="range-track" role="group" aria-label="기간 설정">
+              ${HEAT_RANGE_STEPS.map(
+                (step, i) =>
+                  `<button type="button" class="range-step ${mode === step ? "active" : ""} ${i < stepIndex ? "passed" : ""}" data-cal-range="${step}">${HEAT_RANGE_META[step].label}</button>`
+              ).join("")}
             </div>
-            <button type="button" class="btn btn-sm" id="calNext" aria-label="다음 달">›</button>
+            <button type="button" class="btn btn-sm zoom-btn" id="calRangePlus" ${
+              stepIndex >= HEAT_RANGE_STEPS.length - 1 ? "disabled" : ""
+            } aria-label="기간 늘리기">+</button>
+          </div>
+          <div class="cal-nav">
+            <button type="button" class="btn btn-sm" id="calPrev" aria-label="한 달 전">‹</button>
+            <div class="cal-range">
+              ${escapeHtml(heatRangeCaption(mode, cursor))}
+              <span class="range-hint">${escapeHtml(HEAT_RANGE_META[mode].hint)}</span>
+            </div>
+            <button type="button" class="btn btn-sm" id="calNext" aria-label="한 달 후">›</button>
             <button type="button" class="btn btn-sm" id="calToday">오늘</button>
           </div>
-          <div class="cal-legend">
-            <span><i class="leg urgent"></i>긴급</span>
-            <span><i class="leg warn"></i>주의</span>
-            <span><i class="leg check"></i>체크</span>
-          </div>
         </div>
-        ${buildMonthCalendarHtml(cursor, { selectedIso: selected })}
+        <div class="heat-legend" aria-hidden="true">
+          <span class="leg-swatch urgent"></span><span>긴급</span>
+          <span class="leg-swatch warn"></span><span>주의</span>
+          <span class="leg-swatch check"></span><span>체크</span>
+          <span class="leg-swatch gray"></span><span>그 외</span>
+        </div>
+        ${buildHeatCalendarHtml(cursor, { mode, selectedIso: selected, bandFilter })}
       </section>
 
       ${
-        dayItems.length
-          ? `<section class="panel">
-        <div class="panel-head"><h2 class="panel-title">${escapeHtml(formatKorDate(selected))} 일정</h2></div>
-        <div class="work-feed">${dayItems.map((s) => workFeedRowHtml(s, admin)).join("")}</div>
+        dayItems.length || bandFilter
+          ? `<section class="panel day-detail">
+        <div class="panel-head"><h2 class="panel-title">${escapeHtml(detailTitle)}</h2></div>
+        <div class="work-feed">${
+          dayItems.length
+            ? dayItems.map((s) => workFeedRowHtml(s, admin)).join("")
+            : `<div class="empty">해당 조건의 일정이 없습니다.</div>`
+        }</div>
       </section>`
           : ""
       }
+
+      ${buildScheduleRiskChartHtml(items)}
 
       <section class="panel work-feed-panel">
         <div class="panel-head">
           <div>
             <h2 class="panel-title">${escapeHtml(who)}님에게 보이는 일정입니다.</h2>
-            <p class="muted" style="margin:4px 0 0">주요 업무를 등록·수정·삭제합니다. 마감 임박은 빨간 글로잉으로 표시됩니다.</p>
+            <p class="muted" style="margin:4px 0 0">주요 업무를 등록·수정·삭제합니다.</p>
           </div>
           ${admin ? `<button type="button" class="work-fab" id="addSchedule" title="주요 업무 추가" aria-label="주요 업무 추가">✎</button>` : `<button type="button" class="btn btn-primary" id="addSchedule">일정 추가</button>`}
         </div>
@@ -2389,9 +2655,8 @@ function renderSchedule() {
   `;
 
   const shiftMonth = (delta) => {
-    const d = new Date(`${state._calCursor}T00:00:00`);
-    d.setMonth(d.getMonth() + delta);
-    state._calCursor = `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, "0")}-01`;
+    const d = addMonthsDate(parseIsoDate(state._calCursor), delta);
+    state._calCursor = toIsoDate(d);
     renderSchedule();
   };
 
@@ -2400,36 +2665,54 @@ function renderSchedule() {
   $("#calToday")?.addEventListener("click", () => {
     state._calCursor = `${today().slice(0, 7)}-01`;
     state._calSelected = today();
+    state._scheduleFilter = null;
     renderSchedule();
   });
-  el.querySelectorAll("[data-cal-weeks]").forEach((btn) => {
+  el.querySelectorAll("[data-cal-range]").forEach((btn) => {
     btn.addEventListener("click", () => {
-      state._calWeeks = Number(btn.dataset.calWeeks) || 4;
+      state._calRange = btn.dataset.calRange;
       renderSchedule();
     });
   });
-  const weeksOrder = [1, 2, 4, 8, 12];
   $("#calRangeMinus")?.addEventListener("click", () => {
-    const i = Math.max(0, weeksOrder.indexOf(state._calWeeks || 4) - 1);
-    state._calWeeks = weeksOrder[i];
+    const i = Math.max(0, HEAT_RANGE_STEPS.indexOf(state._calRange) - 1);
+    state._calRange = HEAT_RANGE_STEPS[i];
     renderSchedule();
   });
   $("#calRangePlus")?.addEventListener("click", () => {
-    const i = Math.min(weeksOrder.length - 1, weeksOrder.indexOf(state._calWeeks || 4) + 1);
-    state._calWeeks = weeksOrder[i];
+    const i = Math.min(HEAT_RANGE_STEPS.length - 1, HEAT_RANGE_STEPS.indexOf(state._calRange) + 1);
+    state._calRange = HEAT_RANGE_STEPS[i];
     renderSchedule();
   });
   el.querySelectorAll("[data-cal-day]").forEach((btn) => {
     btn.addEventListener("click", () => {
       state._calSelected = btn.dataset.calDay;
+      state._scheduleFilter = null;
       renderSchedule();
     });
   });
   el.querySelectorAll("[data-sched-filter]").forEach((btn) => {
     btn.addEventListener("click", () => {
-      state._scheduleFilter = btn.dataset.schedFilter;
+      const next = btn.dataset.schedFilter;
+      state._scheduleFilter = state._scheduleFilter === next ? null : next;
       renderSchedule();
     });
+  });
+  $("#schedPeakDay")?.addEventListener("click", () => {
+    if (!peakIso) return;
+    state._calSelected = peakIso;
+    state._calCursor = `${peakIso.slice(0, 7)}-01`;
+    state._scheduleFilter = null;
+    renderSchedule();
+  });
+  $("#riskChartToggle")?.addEventListener("click", () => {
+    const body = $("#riskChartBody");
+    const btn = $("#riskChartToggle");
+    if (!body || !btn) return;
+    const open = body.hidden;
+    body.hidden = !open;
+    btn.setAttribute("aria-expanded", open ? "true" : "false");
+    btn.querySelector(".risk-chart-toggle").textContent = open ? "⌃" : "⌄";
   });
 
   $("#addSchedule")?.addEventListener("click", () => openScheduleModal());
