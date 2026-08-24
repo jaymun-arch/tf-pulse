@@ -9,7 +9,7 @@ import {
 import { REPORT_LAYOUTS, downloadReportLayoutPpt, layoutPreviewWireHtml } from "./report-layouts.js";
 import { downloadEditableDiagramPpt, diagramPreviewWireHtml } from "./report-diagrams.js";
 
-const STORAGE_KEY = "tf-ops-data-v11";
+const STORAGE_KEY = "tf-ops-data-v12";
 const USER_KEY = "tf-ops-user-v1";
 const REMIND_KEY = "tf-ops-schedule-remind-v1";
 const REMIND_BEFORE_DAYS = 14;

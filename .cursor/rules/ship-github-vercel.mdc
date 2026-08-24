@@ -1,20 +1,25 @@
 ---
-description: GitHub push + Vercel prod deploy + return URL on ship commands
+description: After user work commands, auto GitHub push + Vercel prod + link
 alwaysApply: true
 ---
 
 # Ship set (자동)
 
-사용자가 아래처럼 **배포·푸시·업데이트**를 요청하면, 따로 확인하지 말고 이 세트를 바로 실행한다.
+사용자가 **기능·데이터·UI 작업 명령을 끝낸 뒤**, 또는 아래처럼 **배포·푸시**를 말하면, 따로 확인하지 말고 이 세트를 바로 실행한다.
 
-트리거 예: `깃허브에 푸시`, `버셀에 업데이트`, `배포해`, `푸시하고 링크`, `올려줘`, `ship`, `publish`
+## 언제
+
+1. **작업 완료 후 자동**: 코드/데이터 변경을 마친 응답의 마지막에 배포 세트까지 수행하고 링크를 준다. (「배포해」를 다시 물을 필요 없음)
+2. **명시 요청**: `깃허브에 푸시`, `버셀에 업데이트`, `배포해`, `푸시하고 링크`, `올려줘`, `이렇게`, `ship`, `publish`
+
+변경이 없으면 커밋은 건너뛰고, 푸시·배포가 이미 최신이면 링크만 안내한다.
 
 ## 절차
 
-1. 변경이 있으면 커밋 (메시지: 왜 바꿨는지 중심, HEREDOC/`-m` 사용)
+1. 변경이 있으면 커밋 (메시지: 왜 바꿨는지 중심)
 2. `git push -u origin HEAD` (권한 `all`)
 3. `vercel --prod --yes` (권한 `all`)
-4. 최종 응답에 **프로덕션 링크**를 포함: https://tf-pulse.vercel.app
+4. 최종 응답에 **접속 링크**를 포함한다: https://tf-pulse.vercel.app
 
 ## 주의
 

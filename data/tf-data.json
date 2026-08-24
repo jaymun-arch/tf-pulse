@@ -3,85 +3,36 @@
     "tfName": "2026 교육혁신 성과보고서 TF",
     "reportTitle": "2026학년도 교육혁신 성과보고서",
     "totalTargetPages": 80,
-    "adminName": "문정환",
+    "adminName": "권도희",
     "updatedAt": "2026-07-13T09:00:00"
   },
   "members": [
     {
       "id": "m1",
-      "name": "문정환",
+      "name": "권도희",
       "role": "admin",
       "part": "총괄",
       "contact": ""
     },
     {
       "id": "m2",
-      "name": "이현호",
+      "name": "문정환",
       "role": "admin",
       "part": "총괄",
       "contact": ""
     },
     {
       "id": "m3",
-      "name": "김남인",
+      "name": "최겨레",
       "role": "member",
-      "part": "Ⅰ. 서론",
+      "part": "",
       "contact": ""
     },
     {
       "id": "m4",
-      "name": "이명선",
-      "role": "member",
-      "part": "Ⅱ. 현황분석",
-      "contact": ""
-    },
-    {
-      "id": "m5",
-      "name": "정은경",
-      "role": "member",
-      "part": "Ⅲ. 추진실적",
-      "contact": ""
-    },
-    {
-      "id": "m6",
-      "name": "박정하",
-      "role": "food",
-      "part": "Ⅳ. 성과분석",
-      "contact": ""
-    },
-    {
-      "id": "m7",
       "name": "박종진",
       "role": "budget",
       "part": "예산",
-      "contact": ""
-    },
-    {
-      "id": "m8",
-      "name": "최겨레",
-      "role": "member",
-      "part": "V. 향후계획",
-      "contact": ""
-    },
-    {
-      "id": "m9",
-      "name": "권도희",
-      "role": "member",
-      "part": "",
-      "contact": ""
-    },
-    {
-      "id": "m10",
-      "name": "김유화",
-      "role": "member",
-      "part": "",
-      "contact": ""
-    },
-    {
-      "id": "m11",
-      "name": "황청일",
-      "role": "member",
-      "part": "",
       "contact": ""
     }
   ],
@@ -90,7 +41,7 @@
       "id": "p1",
       "section": "Ⅰ",
       "title": "서론",
-      "assigneeId": "m3",
+      "assigneeId": "m1",
       "pageStart": 1,
       "pageEnd": 8,
       "note": "추진 배경·목적·구성"
@@ -99,7 +50,7 @@
       "id": "p2",
       "section": "Ⅱ",
       "title": "현황분석",
-      "assigneeId": "m4",
+      "assigneeId": "m2",
       "pageStart": 9,
       "pageEnd": 22,
       "note": "여건·진단·시사점"
@@ -108,7 +59,7 @@
       "id": "p3",
       "section": "Ⅲ",
       "title": "추진실적",
-      "assigneeId": "m5",
+      "assigneeId": "m3",
       "pageStart": 23,
       "pageEnd": 48,
       "note": "사업별 실적·산출물"
@@ -117,7 +68,7 @@
       "id": "p4",
       "section": "Ⅳ",
       "title": "성과분석",
-      "assigneeId": "m6",
+      "assigneeId": "m1",
       "pageStart": 49,
       "pageEnd": 68,
       "note": "정량·정성 성과"
@@ -126,7 +77,7 @@
       "id": "p5",
       "section": "Ⅴ",
       "title": "향후계획",
-      "assigneeId": "m8",
+      "assigneeId": "m2",
       "pageStart": 69,
       "pageEnd": 80,
       "note": "개선과제·로드맵"
@@ -424,7 +375,7 @@
       "title": "1차 취합본 드라이브 업로드",
       "memo": "담당 파트 초안을 공유폴더에 올려 주세요.",
       "requester": "문정환",
-      "recipient": "김남인",
+      "recipient": "권도희",
       "dueDate": "2026-08-20",
       "status": "대기",
       "createdAt": "2026-07-13"
@@ -435,7 +386,7 @@
       "title": "1차 취합본 드라이브 업로드",
       "memo": "담당 파트 초안을 공유폴더에 올려 주세요.",
       "requester": "문정환",
-      "recipient": "이명선",
+      "recipient": "권도희",
       "dueDate": "2026-08-20",
       "status": "대기",
       "createdAt": "2026-07-13"
@@ -446,7 +397,7 @@
       "title": "1차 취합본 드라이브 업로드",
       "memo": "담당 파트 초안을 공유폴더에 올려 주세요.",
       "requester": "문정환",
-      "recipient": "정은경",
+      "recipient": "권도희",
       "dueDate": "2026-08-20",
       "status": "대기",
       "createdAt": "2026-07-13"
@@ -457,7 +408,7 @@
       "title": "1차 취합본 드라이브 업로드",
       "memo": "담당 파트 초안을 공유폴더에 올려 주세요.",
       "requester": "문정환",
-      "recipient": "박정하",
+      "recipient": "권도희",
       "dueDate": "2026-08-20",
       "status": "대기",
       "createdAt": "2026-07-13"
@@ -479,7 +430,7 @@
       "title": "스타일 가이드 확인 후 회신",
       "memo": "공통 서식 탭의 스타일 가이드를 읽고 확인 완료로 표시해 주세요.",
       "requester": "문정환",
-      "recipient": "김남인",
+      "recipient": "권도희",
       "dueDate": "2026-07-20",
       "status": "대기",
       "createdAt": "2026-07-13"
@@ -490,7 +441,7 @@
       "title": "스타일 가이드 확인 후 회신",
       "memo": "공통 서식 탭의 스타일 가이드를 읽고 확인 완료로 표시해 주세요.",
       "requester": "문정환",
-      "recipient": "이명선",
+      "recipient": "권도희",
       "dueDate": "2026-07-20",
       "status": "대기",
       "createdAt": "2026-07-13"
