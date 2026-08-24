@@ -82,7 +82,10 @@ const VIEW_META = {
     title: "예산",
     desc: "카드에서 항목을 고르고, Work Pulse형 입력창으로 편성·실적을 등록합니다.",
   },
-  schedule: { title: "일정", desc: "TF 일정을 한눈에 보고 일정을 추가합니다." },
+  schedule: {
+    title: "일정",
+    desc: "캘린더·긴급 알람·주요 업무 피드로 TF 일정을 관리합니다.",
+  },
   drive: { title: "드라이브", desc: "주요 문서가 있는 구글드라이브 링크를 확인합니다." },
   resources: { title: "공통 서식", desc: "교육부 지침·스타일 가이드·공통 서식을 한곳에 모읍니다." },
   food: { title: "오늘 뭐먹지", desc: "보고서 쓰다 배고플 때, 돌림판으로 메뉴를 정해 보세요." },
@@ -1025,46 +1028,116 @@ function eventsOnDate(isoDate) {
   });
 }
 
-function buildMonthCalendarHtml(refDate = new Date()) {
+function scheduleUrgency(item) {
+  const days = daysUntil(item.endDate || item.date);
+  if ((item.status || "") === "완료") return "ok";
+  if (days < 0) return "urgent";
+  if (days === 0) return "urgent";
+  if (days <= 7) return "warn";
+  if (days <= 31) return "check";
+  return "ok";
+}
+
+function scheduleBucket(item) {
+  const days = daysUntil(item.endDate || item.date);
+  if ((item.status || "") === "완료") return "done";
+  if (days < 0) return "overdue";
+  if (days === 0) return "today";
+  if (days <= 7) return "week";
+  if (days <= 31) return "month";
+  return "later";
+}
+
+function scheduleStatusLabel(s) {
+  return { 준비: "준비", 진행: "진행", 완료: "완료" }[s] || s || "준비";
+}
+
+const KR_HOLIDAYS = {
+  "2026-01-01": "신정",
+  "2026-02-16": "설날",
+  "2026-02-17": "설날",
+  "2026-02-18": "설날",
+  "2026-03-01": "삼일절",
+  "2026-05-05": "어린이날",
+  "2026-05-24": "석가탄신일",
+  "2026-06-06": "현충일",
+  "2026-08-15": "광복절",
+  "2026-09-24": "추석",
+  "2026-09-25": "추석",
+  "2026-09-26": "추석",
+  "2026-10-03": "개천절",
+  "2026-10-09": "한글날",
+  "2026-12-25": "크리스마스",
+};
+
+function countScheduleByUrgency(items = state.schedule) {
+  const counts = { urgent: 0, warn: 0, check: 0 };
+  items.forEach((s) => {
+    const u = scheduleUrgency(s);
+    if (counts[u] != null) counts[u] += 1;
+  });
+  return counts;
+}
+
+function nearestDeadlineItem(items = state.schedule) {
+  return (
+    [...items]
+      .filter((s) => (s.status || "") !== "완료")
+      .map((s) => ({ ...s, daysUntil: daysUntil(s.endDate || s.date) }))
+      .filter((s) => s.daysUntil >= -60)
+      .sort((a, b) => a.daysUntil - b.daysUntil || a.date.localeCompare(b.date))[0] || null
+  );
+}
+
+function formatKorDate(iso) {
+  if (!iso) return "";
+  const [, m, d] = iso.split("-").map(Number);
+  return `${m}월 ${d}일`;
+}
+
+function buildMonthCalendarHtml(refDate = new Date(), { selectedIso = "" } = {}) {
   const year = refDate.getFullYear();
   const month = refDate.getMonth();
   const todayIso = today();
   const first = new Date(year, month, 1);
-  const startPad = first.getDay(); // 0 Sun
+  const startPad = (first.getDay() + 6) % 7; // Monday start
   const daysInMonth = new Date(year, month + 1, 0).getDate();
-  const weekdays = ["일", "월", "화", "수", "목", "금", "토"];
+  const weekdays = ["월", "화", "수", "목", "금", "토", "일"];
 
   const cells = [];
   for (let i = 0; i < startPad; i++) cells.push(`<div class="cal-cell is-empty"></div>`);
   for (let d = 1; d <= daysInMonth; d++) {
     const iso = `${year}-${String(month + 1).padStart(2, "0")}-${String(d).padStart(2, "0")}`;
     const events = eventsOnDate(iso);
+    const openEvents = events.filter((e) => (e.status || "") !== "완료");
+    const urgentN = openEvents.filter((e) => scheduleUrgency(e) === "urgent").length;
     const isToday = iso === todayIso;
+    const isSelected = iso === selectedIso;
     const dow = new Date(year, month, d).getDay();
+    const holiday = KR_HOLIDAYS[iso] || "";
     cells.push(`
-      <div class="cal-cell ${isToday ? "is-today" : ""} ${events.length ? "has-event" : ""}">
-        <div class="cal-day ${dow === 0 ? "is-sun" : ""} ${dow === 6 ? "is-sat" : ""}">${d}</div>
+      <button type="button" class="cal-cell ${isToday ? "is-today" : ""} ${urgentN ? "is-urgent-day" : ""} ${isSelected ? "is-selected" : ""} ${events.length ? "has-event" : ""}" data-cal-day="${iso}">
+        ${d === 1 ? `<span class="cal-month-tab">${month + 1}월</span>` : ""}
+        ${urgentN ? `<span class="cal-badge">${urgentN}</span>` : ""}
+        <div class="cal-day ${dow === 0 || holiday ? "is-sun" : ""} ${dow === 6 ? "is-sat" : ""}">${d}</div>
+        ${holiday ? `<div class="cal-holiday">${escapeHtml(holiday)}</div>` : ""}
         <div class="cal-events">
           ${events
-            .slice(0, 3)
+            .slice(0, 2)
             .map(
               (e) =>
-                `<span class="cal-dot ${escapeAttr(e.type)}" title="${escapeAttr(e.title)}">${escapeHtml(e.title)}</span>`
+                `<span class="cal-dot ${escapeAttr(e.type)} ${scheduleUrgency(e)}" title="${escapeAttr(e.title)}">${escapeHtml(e.title)}</span>`
             )
             .join("")}
-          ${events.length > 3 ? `<span class="cal-more">+${events.length - 3}</span>` : ""}
         </div>
-      </div>`);
+        ${urgentN ? `<span class="cal-urgent-bar" aria-hidden="true"></span>` : ""}
+      </button>`);
   }
 
   return `
-    <div class="month-cal">
-      <div class="month-cal-head">
-        <strong>${monthLabel(year, month)}</strong>
-        <span class="muted">이번 달 일정</span>
-      </div>
+    <div class="month-cal pulse-cal">
       <div class="cal-weekdays">
-        ${weekdays.map((w, i) => `<span class="${i === 0 ? "is-sun" : i === 6 ? "is-sat" : ""}">${w}</span>`).join("")}
+        ${weekdays.map((w, i) => `<span class="${i === 6 ? "is-sun" : i === 5 ? "is-sat" : ""}">${w}</span>`).join("")}
       </div>
       <div class="cal-grid">${cells.join("")}</div>
     </div>`;
@@ -1109,14 +1182,17 @@ function getUpcomingReminders({ includeDismissed = false } = {}) {
   const todayIso = today();
   return [...state.schedule]
     .map((s) => {
-      const days = daysUntil(s.date);
+      const days = daysUntil(s.endDate || s.date);
       return { ...s, daysUntil: days };
     })
-    .filter((s) => s.daysUntil >= -1 && s.daysUntil <= REMIND_BEFORE_DAYS)
+    .filter((s) => (s.status || "") !== "완료")
+    .filter((s) => s.daysUntil >= -30 && s.daysUntil <= REMIND_BEFORE_DAYS)
     .filter((s) => {
       if (includeDismissed) return true;
       if (map[`dismiss:${s.id}`]) return false;
       if (map[`snooze:${s.id}`] === todayIso) return false;
+      if (map.hideForever) return false;
+      if (map.hideToday === todayIso) return false;
       return true;
     })
     .sort((a, b) => a.daysUntil - b.daysUntil || a.date.localeCompare(b.date));
@@ -1127,62 +1203,133 @@ function updateRemindBell() {
   const countEl = $("#remindBellCount");
   if (!bell || !sessionUser) return;
   const pending = getUpcomingReminders();
-  const all = getUpcomingReminders({ includeDismissed: true });
-  const count = pending.length || all.length;
+  const feed = myPendingRequests();
+  const count = pending.length + feed.length;
   if (count > 0) {
     bell.hidden = false;
-    bell.classList.toggle("has-pending", pending.length > 0);
-    countEl.textContent = String(pending.length || all.length);
+    bell.classList.toggle("has-pending", pending.length > 0 || feed.length > 0);
+    countEl.textContent = String(count);
   } else {
     bell.hidden = true;
   }
 }
 
-function renderRemindList(items) {
-  const list = $("#remindList");
-  if (!items.length) {
-    list.innerHTML = `<li class="empty">표시할 일정이 없습니다.</li>`;
-    return;
-  }
-  list.innerHTML = items
-    .map(
-      (s) => `
-    <li class="remind-item">
-      <div class="remind-item-main">
-        <div class="remind-timing ${timingClass(s.daysUntil)}">${timingLabel(s.daysUntil)}</div>
-        <div class="remind-item-title">「${escapeHtml(s.title)}」 일정이 ${
-          s.daysUntil < 0
-            ? `${Math.abs(s.daysUntil)}일 지났습니다.`
-            : s.daysUntil === 0
-              ? "오늘입니다."
-              : `${s.daysUntil}일 남았습니다.`
-        }</div>
-        <div class="remind-item-meta">
-          ${escapeHtml(s.date)}${s.endDate && s.endDate !== s.date ? ` ~ ${escapeHtml(s.endDate)}` : ""}
-          · ${typeLabel(s.type)}
-          ${s.note ? ` · ${escapeHtml(s.note)}` : ""}
+function remindTaskCardHtml(s, sourceLabel = "") {
+  const days = s.daysUntil ?? daysUntil(s.endDate || s.date);
+  const bucket = days < 0 ? "overdue" : days === 0 ? "today" : "soon";
+  return `
+    <article class="remind-task-card" data-goto-schedule="${escapeAttr(s.id)}">
+      <div class="remind-task-top">
+        <span class="remind-task-from">${escapeHtml(sourceLabel || (s.createdBy ? `${s.createdBy}` : "TF 일정"))}</span>
+      </div>
+      <div class="remind-task-row">
+        <strong class="remind-task-title">${escapeHtml(s.title)}</strong>
+        <span class="remind-tag">${escapeHtml(typeLabel(s.type))}</span>
+        ${s.createdBy ? `<span class="remind-tag is-person">${escapeHtml(s.createdBy)}</span>` : ""}
+      </div>
+      <p class="remind-task-meta muted">${escapeHtml(formatKorDate(s.date))}${
+        s.endDate && s.endDate !== s.date ? ` ~ ${escapeHtml(formatKorDate(s.endDate))}` : ""
+      }${s.note ? ` · ${escapeHtml(s.note)}` : ""}${
+        days < 0 ? ` · <span class="glow-red-text">작년 대비 자료 없음</span>` : days === 0 ? "" : days > 0 ? ` · ${days}일 남음` : ""
+      }</p>
+      <span class="sr-only">${bucket}</span>
+    </article>`;
+}
+
+function remindFeedCardHtml(r) {
+  const days = r.dueDate ? daysUntil(r.dueDate) : null;
+  return `
+    <article class="remind-task-card" data-goto-request="${escapeAttr(r.id)}">
+      <div class="remind-task-top">
+        <span class="remind-task-from">${escapeHtml(r.requester || "관리자")}로부터</span>
+      </div>
+      <div class="remind-task-row">
+        <strong class="remind-task-title">${escapeHtml(r.title)}</strong>
+        <span class="remind-tag is-comment">코멘트</span>
+      </div>
+      <p class="remind-task-meta muted">${escapeHtml(r.requester || "관리자")} · ${
+        r.dueDate ? escapeHtml(formatKorDate(r.dueDate)) : "기한 없음"
+      }${days != null && days < 0 ? ` · <span class="glow-red-text">${Math.abs(days)}일 지남</span>` : ""}${
+        r.memo ? ` · ${escapeHtml(String(r.memo).slice(0, 60))}` : ""
+      }</p>
+    </article>`;
+}
+
+function renderRemindList() {
+  const root = $("#remindList");
+  if (!root) return;
+  const items = getUpcomingReminders();
+  const overdue = items.filter((s) => s.daysUntil < 0);
+  const todayItems = items.filter((s) => s.daysUntil === 0);
+  const soon = items.filter((s) => s.daysUntil > 0);
+  const feed = myPendingRequests();
+
+  const section = (badge, count, hint, cards, glow = false) => {
+    if (!cards.length) return "";
+    return `
+      <section class="remind-section">
+        <div class="remind-section-head">
+          <span class="remind-section-badge ${glow ? "is-glow" : ""}">${escapeHtml(badge)}</span>
+          <span class="remind-section-count">${count}건</span>
         </div>
-      </div>
-      <div class="remind-item-actions">
-        <button type="button" class="btn btn-sm btn-ghost" data-snooze="${s.id}">오늘 다시</button>
-        <button type="button" class="btn btn-sm btn-primary" data-dismiss="${s.id}">확인</button>
-      </div>
-    </li>`
-    )
+        ${hint ? `<p class="remind-section-hint">${hint}</p>` : ""}
+        <div class="remind-section-cards">${cards.join("")}</div>
+      </section>`;
+  };
+
+  root.innerHTML = [
+    section(
+      "지연",
+      overdue.length,
+      overdue.length
+        ? `<span class="glow-red-text">빨리 처리하거나, 처리 일정을 재수립하거나, 완료 여부를 점검하세요</span>`
+        : "",
+      overdue.map((s) => remindTaskCardHtml(s, s.createdBy === sessionUser ? "내가요청" : s.createdBy || "일정")),
+      true
+    ),
+    section(
+      "오늘까지 반드시",
+      todayItems.length,
+      "",
+      todayItems.map((s) => remindTaskCardHtml(s, s.createdBy === sessionUser ? "내가요청" : s.createdBy || "일정")),
+      true
+    ),
+    soon.length
+      ? section(
+          "이번주 안",
+          soon.length,
+          "",
+          soon.slice(0, 5).map((s) => remindTaskCardHtml(s, s.createdBy || "일정")),
+          false
+        )
+      : "",
+    section(
+      "내가 받은 피드백",
+      feed.length,
+      "",
+      feed.slice(0, 6).map((r) => remindFeedCardHtml(r)),
+      false
+    ),
+  ]
+    .filter(Boolean)
     .join("");
 
-  list.querySelectorAll("[data-snooze]").forEach((btn) =>
-    btn.addEventListener("click", () => {
-      snoozeReminder(btn.dataset.snooze);
-      openRemindPopup(false);
-    })
-  );
-  list.querySelectorAll("[data-dismiss]").forEach((btn) =>
-    btn.addEventListener("click", () => {
-      dismissReminder(btn.dataset.dismiss);
-      openRemindPopup(false);
-    })
-  );
+  if (!root.innerHTML.trim()) {
+    root.innerHTML = `<div class="empty">지금 챙길 일정·피드백이 없습니다.</div>`;
+  }
+
+  root.querySelectorAll("[data-goto-schedule]").forEach((el) => {
+    el.addEventListener("click", () => {
+      closeRemindPopup();
+      setView("schedule");
+    });
+  });
+  root.querySelectorAll("[data-goto-request]").forEach((el) => {
+    el.addEventListener("click", () => {
+      closeRemindPopup();
+      setView("requests");
+    });
+  });
 }
 
 function dismissReminder(id) {
@@ -1200,20 +1347,41 @@ function snoozeReminder(id) {
 }
 
 function openRemindPopup(browseAll = false) {
-  const pending = getUpcomingReminders();
-  const all = getUpcomingReminders({ includeDismissed: true });
-  const items = browseAll ? all : pending;
-  if (!items.length) {
+  const map = loadRemindState();
+  if (!browseAll) {
+    if (map.hideForever) return;
+    if (map.hideToday === today()) return;
+  }
+  const pending = getUpcomingReminders({ includeDismissed: browseAll });
+  const feed = myPendingRequests();
+  if (!browseAll && !pending.length && !feed.length) {
     closeRemindPopup();
     updateRemindBell();
     return;
   }
-  renderRemindList(items);
+  const who = $("#remindWho");
+  if (who) who.textContent = `${sessionUser || "작성자"}님`;
+  const overdue = pending.filter((s) => s.daysUntil < 0).length;
+  const todayN = pending.filter((s) => s.daysUntil === 0).length;
+  const weekN = pending.filter((s) => s.daysUntil > 0 && s.daysUntil <= 7).length;
+  const desc = $("#remindDesc");
+  if (desc) {
+    desc.textContent = `${isAdmin() ? "등록·수정 권한" : "조회 권한"}으로 접속했습니다. 지연 ${overdue}건 · 오늘 ${todayN}건 · 이번주 ${weekN}건 · 피드백 ${feed.length}건`;
+  }
+  const hideToday = $("#remindHideToday");
+  const hideForever = $("#remindHideForever");
+  if (hideToday) hideToday.checked = false;
+  if (hideForever) hideForever.checked = false;
+  renderRemindList();
   $("#remindBackdrop").hidden = false;
   updateRemindBell();
 }
 
 function closeRemindPopup() {
+  const map = loadRemindState();
+  if ($("#remindHideForever")?.checked) map.hideForever = true;
+  if ($("#remindHideToday")?.checked) map.hideToday = today();
+  saveRemindState(map);
   $("#remindBackdrop").hidden = true;
   updateRemindBell();
 }
@@ -2065,73 +2233,230 @@ function isSchedulePast(item) {
 
 function renderSchedule() {
   const el = $("#view-schedule");
-  const items = [...state.schedule].sort((a, b) => a.date.localeCompare(b.date));
   const admin = isAdmin();
+  const items = [...state.schedule].sort((a, b) => a.date.localeCompare(b.date));
+  if (!state._calCursor) state._calCursor = today().slice(0, 7) + "-01";
+  if (!state._calSelected) state._calSelected = today();
+  const cursor = new Date(`${state._calCursor}T00:00:00`);
+  const counts = countScheduleByUrgency(items);
+  const nearest = nearestDeadlineItem(items);
+  const filter = state._scheduleFilter || "all";
+  const selected = state._calSelected;
+  const dayItems = selected ? eventsOnDate(selected) : [];
+
+  const filtered = items.filter((s) => {
+    if (filter === "all") return true;
+    return scheduleBucket(s) === filter;
+  });
+
+  const byMonth = {};
+  filtered.forEach((s) => {
+    const key = (s.date || "").slice(0, 7);
+    if (!byMonth[key]) byMonth[key] = [];
+    byMonth[key].push(s);
+  });
+
+  const who = sessionUser || "작성자";
 
   el.innerHTML = `
-    <div class="panel">
-      <div class="panel-head">
-        <h2>통합 일정</h2>
-        <button class="btn btn-primary" id="addSchedule">일정 추가</button>
-      </div>
-      <div class="table-wrap">
-        <table>
-          <thead>
-            <tr>
-              <th>날짜</th>
-              <th>유형</th>
-              <th>제목</th>
-              <th>등록자</th>
-              <th>비고</th>
-              <th></th>
-            </tr>
-          </thead>
-          <tbody>
-            ${
-              items.length
-                ? items
-                    .map((s) => {
-                      const canManage = admin || s.createdBy === sessionUser;
-                      const past = isSchedulePast(s);
-                      return `
-              <tr class="${past ? "schedule-row-past" : ""}">
-                <td class="page-range">${escapeHtml(s.date)}${s.endDate && s.endDate !== s.date ? `<br><span class="muted">~ ${escapeHtml(s.endDate)}</span>` : ""}${past ? `<div class="schedule-past-tag">지남</div>` : ""}</td>
-                <td><span class="badge ${escapeAttr(s.type)}">${typeLabel(s.type)}</span></td>
-                <td><strong>${escapeHtml(s.title)}</strong></td>
-                <td>${escapeHtml(s.createdBy || "-")}</td>
-                <td class="muted">${escapeHtml(s.note || "")}</td>
-                <td>
-                  ${
-                    canManage
-                      ? `<div class="row">
-                    <button class="btn btn-sm" data-edit="${s.id}">수정</button>
-                    <button class="btn btn-sm btn-danger" data-del="${s.id}">삭제</button>
-                  </div>`
-                      : `<span class="muted">조회</span>`
-                  }
-                </td>
-              </tr>`;
-                    })
-                    .join("")
-                : `<tr><td colspan="6"><div class="empty">등록된 일정이 없습니다.</div></td></tr>`
-            }
-          </tbody>
-        </table>
-      </div>
+    <div class="schedule-pulse">
+      <header class="schedule-pulse-hero">
+        <h2 class="schedule-pulse-title"><span class="name-honorific">${escapeHtml(who)}</span>님 오늘의 업무를 확인해 보세요.</h2>
+        <div class="schedule-urgency-chips" aria-label="긴급도">
+          <button type="button" class="urg-chip is-urgent ${filter === "overdue" || filter === "today" ? "is-on" : ""}" data-sched-filter="overdue"><strong>${counts.urgent}</strong> 긴급</button>
+          <button type="button" class="urg-chip is-warn ${filter === "week" ? "is-on" : ""}" data-sched-filter="week"><strong>${counts.warn}</strong> 주의</button>
+          <button type="button" class="urg-chip is-check ${filter === "month" ? "is-on" : ""}" data-sched-filter="month"><strong>${counts.check}</strong> 체크</button>
+          <button type="button" class="urg-chip ${filter === "all" ? "is-on" : ""}" data-sched-filter="all">전체</button>
+        </div>
+        <p class="schedule-nearest muted">가장 급한 마감 · ${
+          nearest
+            ? `<span class="glow-red-text">${escapeHtml(formatKorDate(nearest.endDate || nearest.date))}</span>`
+            : "없음"
+        }</p>
+      </header>
+
+      <section class="panel schedule-cal-panel">
+        <div class="cal-toolbar">
+          <div class="cal-range-group" role="group" aria-label="기간">
+            <button type="button" class="btn btn-sm" id="calRangeMinus" aria-label="기간 줄이기">−</button>
+            ${[1, 2, 4, 8, 12]
+              .map((w) => {
+                const label = w === 1 ? "1주" : w === 2 ? "2주" : w === 4 ? "1개월" : w === 8 ? "2개월" : "3개월";
+                const on = (state._calWeeks || 4) === w;
+                return `<button type="button" class="cal-range-btn ${on ? "active" : ""}" data-cal-weeks="${w}">${label}</button>`;
+              })
+              .join("")}
+            <button type="button" class="btn btn-sm" id="calRangePlus" aria-label="기간 늘리기">+</button>
+          </div>
+          <div class="cal-nav-row">
+            <button type="button" class="btn btn-sm" id="calPrev" aria-label="이전 달">‹</button>
+            <div class="cal-nav-title">
+              <strong>${monthLabel(cursor.getFullYear(), cursor.getMonth())}</strong>
+              <span class="muted">한 달 로드</span>
+            </div>
+            <button type="button" class="btn btn-sm" id="calNext" aria-label="다음 달">›</button>
+            <button type="button" class="btn btn-sm" id="calToday">오늘</button>
+          </div>
+          <div class="cal-legend">
+            <span><i class="leg urgent"></i>긴급</span>
+            <span><i class="leg warn"></i>주의</span>
+            <span><i class="leg check"></i>체크</span>
+          </div>
+        </div>
+        ${buildMonthCalendarHtml(cursor, { selectedIso: selected })}
+      </section>
+
+      ${
+        dayItems.length
+          ? `<section class="panel">
+        <div class="panel-head"><h2 class="panel-title">${escapeHtml(formatKorDate(selected))} 일정</h2></div>
+        <div class="work-feed">${dayItems.map((s) => workFeedRowHtml(s, admin)).join("")}</div>
+      </section>`
+          : ""
+      }
+
+      <section class="panel work-feed-panel">
+        <div class="panel-head">
+          <div>
+            <h2 class="panel-title">${escapeHtml(who)}님에게 보이는 일정입니다.</h2>
+            <p class="muted" style="margin:4px 0 0">주요 업무를 등록·수정·삭제합니다. 마감 임박은 빨간 글로잉으로 표시됩니다.</p>
+          </div>
+          ${admin ? `<button type="button" class="work-fab" id="addSchedule" title="주요 업무 추가" aria-label="주요 업무 추가">✎</button>` : `<button type="button" class="btn btn-primary" id="addSchedule">일정 추가</button>`}
+        </div>
+        ${
+          Object.keys(byMonth).length
+            ? Object.keys(byMonth)
+                .sort()
+                .map((ym) => {
+                  const [y, m] = ym.split("-");
+                  return `
+                  <div class="work-month-block">
+                    <h3 class="work-month-title">${Number(y)}년 ${Number(m)}월</h3>
+                    <div class="work-feed">${byMonth[ym].map((s) => workFeedRowHtml(s, admin)).join("")}</div>
+                  </div>`;
+                })
+                .join("")
+            : `<div class="empty">등록된 일정이 없습니다. ${admin ? "연필 버튼으로 주요 업무를 추가하세요." : ""}</div>`
+        }
+      </section>
     </div>
   `;
 
+  const shiftMonth = (delta) => {
+    const d = new Date(`${state._calCursor}T00:00:00`);
+    d.setMonth(d.getMonth() + delta);
+    state._calCursor = `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, "0")}-01`;
+    renderSchedule();
+  };
+
+  $("#calPrev")?.addEventListener("click", () => shiftMonth(-1));
+  $("#calNext")?.addEventListener("click", () => shiftMonth(1));
+  $("#calToday")?.addEventListener("click", () => {
+    state._calCursor = `${today().slice(0, 7)}-01`;
+    state._calSelected = today();
+    renderSchedule();
+  });
+  el.querySelectorAll("[data-cal-weeks]").forEach((btn) => {
+    btn.addEventListener("click", () => {
+      state._calWeeks = Number(btn.dataset.calWeeks) || 4;
+      renderSchedule();
+    });
+  });
+  const weeksOrder = [1, 2, 4, 8, 12];
+  $("#calRangeMinus")?.addEventListener("click", () => {
+    const i = Math.max(0, weeksOrder.indexOf(state._calWeeks || 4) - 1);
+    state._calWeeks = weeksOrder[i];
+    renderSchedule();
+  });
+  $("#calRangePlus")?.addEventListener("click", () => {
+    const i = Math.min(weeksOrder.length - 1, weeksOrder.indexOf(state._calWeeks || 4) + 1);
+    state._calWeeks = weeksOrder[i];
+    renderSchedule();
+  });
+  el.querySelectorAll("[data-cal-day]").forEach((btn) => {
+    btn.addEventListener("click", () => {
+      state._calSelected = btn.dataset.calDay;
+      renderSchedule();
+    });
+  });
+  el.querySelectorAll("[data-sched-filter]").forEach((btn) => {
+    btn.addEventListener("click", () => {
+      state._scheduleFilter = btn.dataset.schedFilter;
+      renderSchedule();
+    });
+  });
+
   $("#addSchedule")?.addEventListener("click", () => openScheduleModal());
   el.querySelectorAll("[data-edit]").forEach((btn) =>
-    btn.addEventListener("click", () => openScheduleModal(btn.dataset.edit))
+    btn.addEventListener("click", (e) => {
+      e.stopPropagation();
+      openScheduleModal(btn.dataset.edit);
+    })
   );
   el.querySelectorAll("[data-del]").forEach((btn) =>
-    btn.addEventListener("click", () => {
+    btn.addEventListener("click", (e) => {
+      e.stopPropagation();
       if (!confirm("이 일정을 삭제할까요?")) return;
       state.schedule = state.schedule.filter((s) => s.id !== btn.dataset.del);
       saveAndRender("schedule");
+      updateRemindBell();
     })
   );
+  el.querySelectorAll("[data-status]").forEach((sel) => {
+    sel.addEventListener("change", () => {
+      const item = state.schedule.find((s) => s.id === sel.dataset.status);
+      if (!item) return;
+      item.status = sel.value;
+      persist();
+      renderSchedule();
+      updateRemindBell();
+    });
+  });
+}
+
+function workFeedRowHtml(s, admin) {
+  const canManage = admin || s.createdBy === sessionUser;
+  const days = daysUntil(s.endDate || s.date);
+  const bucket = scheduleBucket(s);
+  const urgency = scheduleUrgency(s);
+  const glowLabel =
+    bucket === "overdue" ? "지연" : bucket === "today" ? "오늘까지" : bucket === "week" ? "이번주" : "";
+  return `
+    <article class="work-feed-row">
+      ${
+        canManage
+          ? `<button type="button" class="work-edit-btn" data-edit="${s.id}" title="수정"><span>수정</span></button>`
+          : `<span class="work-edit-btn is-disabled">조회</span>`
+      }
+      <div class="work-feed-main">
+        <span class="work-feed-from">${escapeHtml(
+          s.createdBy === sessionUser ? "내가요청" : s.createdBy ? `${s.createdBy}로부터` : "TF 일정"
+        )}</span>
+        <div class="work-feed-title-row">
+          <strong>${escapeHtml(s.title)}</strong>
+        </div>
+        ${s.note ? `<p class="work-feed-note muted">${escapeHtml(s.note)}</p>` : ""}
+        <div class="work-feed-tags">
+          <span class="remind-tag">${escapeHtml(typeLabel(s.type))}</span>
+          ${s.createdBy ? `<span class="remind-tag is-person">${escapeHtml(s.createdBy)}</span>` : ""}
+          <span class="remind-tag">${escapeHtml(scheduleStatusLabel(s.status))}</span>
+          ${
+            glowLabel
+              ? `<span class="urg-pill is-glow ${urgency === "urgent" ? "is-urgent" : "is-warn"}">${glowLabel}</span>`
+              : ""
+          }
+          <span class="work-feed-date">${escapeHtml(formatKorDate(s.date))}${
+            days < 0 ? ` · ${Math.abs(days)}일 지남` : days === 0 ? " · 오늘" : ` · ${days}일 남음`
+          }</span>
+        </div>
+      </div>
+      <select class="work-status-select" data-status="${s.id}" ${canManage ? "" : "disabled"}>
+        ${["준비", "진행", "완료"]
+          .map((st) => `<option value="${st}" ${(s.status || "준비") === st ? "selected" : ""}>${st}</option>`)
+          .join("")}
+      </select>
+      ${canManage ? `<button type="button" class="work-del-btn" data-del="${s.id}">삭제</button>` : ""}
+    </article>`;
 }
 
 function renderDrive() {
@@ -6358,35 +6683,66 @@ function openRoundModal(round) {
 
 function openScheduleModal(id) {
   const item = id ? state.schedule.find((s) => s.id === id) : null;
+  const canDelete = Boolean(item) && (isAdmin() || item.createdBy === sessionUser);
   openModal({
-    title: item ? "일정 수정" : "일정 추가",
+    kicker: item ? "업무 수정" : "새 일정",
+    title: item ? "주요 업무를 수정합니다." : "업무일정을 입력합니다.",
+    submitLabel: item ? "저장" : "일정 등록",
     bodyHtml: `
-      <div class="form-grid two">
-        <label class="field full">제목
-          <input name="title" required value="${escapeAttr(item?.title || "")}" />
+      <div class="wp-form">
+        <label class="wp-field">
+          <span class="wp-label">업무명</span>
+          <input name="title" class="wp-input" required value="${escapeAttr(item?.title || "")}" placeholder="예: AID 예산 수정 및 담당자 지정" />
         </label>
-        <label class="field">시작일
-          <input name="date" type="date" required value="${escapeAttr(item?.date || today())}" />
-        </label>
-        <label class="field">종료일
-          <input name="endDate" type="date" value="${escapeAttr(item?.endDate || item?.date || today())}" />
-        </label>
-        <label class="field">유형
-          <select name="type">
-            ${["meeting", "deadline", "milestone", "other"]
+        <div class="wp-grid-2">
+          <label class="wp-field">
+            <span class="wp-label">담당</span>
+            <input name="createdBy" class="wp-input" value="${escapeAttr(item?.createdBy || currentUserName())}" />
+          </label>
+          <label class="wp-field">
+            <span class="wp-label">유형</span>
+            <select name="type" class="wp-input wp-select">
+              ${["meeting", "deadline", "milestone", "other"]
+                .map(
+                  (t) =>
+                    `<option value="${t}" ${item?.type === t ? "selected" : ""}>${typeLabel(t)}</option>`
+                )
+                .join("")}
+            </select>
+          </label>
+        </div>
+        <div class="wp-grid-2">
+          <label class="wp-field">
+            <span class="wp-label">시작일</span>
+            <input name="date" type="date" class="wp-input" required value="${escapeAttr(item?.date || today())}" />
+          </label>
+          <label class="wp-field">
+            <span class="wp-label">마감일</span>
+            <input name="endDate" type="date" class="wp-input" value="${escapeAttr(item?.endDate || item?.date || today())}" />
+          </label>
+        </div>
+        <label class="wp-field">
+          <span class="wp-label">상태</span>
+          <select name="status" class="wp-input wp-select ${
+            (item?.status || "준비") === "준비" ? "is-status-wait" : ""
+          }">
+            ${["준비", "진행", "완료"]
               .map(
-                (t) =>
-                  `<option value="${t}" ${item?.type === t ? "selected" : ""}>${typeLabel(t)}</option>`
+                (st) =>
+                  `<option value="${st}" ${(item?.status || "준비") === st ? "selected" : ""}>${st}</option>`
               )
               .join("")}
           </select>
         </label>
-        <label class="field">등록자
-          <input name="createdBy" value="${escapeAttr(item?.createdBy || currentUserName())}" />
+        <label class="wp-field">
+          <span class="wp-label">관리 목표·메모</span>
+          <textarea name="note" rows="4" class="wp-input" placeholder="목표값·협업 메모">${escapeHtml(item?.note || "")}</textarea>
         </label>
-        <label class="field full">비고
-          <textarea name="note" rows="2">${escapeHtml(item?.note || "")}</textarea>
-        </label>
+        ${
+          canDelete
+            ? `<button type="button" class="btn btn-danger btn-sm" id="scheduleModalDelete">이 일정 삭제</button>`
+            : ""
+        }
       </div>
     `,
     onSubmit: (fd) => {
@@ -6397,12 +6753,21 @@ function openScheduleModal(id) {
         type: fd.get("type"),
         createdBy: fd.get("createdBy").trim(),
         note: fd.get("note").trim(),
+        status: fd.get("status") || "준비",
       };
       if (item) Object.assign(item, data);
       else state.schedule.push({ id: uid("s"), ...data });
       saveAndRender("schedule");
+      updateRemindBell();
       return true;
     },
+  });
+  $("#scheduleModalDelete")?.addEventListener("click", () => {
+    if (!item || !confirm("이 일정을 삭제할까요?")) return;
+    state.schedule = state.schedule.filter((s) => s.id !== item.id);
+    closeModal();
+    saveAndRender("schedule");
+    updateRemindBell();
   });
 }
 
@@ -7064,7 +7429,10 @@ async function boot() {
   $("#btnRemindBell")?.addEventListener("click", () => openRemindPopup(true));
   $("#btnRequestPlane")?.addEventListener("click", () => openRequestPopup(true));
   $("#remindCloseTop")?.addEventListener("click", closeRemindPopup);
-  $("#remindClose")?.addEventListener("click", closeRemindPopup);
+  $("#remindGoSchedule")?.addEventListener("click", () => {
+    closeRemindPopup();
+    setView("schedule");
+  });
   $("#requestCloseTop")?.addEventListener("click", closeRequestPopup);
   $("#requestClose")?.addEventListener("click", closeRequestPopup);
   $("#requestGoTab")?.addEventListener("click", () => {
@@ -7078,10 +7446,6 @@ async function boot() {
     },
     { capture: true }
   );
-  $("#remindSnoozeAll")?.addEventListener("click", () => {
-    getUpcomingReminders().forEach((s) => snoozeReminder(s.id));
-    closeRemindPopup();
-  });
   $("#remindDismissAll")?.addEventListener("click", () => {
     getUpcomingReminders({ includeDismissed: true }).forEach((s) => dismissReminder(s.id));
     closeRemindPopup();

@@ -5821,3 +5821,453 @@ dialog#modal::backdrop {
     flex: 1 1 auto;
   }
 }
+
+/* ?? Work Pulse 리마인드 · 일정표 · 업무 피드 ?? */
+.glow-red-text {
+  color: #ff3b30;
+  font-weight: 800;
+  text-shadow: 0 0 8px rgba(255, 59, 48, 0.55), 0 0 18px rgba(255, 59, 48, 0.35);
+}
+
+.remind-card-pulse {
+  width: min(560px, 100%);
+  max-height: min(88vh, 720px);
+  padding: 20px 18px 14px;
+}
+.remind-body {
+  display: flex;
+  flex-direction: column;
+  gap: 14px;
+  max-height: min(52vh, 420px);
+  overflow: auto;
+}
+.remind-section-head {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  margin-bottom: 6px;
+}
+.remind-section-badge {
+  display: inline-flex;
+  align-items: center;
+  padding: 5px 10px;
+  border-radius: 8px;
+  background: var(--bg-chip);
+  color: var(--ink);
+  font-size: var(--text-xs);
+  font-weight: 800;
+}
+.remind-section-badge.is-glow {
+  background: #ff3b30;
+  color: #fff;
+  box-shadow: 0 0 0 3px rgba(255, 59, 48, 0.22), 0 0 18px rgba(255, 59, 48, 0.45);
+}
+.remind-section-count {
+  display: inline-flex;
+  padding: 3px 9px;
+  border-radius: 980px;
+  background: rgba(255, 59, 48, 0.1);
+  color: #c41e1a;
+  font-size: var(--text-xs);
+  font-weight: 750;
+}
+.remind-section-hint {
+  margin: 0 0 8px;
+  font-size: var(--text-sm);
+}
+.remind-section-cards {
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+}
+.remind-task-card {
+  border: 1px solid var(--line);
+  border-radius: 12px;
+  padding: 10px 12px;
+  background: #fff;
+  cursor: pointer;
+  text-align: left;
+}
+.remind-task-card:hover {
+  border-color: rgba(0, 113, 227, 0.35);
+}
+.remind-task-from {
+  font-size: var(--text-xs);
+  color: var(--ink-faint);
+  font-weight: 650;
+}
+.remind-task-row {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 6px;
+  margin-top: 4px;
+}
+.remind-task-title {
+  font-size: var(--text-sm);
+  font-weight: 800;
+}
+.remind-tag {
+  display: inline-flex;
+  padding: 2px 8px;
+  border-radius: 980px;
+  border: 1px solid rgba(0, 113, 227, 0.28);
+  color: var(--accent);
+  font-size: 0.68rem;
+  font-weight: 700;
+}
+.remind-tag.is-person {
+  background: var(--accent-soft);
+  border-color: transparent;
+}
+.remind-tag.is-comment {
+  background: rgba(0, 113, 227, 0.12);
+}
+.remind-task-meta {
+  margin: 6px 0 0;
+  font-size: var(--text-xs);
+}
+.remind-footer-pulse {
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  gap: 10px;
+  flex-wrap: wrap;
+}
+.remind-opts {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 10px;
+}
+.remind-check {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  font-size: var(--text-xs);
+  color: var(--ink-soft);
+}
+.remind-footer-actions {
+  display: flex;
+  gap: 6px;
+}
+
+.schedule-pulse {
+  display: flex;
+  flex-direction: column;
+  gap: 12px;
+}
+.schedule-pulse-hero {
+  text-align: center;
+  padding: 8px 4px 4px;
+}
+.schedule-pulse-title {
+  margin: 0;
+  font-size: clamp(1.2rem, 2.6vw, 1.5rem);
+  font-weight: 800;
+  letter-spacing: -0.03em;
+}
+.schedule-urgency-chips {
+  display: flex;
+  justify-content: center;
+  flex-wrap: wrap;
+  gap: 6px;
+  margin-top: 12px;
+}
+.urg-chip {
+  border: none;
+  border-radius: 980px;
+  padding: 7px 12px;
+  font-size: var(--text-xs);
+  font-weight: 750;
+  background: var(--bg-chip);
+  color: var(--ink-soft);
+  cursor: pointer;
+}
+.urg-chip strong {
+  font-size: 0.95rem;
+  margin-right: 2px;
+}
+.urg-chip.is-urgent {
+  background: rgba(255, 59, 48, 0.12);
+  color: #c41e1a;
+}
+.urg-chip.is-warn {
+  background: rgba(255, 149, 0, 0.14);
+  color: #b36b00;
+}
+.urg-chip.is-check {
+  background: rgba(52, 199, 89, 0.14);
+  color: #1f7a4c;
+}
+.urg-chip.is-on {
+  box-shadow: inset 0 0 0 1.5px currentColor;
+}
+.schedule-nearest {
+  margin: 10px 0 0;
+  font-size: var(--text-sm);
+}
+
+.cal-toolbar {
+  display: flex;
+  flex-direction: column;
+  gap: 10px;
+  margin-bottom: 12px;
+}
+.cal-range-group {
+  display: flex;
+  justify-content: center;
+  flex-wrap: wrap;
+  gap: 4px;
+  align-items: center;
+}
+.cal-range-btn {
+  border: 1px solid var(--line);
+  background: #fff;
+  border-radius: 980px;
+  padding: 6px 10px;
+  font-size: var(--text-xs);
+  font-weight: 650;
+  color: var(--ink-soft);
+  cursor: pointer;
+}
+.cal-range-btn.active {
+  background: var(--ink);
+  color: #fff;
+  border-color: var(--ink);
+}
+.cal-nav-row {
+  display: flex;
+  justify-content: center;
+  align-items: center;
+  gap: 8px;
+  flex-wrap: wrap;
+}
+.cal-nav-title {
+  text-align: center;
+  min-width: 7rem;
+}
+.cal-nav-title strong {
+  display: block;
+  font-size: var(--text-md);
+}
+.cal-legend {
+  display: flex;
+  justify-content: center;
+  gap: 12px;
+  font-size: var(--text-xs);
+  color: var(--ink-soft);
+}
+.cal-legend .leg {
+  display: inline-block;
+  width: 8px;
+  height: 8px;
+  border-radius: 50%;
+  margin-right: 4px;
+}
+.cal-legend .leg.urgent { background: #ff3b30; }
+.cal-legend .leg.warn { background: #ff9500; }
+.cal-legend .leg.check { background: #34c759; }
+
+.pulse-cal .cal-cell {
+  position: relative;
+  border: 1px solid transparent;
+  background: #fff;
+  min-height: 72px;
+  cursor: pointer;
+  text-align: left;
+  font: inherit;
+  color: inherit;
+}
+.pulse-cal .cal-cell.is-urgent-day {
+  background: rgba(255, 59, 48, 0.08);
+}
+.pulse-cal .cal-cell.is-selected {
+  border-color: var(--ink);
+  box-shadow: inset 0 0 0 1.5px var(--ink);
+}
+.cal-month-tab {
+  position: absolute;
+  left: 0;
+  top: 8px;
+  background: var(--ink);
+  color: #fff;
+  font-size: 0.58rem;
+  font-weight: 800;
+  padding: 2px 4px 2px 3px;
+  border-radius: 0 4px 4px 0;
+}
+.cal-badge {
+  position: absolute;
+  top: 4px;
+  right: 4px;
+  min-width: 16px;
+  height: 16px;
+  border-radius: 50%;
+  background: #ff3b30;
+  color: #fff;
+  font-size: 0.62rem;
+  font-weight: 800;
+  display: grid;
+  place-items: center;
+  box-shadow: 0 0 10px rgba(255, 59, 48, 0.55);
+}
+.cal-holiday {
+  font-size: 0.58rem;
+  color: #c41e1a;
+  font-weight: 700;
+  line-height: 1.2;
+}
+.cal-urgent-bar {
+  position: absolute;
+  left: 6px;
+  right: 6px;
+  bottom: 4px;
+  height: 4px;
+  border-radius: 4px;
+  background: #ff3b30;
+  box-shadow: 0 0 8px rgba(255, 59, 48, 0.55);
+}
+.cal-dot.urgent {
+  background: rgba(255, 59, 48, 0.14);
+  color: #c41e1a;
+}
+
+.work-feed-panel .panel-head {
+  align-items: flex-start;
+}
+.work-fab {
+  width: 44px;
+  height: 44px;
+  border: none;
+  border-radius: 50%;
+  background: var(--accent);
+  color: #fff;
+  font-size: 1.1rem;
+  cursor: pointer;
+  box-shadow: 0 8px 20px rgba(0, 113, 227, 0.35);
+}
+.work-fab:hover {
+  background: var(--accent-hover);
+}
+.work-month-title {
+  margin: 14px 0 8px;
+  font-size: var(--text-sm);
+  font-weight: 800;
+  color: var(--ink-soft);
+}
+.work-feed {
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+}
+.work-feed-row {
+  display: grid;
+  grid-template-columns: auto 1fr auto auto;
+  gap: 10px;
+  align-items: center;
+  padding: 12px;
+  border: 1px solid var(--line);
+  border-radius: 14px;
+  background: #fff;
+}
+.work-edit-btn {
+  width: 52px;
+  height: 52px;
+  border: none;
+  border-radius: 50%;
+  background: var(--accent);
+  color: #fff;
+  font-size: var(--text-xs);
+  font-weight: 800;
+  cursor: pointer;
+}
+.work-edit-btn.is-disabled {
+  background: var(--bg-chip);
+  color: var(--ink-faint);
+  display: grid;
+  place-items: center;
+}
+.work-feed-from {
+  display: block;
+  font-size: var(--text-xs);
+  color: var(--ink-faint);
+  font-weight: 650;
+}
+.work-feed-title-row strong {
+  font-size: var(--text-sm);
+}
+.work-feed-note {
+  margin: 4px 0 0;
+  font-size: var(--text-xs);
+}
+.work-feed-tags {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 6px;
+  align-items: center;
+  margin-top: 8px;
+}
+.urg-pill {
+  display: inline-flex;
+  padding: 3px 8px;
+  border-radius: 8px;
+  font-size: 0.68rem;
+  font-weight: 800;
+  color: #fff;
+}
+.urg-pill.is-urgent {
+  background: #ff3b30;
+}
+.urg-pill.is-warn {
+  background: #ff9500;
+}
+.urg-pill.is-glow {
+  box-shadow: 0 0 0 3px rgba(255, 59, 48, 0.18), 0 0 14px rgba(255, 59, 48, 0.45);
+}
+.work-feed-date {
+  font-size: var(--text-xs);
+  color: var(--ink-soft);
+  font-weight: 650;
+}
+.work-status-select {
+  border: 1px solid var(--line);
+  border-radius: 980px;
+  padding: 6px 10px;
+  font-size: var(--text-xs);
+  font-weight: 700;
+  background: #fff;
+}
+.work-del-btn {
+  border: none;
+  border-radius: 10px;
+  padding: 10px 12px;
+  background: #8b5e3c;
+  color: #fff;
+  font-size: var(--text-xs);
+  font-weight: 800;
+  cursor: pointer;
+}
+.wp-select.is-status-wait {
+  background: rgba(255, 59, 48, 0.08);
+  color: #c41e1a;
+}
+.sr-only {
+  position: absolute;
+  width: 1px;
+  height: 1px;
+  padding: 0;
+  margin: -1px;
+  overflow: hidden;
+  clip: rect(0, 0, 0, 0);
+  border: 0;
+}
+
+@media (max-width: 720px) {
+  .work-feed-row {
+    grid-template-columns: auto 1fr;
+  }
+  .work-status-select,
+  .work-del-btn {
+    grid-column: 1 / -1;
+  }
+}

@@ -128,20 +128,25 @@
   </div>
 
   <div id="remindBackdrop" class="remind-backdrop" hidden>
-    <div class="remind-card" role="dialog" aria-modal="true" aria-labelledby="remindTitle">
+    <div class="remind-card remind-card-pulse" role="dialog" aria-modal="true" aria-labelledby="remindTitle">
       <div class="remind-head">
         <div>
-          <p class="remind-kicker">Schedule Alert</p>
-          <h2 id="remindTitle" class="remind-title">다가오는 일정이<br />있습니다.</h2>
+          <p class="remind-kicker">업무 리마인드</p>
+          <h2 id="remindTitle" class="remind-title"><span class="name-honorific" id="remindWho">님</span>, 지금 챙길 일정입니다.</h2>
         </div>
-        <button type="button" class="btn btn-sm btn-ghost" id="remindCloseTop">닫기</button>
+        <button type="button" class="modal-close-text" id="remindCloseTop">닫기</button>
       </div>
-      <p class="remind-desc">마감·회의까지 남은 일수를 확인하세요. 닫아도 상단 알람에서 다시 볼 수 있습니다.</p>
-      <ul class="remind-list" id="remindList"></ul>
-      <div class="remind-footer">
-        <button type="button" class="btn btn-ghost" id="remindClose">닫기</button>
-        <button type="button" class="btn btn-ghost" id="remindSnoozeAll">모두 나중에</button>
-        <button type="button" class="btn btn-primary" id="remindDismissAll">모두 확인</button>
+      <p class="remind-desc" id="remindDesc">등록·수정 권한으로 접속했습니다.</p>
+      <div class="remind-body" id="remindList"></div>
+      <div class="remind-footer remind-footer-pulse">
+        <div class="remind-opts">
+          <label class="remind-check"><input type="checkbox" id="remindHideToday" /> 오늘하루 보지 않기</label>
+          <label class="remind-check"><input type="checkbox" id="remindHideForever" /> 다시 보지 않기</label>
+        </div>
+        <div class="remind-footer-actions">
+          <button type="button" class="btn" id="remindGoSchedule">내 업무 보기</button>
+          <button type="button" class="btn btn-primary" id="remindDismissAll">확인</button>
+        </div>
       </div>
     </div>
   </div>
