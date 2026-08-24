@@ -248,7 +248,7 @@ a {
   font-weight: 600;
 }
 
-/* 관리자 전용: 설정 메뉴 강조 */
+/* ê´ë¦¬ì ì ì©: ì¤ì  ë©ë´ ê°ì¡° */
 body.is-admin #mainNav .tab-btn[data-nav="setup"] {
   color: #c62828;
   font-weight: 700;
@@ -519,7 +519,7 @@ body.is-admin #mainNav .tab-btn[data-nav="setup"].active {
   color: var(--accent);
 }
 
-/* 홈·협업 허브 */
+/* íÂ·íì íë¸ */
 .hub-doc-banner {
   display: flex;
   justify-content: space-between;
@@ -1518,7 +1518,7 @@ dialog::backdrop {
   display: none !important;
 }
 
-/* 오늘 뭐먹지 */
+/* ì¤ë ë­ë¨¹ì§ */
 .food-page {
   max-width: 980px;
   margin: 0 auto;
@@ -2111,29 +2111,33 @@ body:not(.is-admin):not(.is-food) .food-catalog-panel {
   100% { opacity: 0; }
 }
 
-.remind-backdrop {
+.remind-overlay {
   position: fixed;
   inset: 0;
   z-index: 90;
-  display: grid;
-  place-items: center;
-  padding: 16px;
-  background: rgba(0, 0, 0, 0.4);
-  backdrop-filter: blur(8px);
-  -webkit-backdrop-filter: blur(8px);
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  padding: 20px 16px;
+  background: rgba(29, 29, 31, 0.36);
+  backdrop-filter: blur(6px);
+  -webkit-backdrop-filter: blur(6px);
 }
-.remind-backdrop[hidden] {
+.remind-overlay[hidden] {
   display: none !important;
 }
 
 .remind-card {
-  width: min(480px, 100%);
-  max-height: min(84vh, 640px);
-  overflow: auto;
-  background: #fff;
+  position: relative;
+  width: min(520px, 100%);
+  max-height: min(80vh, 720px);
+  display: flex;
+  flex-direction: column;
+  overflow: hidden;
+  background: var(--bg-elevated, #fff);
+  border: 1px solid var(--line);
   border-radius: 18px;
-  padding: 20px 18px 16px;
-  box-shadow: 0 24px 80px rgba(0, 0, 0, 0.22);
+  box-shadow: none;
   animation: fade-up 280ms var(--ease);
 }
 
@@ -2141,9 +2145,9 @@ body:not(.is-admin):not(.is-food) .food-catalog-panel {
   position: relative;
 }
 
-.request-autoclose {
+.remind-autoclose {
   position: absolute;
-  top: 16px;
+  top: 14px;
   left: 14px;
   z-index: 2;
   min-width: 36px;
@@ -2163,12 +2167,12 @@ body:not(.is-admin):not(.is-food) .food-catalog-panel {
   user-select: none;
 }
 
-.request-autoclose.is-urgent {
+.remind-autoclose.is-urgent {
   background: rgba(196, 50, 50, 0.12);
   color: #a32020;
 }
 
-.request-popup-card:has(.request-autoclose:not([hidden])) .remind-head > div {
+.remind-card:has(.remind-autoclose:not([hidden])) .remind-head > div {
   padding-left: 40px;
 }
 
@@ -2177,9 +2181,27 @@ body:not(.is-admin):not(.is-food) .food-catalog-panel {
   align-items: flex-start;
   justify-content: space-between;
   gap: 12px;
+  padding: 16px 18px;
+  border-bottom: 1px solid var(--line);
 }
 
-.remind-kicker {
+.remind-head h2 {
+  margin: 2px 0 6px;
+  font-size: 1.15rem;
+  font-weight: 700;
+  letter-spacing: -0.03em;
+  line-height: 1.25;
+}
+
+.remind-head .muted {
+  margin: 0;
+  font-size: var(--text-sm);
+  color: var(--ink-soft);
+  line-height: 1.4;
+}
+
+.remind-kicker,
+.load-kicker {
   margin: 0 0 4px;
   font-size: var(--text-xs);
   font-weight: 600;
@@ -2201,6 +2223,12 @@ body:not(.is-admin):not(.is-food) .food-catalog-panel {
   line-height: 1.35;
 }
 
+.remind-body {
+  padding: 8px 18px 14px;
+  overflow: auto;
+  max-height: min(52vh, 420px);
+}
+
 .remind-list {
   list-style: none;
   margin: 0;
@@ -2212,12 +2240,94 @@ body:not(.is-admin):not(.is-food) .food-catalog-panel {
 
 .remind-item {
   display: flex;
-  gap: 8px;
+  flex-direction: column;
   align-items: flex-start;
-  justify-content: space-between;
+  width: 100%;
+  margin-bottom: 6px;
   padding: 10px 12px;
-  border-radius: 12px;
-  background: var(--bg);
+  border: 1px solid var(--line);
+  border-radius: 10px;
+  background: var(--bg-elevated, #fff);
+  box-shadow: none;
+  text-align: left;
+  cursor: pointer;
+  font: inherit;
+  color: inherit;
+}
+
+.remind-item:hover {
+  border-color: rgba(0, 113, 227, 0.35);
+}
+
+.remind-from-row {
+  display: inline-flex;
+  align-items: center;
+  flex-wrap: wrap;
+  gap: 6px;
+  margin-bottom: 4px;
+}
+
+.from-owner {
+  font-size: 0.62rem;
+  font-weight: 500;
+  line-height: 1.2;
+  color: var(--ink-faint);
+  letter-spacing: -0.02em;
+}
+
+.origin-tag {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  min-width: 3.8em;
+  padding: 3px 7px;
+  border-radius: 6px;
+  font-size: 0.62rem;
+  font-weight: 700;
+  letter-spacing: -0.02em;
+  white-space: nowrap;
+}
+.origin-tag.solo {
+  background: rgba(0, 113, 227, 0.06);
+  color: var(--accent);
+}
+.origin-tag.offered {
+  background: rgba(88, 86, 214, 0.12);
+  color: #5856d6;
+}
+.origin-tag.comment {
+  background: rgba(90, 150, 220, 0.1);
+  color: #6b8eb8;
+}
+
+.remind-item strong {
+  font-size: var(--text-sm);
+  font-weight: 800;
+  letter-spacing: -0.02em;
+}
+
+.remind-item-meta {
+  margin-top: 3px;
+  font-size: var(--text-xs);
+  color: var(--ink-faint);
+  line-height: 1.35;
+}
+
+.remind-comment-preview {
+  display: block;
+  max-width: 100%;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.remind-yoy.is-late {
+  color: #d08078;
+  font-weight: 600;
+}
+.remind-yoy.is-early {
+  color: #5aaa70;
+  font-weight: 600;
 }
 
 .remind-item-main {
@@ -2256,13 +2366,6 @@ body:not(.is-admin):not(.is-food) .food-catalog-panel {
   line-height: 1.35;
 }
 
-.remind-item-meta {
-  margin-top: 3px;
-  font-size: var(--text-xs);
-  color: var(--ink-faint);
-  line-height: 1.35;
-}
-
 .remind-item-actions {
   display: flex;
   flex-direction: column;
@@ -2270,13 +2373,52 @@ body:not(.is-admin):not(.is-food) .food-catalog-panel {
   flex-shrink: 0;
 }
 
-.remind-footer {
+.remind-footer,
+.remind-foot {
   display: flex;
-  justify-content: flex-end;
-  gap: 6px;
-  margin-top: 12px;
-  padding-top: 10px;
+  align-items: center;
+  justify-content: space-between;
+  gap: 12px;
+  padding: 16px 18px;
   border-top: 1px solid var(--line);
+}
+
+.remind-hide-opts {
+  display: flex;
+  flex-direction: column;
+  gap: 4px;
+  min-width: 0;
+}
+
+.remind-hide {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  margin: 0;
+  font-size: var(--text-xs);
+  color: var(--ink-soft);
+  cursor: pointer;
+  user-select: none;
+}
+
+.remind-hide input {
+  width: 15px;
+  height: 15px;
+  margin: 0;
+  accent-color: var(--accent);
+}
+
+.remind-foot-actions {
+  display: flex;
+  flex-shrink: 0;
+  gap: 8px;
+  margin-left: auto;
+}
+
+.remind-confirm-sec {
+  font-variant-numeric: tabular-nums;
+  font-weight: 800;
+  opacity: 0.9;
 }
 
 .month-cal {
@@ -3061,7 +3203,7 @@ body:not(.is-admin):not(.is-budget) .budget-manage-only {
   }
 }
 
-/* —— Mobile / tablet (iPhone · Galaxy · iPad) —— */
+/* ââ Mobile / tablet (iPhone Â· Galaxy Â· iPad) ââ */
 html {
   -webkit-text-size-adjust: 100%;
   text-size-adjust: 100%;
@@ -3107,7 +3249,7 @@ input,
 select,
 textarea,
 button {
-  font-size: 16px; /* iOS 자동 확대 방지 */
+  font-size: 16px; /* iOS ìë íë ë°©ì§ */
 }
 
 .wheel {
@@ -3140,7 +3282,6 @@ dialog#modal::backdrop {
 
 .remind-card {
   max-height: calc(100dvh - 32px - env(safe-area-inset-top, 0px) - env(safe-area-inset-bottom, 0px));
-  overflow: auto;
   -webkit-overflow-scrolling: touch;
 }
 
@@ -3231,13 +3372,13 @@ dialog#modal::backdrop {
 }
 
 @supports (padding: max(0px)) {
-  .remind-backdrop {
+  .remind-overlay {
     padding: max(12px, env(safe-area-inset-top)) max(12px, env(safe-area-inset-right))
       max(12px, env(safe-area-inset-bottom)) max(12px, env(safe-area-inset-left));
   }
 }
 
-/* —— 사용방법 (Work Pulse overview feel) —— */
+/* ââ ì¬ì©ë°©ë² (Work Pulse overview feel) ââ */
 .overview-page {
   max-width: 720px;
   margin: 0 auto;
@@ -3353,7 +3494,7 @@ dialog#modal::backdrop {
   }
 }
 
-/* —— AI 취합분석 / 보고서 그림 —— */
+/* ââ AI ì·¨í©ë¶ì / ë³´ê³ ì ê·¸ë¦¼ ââ */
 .ai-page {
   display: flex;
   flex-direction: column;
@@ -3584,7 +3725,7 @@ dialog#modal::backdrop {
   }
 }
 
-/* —— 레이아웃 와이어프레임 —— */
+/* ââ ë ì´ìì ìì´ì´íë ì ââ */
 .lw-slide {
   width: 100%;
   height: 100%;
@@ -3981,7 +4122,7 @@ dialog#modal::backdrop {
   outline: 2px solid rgba(29, 107, 53, 0.35);
 }
 
-/* 작도 단계별 드러내기 */
+/* ìë ë¨ê³ë³ ëë¬ë´ê¸° */
 .dw-slide {
   width: 100%;
   height: 100%;
@@ -4252,7 +4393,7 @@ dialog#modal::backdrop {
   transform: none;
 }
 
-/* 연성대 참고도식형 와이어프레임 */
+/* ì°ì±ë ì°¸ê³ ëìí ìì´ì´íë ì */
 .dw-slide.dw-rich {
   gap: 2.5%;
   padding: 3.5% 3%;
@@ -4916,7 +5057,7 @@ dialog#modal::backdrop {
   color: var(--accent);
 }
 
-/* —— 윤독·리뷰 —— */
+/* ââ ì¤ëÂ·ë¦¬ë·° ââ */
 .review-page {
   display: flex;
   flex-direction: column;
@@ -5333,7 +5474,7 @@ dialog#modal::backdrop {
   }
 }
 
-/* —— 보고서 만들기 (Work Pulse IA/톤 계승) —— */
+/* ââ ë³´ê³ ì ë§ë¤ê¸° (Work Pulse IA/í¤ ê³ì¹) ââ */
 .report-make {
   gap: 14px;
 }
@@ -5527,7 +5668,7 @@ dialog#modal::backdrop {
   }
 }
 
-/* ?? Work Pulse ��� �� ���� �Է� ?? */
+/* ?? Work Pulse ¸ð´Þ ¡¤ ¿¹»ê ÀÔ·Â ?? */
 dialog.wp-modal,
 dialog#modal {
   width: min(560px, calc(100vw - 24px));
@@ -5822,133 +5963,106 @@ dialog#modal::backdrop {
   }
 }
 
-/* ?? Work Pulse �����ε� �� ����ǥ �� ���� �ǵ� ?? */
-.glow-red-text {
-  color: #ff3b30;
-  font-weight: 800;
-  text-shadow: 0 0 8px rgba(255, 59, 48, 0.55), 0 0 18px rgba(255, 59, 48, 0.35);
+/* —— Work Pulse 리마인드 섹션 —— */
+@keyframes tag-twinkle {
+  0%,
+  100% {
+    box-shadow: 0 0 0 0 rgba(255, 59, 48, 0.55);
+  }
+  50% {
+    box-shadow: 0 0 0 6px rgba(255, 59, 48, 0);
+  }
 }
 
-.remind-card-pulse {
-  width: min(560px, 100%);
-  max-height: min(88vh, 720px);
-  padding: 20px 18px 14px;
+.remind-section {
+  margin-top: 14px;
 }
-.remind-body {
-  display: flex;
-  flex-direction: column;
-  gap: 14px;
-  max-height: min(52vh, 420px);
-  overflow: auto;
+.remind-section:first-child {
+  margin-top: 6px;
 }
-.remind-section-head {
+.remind-section h3 {
   display: flex;
   align-items: center;
-  gap: 8px;
-  margin-bottom: 6px;
-}
-.remind-section-badge {
-  display: inline-flex;
-  align-items: center;
-  padding: 5px 10px;
-  border-radius: 8px;
-  background: var(--bg-chip);
-  color: var(--ink);
-  font-size: var(--text-xs);
-  font-weight: 800;
-}
-.remind-section-badge.is-glow {
-  background: #ff3b30;
-  color: #fff;
-  box-shadow: 0 0 0 3px rgba(255, 59, 48, 0.22), 0 0 18px rgba(255, 59, 48, 0.45);
-}
-.remind-section-count {
-  display: inline-flex;
-  padding: 3px 9px;
-  border-radius: 980px;
-  background: rgba(255, 59, 48, 0.1);
-  color: #c41e1a;
-  font-size: var(--text-xs);
-  font-weight: 750;
-}
-.remind-section-hint {
-  margin: 0 0 8px;
-  font-size: var(--text-sm);
-}
-.remind-section-cards {
-  display: flex;
-  flex-direction: column;
-  gap: 8px;
-}
-.remind-task-card {
-  border: 1px solid var(--line);
-  border-radius: 12px;
-  padding: 10px 12px;
-  background: #fff;
-  cursor: pointer;
-  text-align: left;
-}
-.remind-task-card:hover {
-  border-color: rgba(0, 113, 227, 0.35);
-}
-.remind-task-from {
-  font-size: var(--text-xs);
-  color: var(--ink-faint);
-  font-weight: 650;
-}
-.remind-task-row {
-  display: flex;
-  flex-wrap: wrap;
-  align-items: center;
-  gap: 6px;
-  margin-top: 4px;
-}
-.remind-task-title {
-  font-size: var(--text-sm);
-  font-weight: 800;
-}
-.remind-tag {
-  display: inline-flex;
-  padding: 2px 8px;
-  border-radius: 980px;
-  border: 1px solid rgba(0, 113, 227, 0.28);
-  color: var(--accent);
-  font-size: 0.68rem;
-  font-weight: 700;
-}
-.remind-tag.is-person {
-  background: var(--accent-soft);
-  border-color: transparent;
-}
-.remind-tag.is-comment {
-  background: rgba(0, 113, 227, 0.12);
-}
-.remind-task-meta {
-  margin: 6px 0 0;
-  font-size: var(--text-xs);
-}
-.remind-footer-pulse {
-  display: flex;
   justify-content: space-between;
-  align-items: center;
-  gap: 10px;
-  flex-wrap: wrap;
+  gap: 8px;
+  margin: 0 0 8px;
+  padding: 6px 8px 6px 10px;
+  border-radius: 8px;
+  font-size: 0.72rem;
+  font-weight: 700;
+  letter-spacing: -0.02em;
+  color: var(--ink);
+  background: transparent;
 }
-.remind-opts {
-  display: flex;
-  flex-wrap: wrap;
-  gap: 10px;
-}
-.remind-check {
+.remind-section-label {
   display: inline-flex;
   align-items: center;
   gap: 6px;
-  font-size: var(--text-xs);
+  min-width: 0;
+}
+.feedback-bird {
+  font-size: 1.05rem;
+  line-height: 1;
+}
+.remind-count {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  min-width: 0;
+  padding: 1px 6px;
+  border-radius: 980px;
+  font-size: 0.64rem;
+  font-weight: 650;
+  letter-spacing: 0;
+  line-height: 1.35;
+  background: var(--bg-chip);
   color: var(--ink-soft);
 }
-.remind-footer-actions {
-  display: flex;
-  gap: 6px;
+.remind-section.is-overdue h3 {
+  font-size: var(--text-sm);
+  color: #c41e1a;
+}
+.remind-title-glow {
+  display: inline-flex;
+  align-items: center;
+  padding: 1px 8px;
+  border-radius: 6px;
+  background: #ff3b30;
+  color: #fff;
+  animation: tag-twinkle 1.05s ease-in-out infinite;
+  box-shadow: 0 0 0 0 rgba(255, 59, 48, 0.55);
+}
+.remind-section.is-overdue .remind-count {
+  background: rgba(255, 59, 48, 0.12);
+  color: #c41e1a;
+}
+.remind-note {
+  margin: -2px 0 8px;
+  padding: 0 10px;
+  font-size: 0.72rem;
+  font-weight: 650;
+  line-height: 1.45;
+  color: #c41e1a;
+}
+.remind-section.is-urgent h3 {
+  font-size: var(--text-sm);
+}
+.remind-section.is-urgent .remind-count {
+  background: rgba(255, 59, 48, 0.08);
+  color: #c96b66;
+}
+.remind-section.is-soon .remind-count {
+  background: rgba(255, 149, 0, 0.08);
+  color: #b07a30;
+}
+.remind-section.is-comment .remind-count {
+  background: var(--accent-soft, rgba(0, 113, 227, 0.12));
+  color: var(--accent);
+}
+
+.glow-red-text {
+  color: #c41e1a;
+  font-weight: 700;
 }
 
 .schedule-pulse {

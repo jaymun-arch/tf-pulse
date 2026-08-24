@@ -1216,43 +1216,46 @@ function updateRemindBell() {
 
 function remindTaskCardHtml(s, sourceLabel = "") {
   const days = s.daysUntil ?? daysUntil(s.endDate || s.date);
-  const bucket = days < 0 ? "overdue" : days === 0 ? "today" : "soon";
+  const from =
+    sourceLabel ||
+    (s.createdBy === sessionUser ? "내가요청" : s.createdBy || "TF 일정");
+  const timing =
+    days < 0
+      ? ` · <span class="remind-yoy is-late">${Math.abs(days)}일 지남</span>`
+      : days === 0
+        ? ""
+        : ` · ${days}일 남음`;
   return `
-    <article class="remind-task-card" data-goto-schedule="${escapeAttr(s.id)}">
-      <div class="remind-task-top">
-        <span class="remind-task-from">${escapeHtml(sourceLabel || (s.createdBy ? `${s.createdBy}` : "TF 일정"))}</span>
-      </div>
-      <div class="remind-task-row">
-        <strong class="remind-task-title">${escapeHtml(s.title)}</strong>
-        <span class="remind-tag">${escapeHtml(typeLabel(s.type))}</span>
-        ${s.createdBy ? `<span class="remind-tag is-person">${escapeHtml(s.createdBy)}</span>` : ""}
-      </div>
-      <p class="remind-task-meta muted">${escapeHtml(formatKorDate(s.date))}${
+    <button type="button" class="remind-item" data-goto-schedule="${escapeAttr(s.id)}">
+      <span class="remind-from-row">
+        <span class="from-owner">${escapeHtml(from)}</span>
+        <span class="origin-tag solo">${escapeHtml(typeLabel(s.type))}</span>
+        ${s.createdBy ? `<span class="origin-tag offered">${escapeHtml(s.createdBy)}</span>` : ""}
+      </span>
+      <strong>${escapeHtml(s.title)}</strong>
+      <span class="remind-item-meta">${escapeHtml(formatKorDate(s.date))}${
         s.endDate && s.endDate !== s.date ? ` ~ ${escapeHtml(formatKorDate(s.endDate))}` : ""
-      }${s.note ? ` · ${escapeHtml(s.note)}` : ""}${
-        days < 0 ? ` · <span class="glow-red-text">작년 대비 자료 없음</span>` : days === 0 ? "" : days > 0 ? ` · ${days}일 남음` : ""
-      }</p>
-      <span class="sr-only">${bucket}</span>
-    </article>`;
+      }${s.note ? ` · ${escapeHtml(s.note)}` : ""}${timing}</span>
+    </button>`;
 }
 
 function remindFeedCardHtml(r) {
   const days = r.dueDate ? daysUntil(r.dueDate) : null;
+  const timing =
+    days != null && days < 0
+      ? ` · <span class="remind-yoy is-late">${Math.abs(days)}일 지남</span>`
+      : "";
   return `
-    <article class="remind-task-card" data-goto-request="${escapeAttr(r.id)}">
-      <div class="remind-task-top">
-        <span class="remind-task-from">${escapeHtml(r.requester || "관리자")}로부터</span>
-      </div>
-      <div class="remind-task-row">
-        <strong class="remind-task-title">${escapeHtml(r.title)}</strong>
-        <span class="remind-tag is-comment">코멘트</span>
-      </div>
-      <p class="remind-task-meta muted">${escapeHtml(r.requester || "관리자")} · ${
+    <button type="button" class="remind-item remind-comment-item" data-goto-request="${escapeAttr(r.id)}">
+      <span class="remind-from-row">
+        <span class="from-owner">${escapeHtml(r.requester || "관리자")}로부터</span>
+        <span class="origin-tag comment">코멘트</span>
+      </span>
+      <strong>${escapeHtml(r.title)}</strong>
+      <span class="remind-item-meta remind-comment-preview">${escapeHtml(r.requester || "관리자")} · ${
         r.dueDate ? escapeHtml(formatKorDate(r.dueDate)) : "기한 없음"
-      }${days != null && days < 0 ? ` · <span class="glow-red-text">${Math.abs(days)}일 지남</span>` : ""}${
-        r.memo ? ` · ${escapeHtml(String(r.memo).slice(0, 60))}` : ""
-      }</p>
-    </article>`;
+      }${timing}${r.memo ? ` · ${escapeHtml(String(r.memo).slice(0, 60))}` : ""}</span>
+    </button>`;
 }
 
 function renderRemindList() {
@@ -1261,54 +1264,56 @@ function renderRemindList() {
   const items = getUpcomingReminders();
   const overdue = items.filter((s) => s.daysUntil < 0);
   const todayItems = items.filter((s) => s.daysUntil === 0);
-  const soon = items.filter((s) => s.daysUntil > 0);
+  const soon = items.filter((s) => s.daysUntil > 0 && s.daysUntil <= 7);
   const feed = myPendingRequests();
+  const overdueNote = "빨리 처리하거나, 처리 일정을 재수립하거나, 완료 여부를 점검하세요";
 
-  const section = (badge, count, hint, cards, glow = false) => {
+  const section = (tone, title, count, cards, { glow = false, note = "", bird = false } = {}) => {
     if (!cards.length) return "";
+    const titleHtml = glow
+      ? `<span class="remind-title-glow">${escapeHtml(title)}</span>`
+      : bird
+        ? `<span class="remind-section-label"><span class="feedback-bird" aria-hidden="true">🐦</span>${escapeHtml(title)}</span>`
+        : `<span class="remind-section-label">${escapeHtml(title)}</span>`;
     return `
-      <section class="remind-section">
-        <div class="remind-section-head">
-          <span class="remind-section-badge ${glow ? "is-glow" : ""}">${escapeHtml(badge)}</span>
-          <span class="remind-section-count">${count}건</span>
-        </div>
-        ${hint ? `<p class="remind-section-hint">${hint}</p>` : ""}
-        <div class="remind-section-cards">${cards.join("")}</div>
+      <section class="remind-section is-${escapeAttr(tone)}">
+        <h3>${titleHtml}<span class="remind-count">${count}건</span></h3>
+        ${note ? `<p class="remind-note">${note}</p>` : ""}
+        ${cards.join("")}
       </section>`;
   };
 
   root.innerHTML = [
     section(
+      "overdue",
       "지연",
       overdue.length,
-      overdue.length
-        ? `<span class="glow-red-text">빨리 처리하거나, 처리 일정을 재수립하거나, 완료 여부를 점검하세요</span>`
-        : "",
-      overdue.map((s) => remindTaskCardHtml(s, s.createdBy === sessionUser ? "내가요청" : s.createdBy || "일정")),
-      true
+      overdue.map((s) =>
+        remindTaskCardHtml(s, s.createdBy === sessionUser ? "내가요청" : s.createdBy || "일정")
+      ),
+      { glow: true, note: overdue.length ? overdueNote : "" }
     ),
     section(
+      "urgent",
       "오늘까지 반드시",
       todayItems.length,
-      "",
-      todayItems.map((s) => remindTaskCardHtml(s, s.createdBy === sessionUser ? "내가요청" : s.createdBy || "일정")),
-      true
+      todayItems.map((s) =>
+        remindTaskCardHtml(s, s.createdBy === sessionUser ? "내가요청" : s.createdBy || "일정")
+      ),
+      { glow: true }
     ),
-    soon.length
-      ? section(
-          "이번주 안",
-          soon.length,
-          "",
-          soon.slice(0, 5).map((s) => remindTaskCardHtml(s, s.createdBy || "일정")),
-          false
-        )
-      : "",
     section(
+      "soon",
+      "이번주",
+      soon.length,
+      soon.slice(0, 5).map((s) => remindTaskCardHtml(s, s.createdBy || "일정"))
+    ),
+    section(
+      "comment",
       "내가 받은 피드백",
       feed.length,
-      "",
       feed.slice(0, 6).map((r) => remindFeedCardHtml(r)),
-      false
+      { bird: feed.length > 0 }
     ),
   ]
     .filter(Boolean)
@@ -1320,12 +1325,14 @@ function renderRemindList() {
 
   root.querySelectorAll("[data-goto-schedule]").forEach((el) => {
     el.addEventListener("click", () => {
+      cancelRemindPopupAutoClose();
       closeRemindPopup();
       setView("schedule");
     });
   });
   root.querySelectorAll("[data-goto-request]").forEach((el) => {
     el.addEventListener("click", () => {
+      cancelRemindPopupAutoClose();
       closeRemindPopup();
       setView("requests");
     });
@@ -1346,6 +1353,54 @@ function snoozeReminder(id) {
   updateRemindBell();
 }
 
+let remindPopupCountdownTimer = null;
+
+function clearRemindPopupAutoClose() {
+  if (remindPopupCountdownTimer) {
+    window.clearInterval(remindPopupCountdownTimer);
+    remindPopupCountdownTimer = null;
+  }
+  const countEl = $("#remindAutoCloseCount");
+  const secEl = $("#remindConfirmSec");
+  if (countEl) {
+    countEl.hidden = true;
+    countEl.textContent = "";
+    countEl.classList.remove("is-urgent");
+  }
+  if (secEl) secEl.textContent = "";
+}
+
+function cancelRemindPopupAutoClose() {
+  clearRemindPopupAutoClose();
+}
+
+function startRemindPopupAutoClose() {
+  clearRemindPopupAutoClose();
+  const countEl = $("#remindAutoCloseCount");
+  const secEl = $("#remindConfirmSec");
+  let left = 3;
+  if (countEl) {
+    countEl.hidden = false;
+    countEl.textContent = String(left);
+    countEl.classList.toggle("is-urgent", left <= 2);
+  }
+  if (secEl) secEl.textContent = `(${left})`;
+  remindPopupCountdownTimer = window.setInterval(() => {
+    left -= 1;
+    if (left <= 0) {
+      clearRemindPopupAutoClose();
+      getUpcomingReminders().forEach((s) => dismissReminder(s.id));
+      closeRemindPopup({ skipHideOpts: false });
+      return;
+    }
+    if (countEl) {
+      countEl.textContent = String(left);
+      countEl.classList.toggle("is-urgent", left <= 2);
+    }
+    if (secEl) secEl.textContent = `(${left})`;
+  }, 1000);
+}
+
 function openRemindPopup(browseAll = false) {
   const map = loadRemindState();
   if (!browseAll) {
@@ -1355,7 +1410,7 @@ function openRemindPopup(browseAll = false) {
   const pending = getUpcomingReminders({ includeDismissed: browseAll });
   const feed = myPendingRequests();
   if (!browseAll && !pending.length && !feed.length) {
-    closeRemindPopup();
+    closeRemindPopup({ skipHideOpts: true });
     updateRemindBell();
     return;
   }
@@ -1375,13 +1430,18 @@ function openRemindPopup(browseAll = false) {
   renderRemindList();
   $("#remindBackdrop").hidden = false;
   updateRemindBell();
+  if (!browseAll) startRemindPopupAutoClose();
+  else clearRemindPopupAutoClose();
 }
 
-function closeRemindPopup() {
-  const map = loadRemindState();
-  if ($("#remindHideForever")?.checked) map.hideForever = true;
-  if ($("#remindHideToday")?.checked) map.hideToday = today();
-  saveRemindState(map);
+function closeRemindPopup({ skipHideOpts = false } = {}) {
+  clearRemindPopupAutoClose();
+  if (!skipHideOpts) {
+    const map = loadRemindState();
+    if ($("#remindHideForever")?.checked) map.hideForever = true;
+    if ($("#remindHideToday")?.checked) map.hideToday = today();
+    saveRemindState(map);
+  }
   $("#remindBackdrop").hidden = true;
   updateRemindBell();
 }
@@ -1415,11 +1475,13 @@ function clearRequestPopupAutoClose() {
     requestPopupCountdownTimer = null;
   }
   const countEl = $("#requestAutoCloseCount");
+  const secEl = $("#requestConfirmSec");
   if (countEl) {
     countEl.hidden = true;
     countEl.textContent = "";
     countEl.classList.remove("is-urgent");
   }
+  if (secEl) secEl.textContent = "";
 }
 
 function cancelRequestPopupAutoClose() {
@@ -1429,12 +1491,14 @@ function cancelRequestPopupAutoClose() {
 function startRequestPopupAutoClose() {
   clearRequestPopupAutoClose();
   const countEl = $("#requestAutoCloseCount");
-  let left = 5;
+  const secEl = $("#requestConfirmSec");
+  let left = 3;
   if (countEl) {
     countEl.hidden = false;
     countEl.textContent = String(left);
     countEl.classList.toggle("is-urgent", left <= 2);
   }
+  if (secEl) secEl.textContent = `(${left})`;
   requestPopupCountdownTimer = window.setInterval(() => {
     left -= 1;
     if (left <= 0) {
@@ -1446,48 +1510,30 @@ function startRequestPopupAutoClose() {
       countEl.textContent = String(left);
       countEl.classList.toggle("is-urgent", left <= 2);
     }
+    if (secEl) secEl.textContent = `(${left})`;
   }, 1000);
 }
 
 function renderRequestPopupList(items) {
   const list = $("#requestList");
   if (!items.length) {
-    list.innerHTML = `<li class="empty">확인할 요청이 없습니다.</li>`;
+    list.innerHTML = `<p class="empty">확인할 요청이 없습니다.</p>`;
     return;
   }
-  list.innerHTML = items
-    .map((r) => {
-      const days = r.dueDate ? daysUntil(r.dueDate) : null;
-      return `
-      <li class="remind-item">
-        <div class="remind-item-main">
-          ${
-            days != null
-              ? `<div class="remind-timing ${timingClass(days)}">${timingLabel(days)}</div>`
-              : `<div class="remind-timing is-soon">요청</div>`
-          }
-          <div class="remind-item-title">${escapeHtml(r.title)}</div>
-          <div class="remind-item-meta">
-            요청자 ${escapeHtml(r.requester || "관리자")}
-            ${r.dueDate ? ` · 마감 ${escapeHtml(r.dueDate)}` : ""}
-            ${r.memo ? ` · ${escapeHtml(r.memo)}` : ""}
-          </div>
-        </div>
-        <div class="remind-item-actions">
-          <button type="button" class="btn btn-sm btn-primary" data-done-req="${r.id}">완료</button>
-        </div>
-      </li>`;
-    })
-    .join("");
+  list.innerHTML = `
+    <section class="remind-section is-comment">
+      <h3>
+        <span class="remind-section-label"><span class="feedback-bird" aria-hidden="true">🐦</span>내가 받은 피드백</span>
+        <span class="remind-count">${items.length}건</span>
+      </h3>
+      ${items.map((r) => remindFeedCardHtml(r)).join("")}
+    </section>`;
 
-  list.querySelectorAll("[data-done-req]").forEach((btn) => {
-    btn.addEventListener("click", () => {
+  list.querySelectorAll("[data-goto-request]").forEach((el) => {
+    el.addEventListener("click", () => {
       cancelRequestPopupAutoClose();
-      completeRequest(btn.dataset.doneReq);
-      const left = myPendingRequests();
-      if (left.length) renderRequestPopupList(left);
-      else closeRequestPopup();
-      updateRequestPlane();
+      closeRequestPopup();
+      setView("requests");
     });
   });
 }
@@ -7428,18 +7474,36 @@ async function boot() {
   $("#btnLogout")?.addEventListener("click", logout);
   $("#btnRemindBell")?.addEventListener("click", () => openRemindPopup(true));
   $("#btnRequestPlane")?.addEventListener("click", () => openRequestPopup(true));
-  $("#remindCloseTop")?.addEventListener("click", closeRemindPopup);
+  $("#remindCloseTop")?.addEventListener("click", () => {
+    cancelRemindPopupAutoClose();
+    closeRemindPopup();
+  });
   $("#remindGoSchedule")?.addEventListener("click", () => {
+    cancelRemindPopupAutoClose();
     closeRemindPopup();
     setView("schedule");
   });
-  $("#requestCloseTop")?.addEventListener("click", closeRequestPopup);
-  $("#requestClose")?.addEventListener("click", closeRequestPopup);
+  $("#requestCloseTop")?.addEventListener("click", () => {
+    cancelRequestPopupAutoClose();
+    closeRequestPopup();
+  });
+  $("#requestClose")?.addEventListener("click", () => {
+    cancelRequestPopupAutoClose();
+    closeRequestPopup();
+  });
   $("#requestGoTab")?.addEventListener("click", () => {
+    cancelRequestPopupAutoClose();
     closeRequestPopup();
     setView("requests");
   });
-  $("#requestBackdrop .request-popup-card")?.addEventListener(
+  $("#remindBackdrop .remind-card")?.addEventListener(
+    "pointerdown",
+    () => {
+      cancelRemindPopupAutoClose();
+    },
+    { capture: true }
+  );
+  $("#requestBackdrop .remind-card")?.addEventListener(
     "pointerdown",
     () => {
       cancelRequestPopupAutoClose();
@@ -7447,14 +7511,21 @@ async function boot() {
     { capture: true }
   );
   $("#remindDismissAll")?.addEventListener("click", () => {
+    cancelRemindPopupAutoClose();
     getUpcomingReminders({ includeDismissed: true }).forEach((s) => dismissReminder(s.id));
     closeRemindPopup();
   });
   $("#remindBackdrop")?.addEventListener("click", (e) => {
-    if (e.target === e.currentTarget) closeRemindPopup();
+    if (e.target === e.currentTarget) {
+      cancelRemindPopupAutoClose();
+      closeRemindPopup();
+    }
   });
   $("#requestBackdrop")?.addEventListener("click", (e) => {
-    if (e.target === e.currentTarget) closeRequestPopup();
+    if (e.target === e.currentTarget) {
+      cancelRequestPopupAutoClose();
+      closeRequestPopup();
+    }
   });
   $("#btnExport")?.addEventListener("click", exportJson);
   $("#btnImport")?.addEventListener("change", (e) => {

@@ -127,45 +127,49 @@
     </footer>
   </div>
 
-  <div id="remindBackdrop" class="remind-backdrop" hidden>
-    <div class="remind-card remind-card-pulse" role="dialog" aria-modal="true" aria-labelledby="remindTitle">
+  <div id="remindBackdrop" class="remind-overlay" hidden>
+    <div class="remind-card" role="dialog" aria-modal="true" aria-labelledby="remindTitle">
+      <div class="remind-autoclose" id="remindAutoCloseCount" hidden aria-live="polite" title="조작하지 않으면 자동으로 닫힙니다">3</div>
       <div class="remind-head">
         <div>
-          <p class="remind-kicker">업무 리마인드</p>
-          <h2 id="remindTitle" class="remind-title"><span class="name-honorific" id="remindWho">님</span>, 지금 챙길 일정입니다.</h2>
+          <p class="load-kicker">업무 리마인드</p>
+          <h2 id="remindTitle"><span class="name-honorific" id="remindWho">님</span>, 지금 챙길 일정입니다.</h2>
+          <p class="muted" id="remindDesc">등록·수정 권한으로 접속했습니다.</p>
         </div>
-        <button type="button" class="modal-close-text" id="remindCloseTop">닫기</button>
+        <button type="button" class="btn btn-ghost btn-sm" id="remindCloseTop">닫기</button>
       </div>
-      <p class="remind-desc" id="remindDesc">등록·수정 권한으로 접속했습니다.</p>
       <div class="remind-body" id="remindList"></div>
-      <div class="remind-footer remind-footer-pulse">
-        <div class="remind-opts">
-          <label class="remind-check"><input type="checkbox" id="remindHideToday" /> 오늘하루 보지 않기</label>
-          <label class="remind-check"><input type="checkbox" id="remindHideForever" /> 다시 보지 않기</label>
+      <div class="remind-foot">
+        <div class="remind-hide-opts">
+          <label class="remind-hide"><input type="checkbox" id="remindHideToday" />오늘하루 보지 않기</label>
+          <label class="remind-hide"><input type="checkbox" id="remindHideForever" />다시 보지 않기</label>
         </div>
-        <div class="remind-footer-actions">
+        <div class="remind-foot-actions">
           <button type="button" class="btn" id="remindGoSchedule">내 업무 보기</button>
-          <button type="button" class="btn btn-primary" id="remindDismissAll">확인</button>
+          <button type="button" class="btn btn-primary" id="remindDismissAll">확인 <span class="remind-confirm-sec" id="remindConfirmSec">(3)</span></button>
         </div>
       </div>
     </div>
   </div>
 
-  <div id="requestBackdrop" class="remind-backdrop" hidden>
+  <div id="requestBackdrop" class="remind-overlay" hidden>
     <div class="remind-card request-popup-card" role="dialog" aria-modal="true" aria-labelledby="requestTitle">
-      <div class="request-autoclose" id="requestAutoCloseCount" hidden aria-live="polite" title="조작하지 않으면 자동으로 닫힙니다">5</div>
+      <div class="remind-autoclose" id="requestAutoCloseCount" hidden aria-live="polite" title="조작하지 않으면 자동으로 닫힙니다">3</div>
       <div class="remind-head">
         <div>
-          <p class="remind-kicker">Admin Request</p>
-          <h2 id="requestTitle" class="remind-title">관리자 공통 요청이<br />도착했습니다.</h2>
+          <p class="load-kicker">업무 리마인드</p>
+          <h2 id="requestTitle"><span class="name-honorific">요청</span>, 요청받은 업무와 코멘트입니다.</h2>
+          <p class="muted">확인 후 처리해 주세요. 닫아도 상단 알람에서 다시 볼 수 있습니다.</p>
         </div>
-        <button type="button" class="btn btn-sm btn-ghost" id="requestCloseTop">닫기</button>
+        <button type="button" class="btn btn-ghost btn-sm" id="requestCloseTop">닫기</button>
       </div>
-      <p class="remind-desc">확인 후 처리해 주세요. 닫아도 상단 파란 알람에서 다시 볼 수 있습니다.</p>
-      <ul class="remind-list" id="requestList"></ul>
-      <div class="remind-footer">
-        <button type="button" class="btn btn-ghost" id="requestClose">닫기</button>
-        <button type="button" class="btn btn-primary" id="requestGoTab">요청 화면으로</button>
+      <div class="remind-body" id="requestList"></div>
+      <div class="remind-foot">
+        <div class="remind-hide-opts"></div>
+        <div class="remind-foot-actions">
+          <button type="button" class="btn" id="requestClose">닫기</button>
+          <button type="button" class="btn btn-primary" id="requestGoTab">요청 화면으로 <span class="remind-confirm-sec" id="requestConfirmSec">(3)</span></button>
+        </div>
       </div>
     </div>
   </div>
