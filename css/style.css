@@ -248,7 +248,7 @@ a {
   font-weight: 600;
 }
 
-/* ÃªÂ´ÂÃ«Â¦Â¬Ã¬ÂÂ Ã¬Â ÂÃ¬ÂÂ©: Ã¬ÂÂ¤Ã¬Â Â Ã«Â©ÂÃ«ÂÂ´ ÃªÂ°ÂÃ¬Â¡Â° */
+/* ÃÂªÃÂ´ÃÂÃÂ«ÃÂ¦ÃÂ¬ÃÂ¬ÃÂÃÂ ÃÂ¬ÃÂ ÃÂÃÂ¬ÃÂÃÂ©: ÃÂ¬ÃÂÃÂ¤ÃÂ¬ÃÂ ÃÂ ÃÂ«ÃÂ©ÃÂÃÂ«ÃÂÃÂ´ ÃÂªÃÂ°ÃÂÃÂ¬ÃÂ¡ÃÂ° */
 body.is-admin #mainNav .tab-btn[data-nav="setup"] {
   color: #c62828;
   font-weight: 700;
@@ -519,7 +519,7 @@ body.is-admin #mainNav .tab-btn[data-nav="setup"].active {
   color: var(--accent);
 }
 
-/* Ã­ÂÂÃÂ·Ã­ÂÂÃ¬ÂÂ Ã­ÂÂÃ«Â¸Â */
+/* ÃÂ­ÃÂÃÂÃÂÃÂ·ÃÂ­ÃÂÃÂÃÂ¬ÃÂÃÂ ÃÂ­ÃÂÃÂÃÂ«ÃÂ¸ÃÂ */
 .hub-doc-banner {
   display: flex;
   justify-content: space-between;
@@ -1518,7 +1518,7 @@ dialog::backdrop {
   display: none !important;
 }
 
-/* Ã¬ÂÂ¤Ã«ÂÂ Ã«Â­ÂÃ«Â¨Â¹Ã¬Â§Â */
+/* ÃÂ¬ÃÂÃÂ¤ÃÂ«ÃÂÃÂ ÃÂ«ÃÂ­ÃÂÃÂ«ÃÂ¨ÃÂ¹ÃÂ¬ÃÂ§ÃÂ */
 .food-page {
   max-width: 980px;
   margin: 0 auto;
@@ -3204,7 +3204,7 @@ body:not(.is-admin):not(.is-budget) .budget-manage-only {
   }
 }
 
-/* Ã¢ÂÂÃ¢ÂÂ Mobile / tablet (iPhone ÃÂ· Galaxy ÃÂ· iPad) Ã¢ÂÂÃ¢ÂÂ */
+/* ÃÂ¢ÃÂÃÂÃÂ¢ÃÂÃÂ Mobile / tablet (iPhone ÃÂÃÂ· Galaxy ÃÂÃÂ· iPad) ÃÂ¢ÃÂÃÂÃÂ¢ÃÂÃÂ */
 html {
   -webkit-text-size-adjust: 100%;
   text-size-adjust: 100%;
@@ -3250,7 +3250,7 @@ input,
 select,
 textarea,
 button {
-  font-size: 16px; /* iOS Ã¬ÂÂÃ«ÂÂ Ã­ÂÂÃ«ÂÂ Ã«Â°Â©Ã¬Â§Â */
+  font-size: 16px; /* iOS ÃÂ¬ÃÂÃÂÃÂ«ÃÂÃÂ ÃÂ­ÃÂÃÂÃÂ«ÃÂÃÂ ÃÂ«ÃÂ°ÃÂ©ÃÂ¬ÃÂ§ÃÂ */
 }
 
 .wheel {
@@ -3379,7 +3379,7 @@ dialog#modal::backdrop {
   }
 }
 
-/* Ã¢ÂÂÃ¢ÂÂ Ã¬ÂÂ¬Ã¬ÂÂ©Ã«Â°Â©Ã«Â²Â (Work Pulse overview feel) Ã¢ÂÂÃ¢ÂÂ */
+/* ÃÂ¢ÃÂÃÂÃÂ¢ÃÂÃÂ ÃÂ¬ÃÂÃÂ¬ÃÂ¬ÃÂÃÂ©ÃÂ«ÃÂ°ÃÂ©ÃÂ«ÃÂ²ÃÂ (Work Pulse overview feel) ÃÂ¢ÃÂÃÂÃÂ¢ÃÂÃÂ */
 .overview-page {
   max-width: 720px;
   margin: 0 auto;
@@ -3495,7 +3495,7 @@ dialog#modal::backdrop {
   }
 }
 
-/* Ã¢ÂÂÃ¢ÂÂ AI Ã¬Â·Â¨Ã­ÂÂ©Ã«Â¶ÂÃ¬ÂÂ / Ã«Â³Â´ÃªÂ³Â Ã¬ÂÂ ÃªÂ·Â¸Ã«Â¦Â¼ Ã¢ÂÂÃ¢ÂÂ */
+/* ÃÂ¢ÃÂÃÂÃÂ¢ÃÂÃÂ AI ÃÂ¬ÃÂ·ÃÂ¨ÃÂ­ÃÂÃÂ©ÃÂ«ÃÂ¶ÃÂÃÂ¬ÃÂÃÂ / ÃÂ«ÃÂ³ÃÂ´ÃÂªÃÂ³ÃÂ ÃÂ¬ÃÂÃÂ ÃÂªÃÂ·ÃÂ¸ÃÂ«ÃÂ¦ÃÂ¼ ÃÂ¢ÃÂÃÂÃÂ¢ÃÂÃÂ */
 .ai-page {
   display: flex;
   flex-direction: column;
@@ -3726,7 +3726,7 @@ dialog#modal::backdrop {
   }
 }
 
-/* Ã¢ÂÂÃ¢ÂÂ Ã«Â ÂÃ¬ÂÂ´Ã¬ÂÂÃ¬ÂÂ Ã¬ÂÂÃ¬ÂÂ´Ã¬ÂÂ´Ã­ÂÂÃ«Â ÂÃ¬ÂÂ Ã¢ÂÂÃ¢ÂÂ */
+/* ÃÂ¢ÃÂÃÂÃÂ¢ÃÂÃÂ ÃÂ«ÃÂ ÃÂÃÂ¬ÃÂÃÂ´ÃÂ¬ÃÂÃÂÃÂ¬ÃÂÃÂ ÃÂ¬ÃÂÃÂÃÂ¬ÃÂÃÂ´ÃÂ¬ÃÂÃÂ´ÃÂ­ÃÂÃÂÃÂ«ÃÂ ÃÂÃÂ¬ÃÂÃÂ ÃÂ¢ÃÂÃÂÃÂ¢ÃÂÃÂ */
 .lw-slide {
   width: 100%;
   height: 100%;
@@ -4123,7 +4123,7 @@ dialog#modal::backdrop {
   outline: 2px solid rgba(29, 107, 53, 0.35);
 }
 
-/* Ã¬ÂÂÃ«ÂÂ Ã«ÂÂ¨ÃªÂ³ÂÃ«Â³Â Ã«ÂÂÃ«ÂÂ¬Ã«ÂÂ´ÃªÂ¸Â° */
+/* ÃÂ¬ÃÂÃÂÃÂ«ÃÂÃÂ ÃÂ«ÃÂÃÂ¨ÃÂªÃÂ³ÃÂÃÂ«ÃÂ³ÃÂ ÃÂ«ÃÂÃÂÃÂ«ÃÂÃÂ¬ÃÂ«ÃÂÃÂ´ÃÂªÃÂ¸ÃÂ° */
 .dw-slide {
   width: 100%;
   height: 100%;
@@ -4394,7 +4394,7 @@ dialog#modal::backdrop {
   transform: none;
 }
 
-/* Ã¬ÂÂ°Ã¬ÂÂ±Ã«ÂÂ Ã¬Â°Â¸ÃªÂ³Â Ã«ÂÂÃ¬ÂÂÃ­ÂÂ Ã¬ÂÂÃ¬ÂÂ´Ã¬ÂÂ´Ã­ÂÂÃ«Â ÂÃ¬ÂÂ */
+/* ÃÂ¬ÃÂÃÂ°ÃÂ¬ÃÂÃÂ±ÃÂ«ÃÂÃÂ ÃÂ¬ÃÂ°ÃÂ¸ÃÂªÃÂ³ÃÂ ÃÂ«ÃÂÃÂÃÂ¬ÃÂÃÂÃÂ­ÃÂÃÂ ÃÂ¬ÃÂÃÂÃÂ¬ÃÂÃÂ´ÃÂ¬ÃÂÃÂ´ÃÂ­ÃÂÃÂÃÂ«ÃÂ ÃÂÃÂ¬ÃÂÃÂ */
 .dw-slide.dw-rich {
   gap: 2.5%;
   padding: 3.5% 3%;
@@ -5058,7 +5058,7 @@ dialog#modal::backdrop {
   color: var(--accent);
 }
 
-/* Ã¢ÂÂÃ¢ÂÂ Ã¬ÂÂ¤Ã«ÂÂÃÂ·Ã«Â¦Â¬Ã«Â·Â° Ã¢ÂÂÃ¢ÂÂ */
+/* ÃÂ¢ÃÂÃÂÃÂ¢ÃÂÃÂ ÃÂ¬ÃÂÃÂ¤ÃÂ«ÃÂÃÂÃÂÃÂ·ÃÂ«ÃÂ¦ÃÂ¬ÃÂ«ÃÂ·ÃÂ° ÃÂ¢ÃÂÃÂÃÂ¢ÃÂÃÂ */
 .review-page {
   display: flex;
   flex-direction: column;
@@ -5475,7 +5475,7 @@ dialog#modal::backdrop {
   }
 }
 
-/* Ã¢ÂÂÃ¢ÂÂ Ã«Â³Â´ÃªÂ³Â Ã¬ÂÂ Ã«Â§ÂÃ«ÂÂ¤ÃªÂ¸Â° (Work Pulse IA/Ã­ÂÂ¤ ÃªÂ³ÂÃ¬ÂÂ¹) Ã¢ÂÂÃ¢ÂÂ */
+/* ÃÂ¢ÃÂÃÂÃÂ¢ÃÂÃÂ ÃÂ«ÃÂ³ÃÂ´ÃÂªÃÂ³ÃÂ ÃÂ¬ÃÂÃÂ ÃÂ«ÃÂ§ÃÂÃÂ«ÃÂÃÂ¤ÃÂªÃÂ¸ÃÂ° (Work Pulse IA/ÃÂ­ÃÂÃÂ¤ ÃÂªÃÂ³ÃÂÃÂ¬ÃÂÃÂ¹) ÃÂ¢ÃÂÃÂÃÂ¢ÃÂÃÂ */
 .report-make {
   gap: 14px;
 }
@@ -5669,7 +5669,7 @@ dialog#modal::backdrop {
   }
 }
 
-/* ?? Work Pulse Â¸Ã°Â´Ã Â¡Â¤ Â¿Â¹Â»Ãª ÃÃÂ·Ã ?? */
+/* ?? Work Pulse ÃÂ¸ÃÂ°ÃÂ´ÃÂ ÃÂ¡ÃÂ¤ ÃÂ¿ÃÂ¹ÃÂ»ÃÂª ÃÂÃÂÃÂ·ÃÂ ?? */
 dialog.wp-modal,
 dialog#modal {
   width: min(560px, calc(100vw - 24px));
@@ -5964,7 +5964,7 @@ dialog#modal::backdrop {
   }
 }
 
-/* ââ Work Pulse ë¦¬ë§ì¸ë ì¹ì ââ */
+/* Ã¢ÂÂÃ¢ÂÂ Work Pulse Ã«Â¦Â¬Ã«Â§ÂÃ¬ÂÂ¸Ã«ÂÂ Ã¬ÂÂ¹Ã¬ÂÂ Ã¢ÂÂÃ¢ÂÂ */
 @keyframes tag-twinkle {
   0%,
   100% {
@@ -6386,7 +6386,7 @@ dialog#modal::backdrop {
     grid-column: 1 / -1;
   }
 }
-/* ââ Work Pulse heatmap calendar ââ */
+/* Ã¢ÂÂÃ¢ÂÂ Work Pulse heatmap calendar Ã¢ÂÂÃ¢ÂÂ */
 .heatmap-dash { animation: fade-up .32s var(--ease); }
 .heatmap-hero { display: block; text-align: center; padding: 22px 8px 14px; }
 .heatmap-hero .load-desc { margin-left: auto; margin-right: auto; }
@@ -6467,7 +6467,7 @@ dialog#modal::backdrop {
   .heat-grid.agenda .heat-cell.tall { min-height: 72px; }
   .range-step { font-size: .62rem; padding: 5px 1px; }
 }
-/* ââ Work Pulse task-row (ì¼ì  ëª©ë¡) ââ */
+/* Ã¢ÂÂÃ¢ÂÂ Work Pulse task-row (Ã¬ÂÂ¼Ã¬Â Â Ã«ÂªÂ©Ã«Â¡Â) Ã¢ÂÂÃ¢ÂÂ */
 .work-feed { display: flex; flex-direction: column; gap: 0; }
 .swipe-row { position: relative; overflow: hidden; border-radius: 0; }
 .swipe-front { position: relative; z-index: 1; background: var(--bg-elevated, #fff); }
@@ -6565,38 +6565,42 @@ dialog#modal::backdrop {
   .due-cluster { grid-area: due; justify-content: flex-start; }
   .status-select { grid-area: status; justify-self: start; }
 }
-/* ââ ì°ì´í í Â· ì±ê³¼ì§í ââ */
+/* Ã¢ÂÂÃ¢ÂÂ Ã¬ÂÂ°Ã¬ÂÂ´Ã­ÂÂ Ã­ÂÂ ÃÂ· Ã¬ÂÂ±ÃªÂ³Â¼Ã¬Â§ÂÃ­ÂÂ Ã¢ÂÂÃ¢ÂÂ */
 .yeonu-hero {
   display: grid;
-  grid-template-columns: 1.15fr 1fr;
+  grid-template-columns: 120px 1fr;
   gap: 0;
-  margin: 0 0 18px;
-  border-radius: 22px;
+  margin: 0 0 12px;
+  border-radius: 14px;
   overflow: hidden;
   background: linear-gradient(135deg, #e8f4f8 0%, #f7f3ea 55%, #fff 100%);
   border: 1px solid var(--line);
-  min-height: min(42vh, 380px);
+  min-height: 0;
+  max-height: 114px;
 }
 .yeonu-hero-visual {
   position: relative;
-  min-height: 260px;
+  min-height: 0;
+  height: 114px;
   background: #d7eef5;
 }
 .yeonu-hero-visual img {
   width: 100%;
   height: 100%;
   object-fit: cover;
+  object-position: center;
   display: block;
 }
 .yeonu-hero-copy {
   display: flex;
   flex-direction: column;
   justify-content: center;
-  padding: 28px 28px 32px;
+  padding: 10px 14px 12px;
+  min-width: 0;
 }
 .yeonu-kicker {
-  margin: 0 0 6px;
-  font-size: var(--text-xs);
+  margin: 0 0 2px;
+  font-size: 0.62rem;
   font-weight: 700;
   letter-spacing: 0.04em;
   color: #0a7ea4;
@@ -6604,34 +6608,37 @@ dialog#modal::backdrop {
 }
 .yeonu-title {
   margin: 0;
-  font-size: clamp(2.4rem, 5vw, 3.4rem);
+  font-size: clamp(1.15rem, 2.2vw, 1.45rem);
   font-weight: 900;
   letter-spacing: -0.04em;
   color: #123;
-  line-height: 1.05;
+  line-height: 1.1;
 }
 .yeonu-story {
-  margin: 14px 0 0;
-  font-size: clamp(1.05rem, 2.2vw, 1.25rem);
+  margin: 4px 0 0;
+  font-size: clamp(0.78rem, 1.4vw, 0.9rem);
   font-weight: 650;
   letter-spacing: -0.03em;
-  line-height: 1.45;
+  line-height: 1.35;
   color: #1d1d1f;
 }
 .yeonu-story strong { color: #0a7ea4; font-weight: 800; }
-.yeonu-sub { margin: 10px 0 0; font-size: var(--text-sm); line-height: 1.45; }
+.yeonu-sub {
+  display: none;
+}
 .yeonu-deadline {
-  margin: 18px 0 0;
-  padding: 12px 14px;
-  border-radius: 12px;
+  margin: 6px 0 0;
+  padding: 5px 8px;
+  border-radius: 8px;
   background: rgba(0, 113, 227, 0.08);
   color: var(--ink);
-  font-size: var(--text-sm);
+  font-size: 0.72rem;
   font-weight: 600;
+  line-height: 1.3;
 }
 .yeonu-deadline strong {
   display: inline-block;
-  margin: 0 4px;
+  margin: 0 3px;
   color: var(--accent);
   font-variant-numeric: tabular-nums;
   font-weight: 800;
@@ -6750,7 +6757,17 @@ dialog#modal::backdrop {
 }
 
 @media (max-width: 840px) {
-  .yeonu-hero { grid-template-columns: 1fr; }
-  .yeonu-hero-visual { min-height: 200px; max-height: 240px; }
-  .yeonu-hero-copy { padding: 20px 18px 24px; }
+  .yeonu-hero {
+    grid-template-columns: 88px 1fr;
+    max-height: 96px;
+  }
+  .yeonu-hero-visual {
+    height: 96px;
+  }
+  .yeonu-hero-copy {
+    padding: 8px 10px;
+  }
+  .yeonu-story br {
+    display: none;
+  }
 }
