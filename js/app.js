@@ -1155,6 +1155,257 @@ function eventsEndingOnDate(isoDate) {
   return state.schedule.filter((s) => (s.endDate || s.date) === isoDate);
 }
 
+function matchCollectionRoundFromText(text) {
+  const m = String(text || "").match(/([123])\s*차/);
+  if (m) return Number(m[1]);
+  if (/취합|제출|업로드|드라이브/.test(String(text || ""))) {
+    return latestCollection()?.round || null;
+  }
+  return null;
+}
+
+function collectionForDayContext(schedules) {
+  const rounds = schedules
+    .map((s) => matchCollectionRoundFromText(`${s.title || ""} ${s.note || ""}`))
+    .filter((n) => n != null);
+  const round = rounds[0];
+  if (round == null) return null;
+  const col = state.collections?.find((c) => c.round === round) || latestCollection();
+  if (!col) return null;
+  return { col, rows: buildTeamCollectionBoard(col) };
+}
+
+function requestGroupsDueOn(isoDate) {
+  ensureRequests();
+  const due = (state.requests || []).filter((r) => (r.dueDate || "") === isoDate);
+  if (!due.length) return [];
+  const map = new Map();
+  due.forEach((r) => {
+    const key = r.groupId || r.id;
+    if (!map.has(key)) {
+      map.set(key, { title: r.title || "요청", rows: [] });
+    }
+    map.get(key).rows.push(r);
+  });
+  return [...map.values()];
+}
+
+function dayDeadlineContext(isoDate) {
+  const due = eventsEndingOnDate(isoDate).filter((s) => (s.status || "") !== "완료");
+  const ongoing = eventsOnDate(isoDate).filter((s) => (s.status || "") !== "완료");
+  const schedules = due.length ? due : ongoing;
+  const collection = collectionForDayContext(schedules);
+  const requestGroups = requestGroupsDueOn(isoDate);
+  return { iso: isoDate, schedules, collection, requestGroups };
+}
+
+function dayDeadlineDetailTarget(ctx) {
+  if (ctx.collection?.col) {
+    return { view: "collections", round: ctx.collection.col.round };
+  }
+  if (ctx.requestGroups.length) return { view: "requests" };
+  if (ctx.schedules.length) {
+    return { view: "schedule", scheduleId: ctx.schedules[0].id };
+  }
+  return { view: "schedule" };
+}
+
+function openDayDeadlineDetail(isoDate) {
+  const ctx = dayDeadlineContext(isoDate);
+  state._calSelected = isoDate;
+  if (isoDate) state._calCursor = `${isoDate.slice(0, 7)}-01`;
+  const target = dayDeadlineDetailTarget(ctx);
+  if (target.round != null) activeRound = target.round;
+  if (target.view === "schedule" && target.scheduleId) {
+    setView("schedule");
+    queueMicrotask(() => openScheduleModal(target.scheduleId));
+    return;
+  }
+  setView(target.view);
+}
+
+function heatDayTipHtml(ctx) {
+  const { iso, schedules, collection, requestGroups } = ctx;
+  if (!schedules.length && !collection && !requestGroups.length) {
+    return `<p class="heat-tip-empty">${escapeHtml(formatKorDate(iso))} · 등록된 마감 없음</p>`;
+  }
+
+  const scheduleBlock = schedules.length
+    ? `<div class="heat-tip-block">
+        <p class="heat-tip-label">마감까지 할 일</p>
+        <ul class="heat-tip-list">
+          ${schedules
+            .map((s) => {
+              const due = s.endDate || s.date;
+              const days = daysUntil(due);
+              return `<li>
+                <strong>${escapeHtml(s.title || "일정")}</strong>
+                <span>${escapeHtml(typeLabel(s.type))} · ${escapeHtml(scheduleStatusLabel(s.status))} · ${escapeHtml(timingLabel(days))}</span>
+                ${s.note ? `<em>${escapeHtml(s.note)}</em>` : ""}
+              </li>`;
+            })
+            .join("")}
+        </ul>
+      </div>`
+    : "";
+
+  const collectionBlock = collection
+    ? (() => {
+        const rows = collection.rows || [];
+        const done = rows.filter((r) => r.status.id === "done");
+        const pending = rows.filter((r) => r.status.id !== "done");
+        return `<div class="heat-tip-block">
+          <p class="heat-tip-label">${escapeHtml(collection.col.name || `${collection.col.round}차 취합`)} · 제출 ${done.length}/${rows.length}</p>
+          ${
+            done.length
+              ? `<p class="heat-tip-people is-done"><span>완료</span>${done.map((r) => escapeHtml(r.assignee)).join(", ")}</p>`
+              : `<p class="heat-tip-people is-done"><span>완료</span>없음</p>`
+          }
+          ${
+            pending.length
+              ? `<p class="heat-tip-people is-wait"><span>미제출</span>${pending
+                  .map((r) => `${escapeHtml(r.assignee)}(${escapeHtml(r.status.label)})`)
+                  .join(", ")}</p>`
+              : ""
+          }
+        </div>`;
+      })()
+    : "";
+
+  const requestBlock = requestGroups.length
+    ? `<div class="heat-tip-block">
+        <p class="heat-tip-label">요청 마감</p>
+        ${requestGroups
+          .map((g) => {
+            const done = g.rows.filter((r) => r.status === "완료");
+            const open = g.rows.filter((r) => r.status !== "완료");
+            return `<div class="heat-tip-req">
+              <strong>${escapeHtml(g.title)}</strong>
+              <span>완료 ${done.length}/${g.rows.length}</span>
+              ${
+                done.length
+                  ? `<p class="heat-tip-people is-done"><span>완료</span>${done.map((r) => escapeHtml(r.recipient || "?")).join(", ")}</p>`
+                  : ""
+              }
+              ${
+                open.length
+                  ? `<p class="heat-tip-people is-wait"><span>미완료</span>${open.map((r) => escapeHtml(r.recipient || "?")).join(", ")}</p>`
+                  : ""
+              }
+            </div>`;
+          })
+          .join("")}
+      </div>`
+    : "";
+
+  return `
+    <div class="heat-tip-head">
+      <strong>${escapeHtml(formatKorDate(iso))}</strong>
+      <span>클릭 시 상세</span>
+    </div>
+    ${scheduleBlock}
+    ${collectionBlock}
+    ${requestBlock}`;
+}
+
+function ensureHeatDayTip() {
+  let tip = $("#heatDayTip");
+  if (tip) return tip;
+  tip = document.createElement("div");
+  tip.id = "heatDayTip";
+  tip.className = "heat-day-tip";
+  tip.hidden = true;
+  tip.setAttribute("role", "tooltip");
+  document.body.appendChild(tip);
+  tip.addEventListener("mouseenter", () => {
+    tip.dataset.sticky = "1";
+  });
+  tip.addEventListener("mouseleave", () => {
+    tip.dataset.sticky = "";
+    hideHeatDayTip();
+  });
+  tip.addEventListener("click", () => {
+    const iso = tip.dataset.iso;
+    if (!iso) return;
+    hideHeatDayTip();
+    openDayDeadlineDetail(iso);
+  });
+  return tip;
+}
+
+function hideHeatDayTip(force = false) {
+  const tip = $("#heatDayTip");
+  if (!tip) return;
+  if (!force && tip.dataset.sticky === "1") return;
+  tip.dataset.sticky = "";
+  tip.hidden = true;
+  tip.dataset.iso = "";
+}
+
+function showHeatDayTip(cell, iso) {
+  const ctx = dayDeadlineContext(iso);
+  if (!ctx.schedules.length && !ctx.collection && !ctx.requestGroups.length) {
+    hideHeatDayTip(true);
+    return;
+  }
+  const tip = ensureHeatDayTip();
+  tip.dataset.sticky = "";
+  tip.dataset.iso = iso;
+  tip.innerHTML = heatDayTipHtml(ctx);
+  tip.hidden = false;
+
+  const rect = cell.getBoundingClientRect();
+  const tipW = Math.min(320, window.innerWidth - 16);
+  tip.style.width = `${tipW}px`;
+  tip.style.left = "0px";
+  tip.style.top = "0px";
+  const tw = tip.offsetWidth || tipW;
+  const th = tip.offsetHeight || 120;
+  let left = rect.left + rect.width / 2 - tw / 2;
+  left = Math.max(8, Math.min(left, window.innerWidth - tw - 8));
+  let top = rect.bottom + 8;
+  if (top + th > window.innerHeight - 8) {
+    top = Math.max(8, rect.top - th - 8);
+  }
+  tip.style.left = `${left}px`;
+  tip.style.top = `${top}px`;
+}
+
+function bindHeatDayInteractions(root, { onEmptyClick } = {}) {
+  let hideTimer = null;
+  const clearHide = () => {
+    if (hideTimer) {
+      clearTimeout(hideTimer);
+      hideTimer = null;
+    }
+  };
+  root.querySelectorAll("[data-cal-day]").forEach((btn) => {
+    btn.addEventListener("mouseenter", () => {
+      clearHide();
+      showHeatDayTip(btn, btn.dataset.calDay);
+    });
+    btn.addEventListener("mouseleave", () => {
+      clearHide();
+      hideTimer = setTimeout(() => hideHeatDayTip(), 120);
+    });
+    btn.addEventListener("focus", () => showHeatDayTip(btn, btn.dataset.calDay));
+    btn.addEventListener("blur", () => {
+      clearHide();
+      hideTimer = setTimeout(() => hideHeatDayTip(), 120);
+    });
+    btn.addEventListener("click", () => {
+      const iso = btn.dataset.calDay;
+      const ctx = dayDeadlineContext(iso);
+      hideHeatDayTip();
+      if (ctx.schedules.length || ctx.collection || ctx.requestGroups.length) {
+        openDayDeadlineDetail(iso);
+        return;
+      }
+      if (typeof onEmptyClick === "function") onEmptyClick(iso);
+    });
+  });
+}
+
 function countOpenByUrgencyInRange(startIso, endIso) {
   const counts = { urgent: 0, warn: 0, check: 0, gray: 0, total: 0 };
   state.schedule.forEach((s) => {
@@ -1206,6 +1457,7 @@ function buildHeatCalendarHtml(cursor, { mode = "month", selectedIso = "", bandF
       } ${holiday ? "holiday" : ""} ${red ? "red-day" : ""} ${sat ? "sat-day" : ""}"
         style="${heatBandStyle(band)};animation-delay:${Math.min(idx, 42) * 8}ms"
         data-cal-day="${iso}"
+        title="${showTasks.length ? "마감 미리보기 · 클릭 시 상세" : ""}"
         aria-label="${day.getMonth() + 1}월 ${day.getDate()}일 업무 ${showTasks.length}건">
         ${
           monthStart
@@ -1925,6 +2177,7 @@ function renderDashboard() {
   ensureReportDoc();
   ensureBudget();
   ensureRequests();
+  const admin = isAdmin();
   const who = sessionUser || "작성자";
   const actions = buildMyActionItems();
 
@@ -2075,17 +2328,15 @@ function renderDashboard() {
     state._calRange = HEAT_RANGE_STEPS[i];
     renderDashboard();
   });
-  el.querySelectorAll("[data-cal-day]").forEach((btn) => {
-    btn.addEventListener("click", () => {
-      state._calSelected = btn.dataset.calDay;
+  bindHeatDayInteractions(el, {
+    onEmptyClick: (iso) => {
+      state._calSelected = iso;
       renderDashboard();
-    });
+    },
   });
   $("#homePeakDay")?.addEventListener("click", () => {
     if (!peakIso) return;
-    state._calSelected = peakIso;
-    state._calCursor = `${peakIso.slice(0, 7)}-01`;
-    renderDashboard();
+    openDayDeadlineDetail(peakIso);
   });
   $("#homeAddSchedule")?.addEventListener("click", () => openScheduleModal());
   el.querySelectorAll("[data-edit]").forEach((btn) =>
@@ -2801,12 +3052,12 @@ function renderSchedule() {
     state._calRange = HEAT_RANGE_STEPS[i];
     renderSchedule();
   });
-  el.querySelectorAll("[data-cal-day]").forEach((btn) => {
-    btn.addEventListener("click", () => {
-      state._calSelected = btn.dataset.calDay;
+  bindHeatDayInteractions(el, {
+    onEmptyClick: (iso) => {
+      state._calSelected = iso;
       state._scheduleFilter = null;
       renderSchedule();
-    });
+    },
   });
   el.querySelectorAll("[data-sched-filter]").forEach((btn) => {
     btn.addEventListener("click", () => {
@@ -2817,10 +3068,7 @@ function renderSchedule() {
   });
   $("#schedPeakDay")?.addEventListener("click", () => {
     if (!peakIso) return;
-    state._calSelected = peakIso;
-    state._calCursor = `${peakIso.slice(0, 7)}-01`;
-    state._scheduleFilter = null;
-    renderSchedule();
+    openDayDeadlineDetail(peakIso);
   });
   $("#riskChartToggle")?.addEventListener("click", () => {
     const body = $("#riskChartBody");
