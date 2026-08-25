@@ -248,7 +248,7 @@ a {
   font-weight: 600;
 }
 
-/* ÃÂªÃÂ´ÃÂÃÂ«ÃÂ¦ÃÂ¬ÃÂ¬ÃÂÃÂ ÃÂ¬ÃÂ ÃÂÃÂ¬ÃÂÃÂ©: ÃÂ¬ÃÂÃÂ¤ÃÂ¬ÃÂ ÃÂ ÃÂ«ÃÂ©ÃÂÃÂ«ÃÂÃÂ´ ÃÂªÃÂ°ÃÂÃÂ¬ÃÂ¡ÃÂ° */
+/* ÃÂÃÂªÃÂÃÂ´ÃÂÃÂÃÂÃÂ«ÃÂÃÂ¦ÃÂÃÂ¬ÃÂÃÂ¬ÃÂÃÂÃÂÃÂ ÃÂÃÂ¬ÃÂÃÂ ÃÂÃÂÃÂÃÂ¬ÃÂÃÂÃÂÃÂ©: ÃÂÃÂ¬ÃÂÃÂÃÂÃÂ¤ÃÂÃÂ¬ÃÂÃÂ ÃÂÃÂ ÃÂÃÂ«ÃÂÃÂ©ÃÂÃÂÃÂÃÂ«ÃÂÃÂÃÂÃÂ´ ÃÂÃÂªÃÂÃÂ°ÃÂÃÂÃÂÃÂ¬ÃÂÃÂ¡ÃÂÃÂ° */
 body.is-admin #mainNav .tab-btn[data-nav="setup"] {
   color: #c62828;
   font-weight: 700;
@@ -519,7 +519,7 @@ body.is-admin #mainNav .tab-btn[data-nav="setup"].active {
   color: var(--accent);
 }
 
-/* ÃÂ­ÃÂÃÂÃÂÃÂ·ÃÂ­ÃÂÃÂÃÂ¬ÃÂÃÂ ÃÂ­ÃÂÃÂÃÂ«ÃÂ¸ÃÂ */
+/* ÃÂÃÂ­ÃÂÃÂÃÂÃÂÃÂÃÂÃÂÃÂ·ÃÂÃÂ­ÃÂÃÂÃÂÃÂÃÂÃÂ¬ÃÂÃÂÃÂÃÂ ÃÂÃÂ­ÃÂÃÂÃÂÃÂÃÂÃÂ«ÃÂÃÂ¸ÃÂÃÂ */
 .hub-doc-banner {
   display: flex;
   justify-content: space-between;
@@ -1518,7 +1518,7 @@ dialog::backdrop {
   display: none !important;
 }
 
-/* ÃÂ¬ÃÂÃÂ¤ÃÂ«ÃÂÃÂ ÃÂ«ÃÂ­ÃÂÃÂ«ÃÂ¨ÃÂ¹ÃÂ¬ÃÂ§ÃÂ */
+/* ÃÂÃÂ¬ÃÂÃÂÃÂÃÂ¤ÃÂÃÂ«ÃÂÃÂÃÂÃÂ ÃÂÃÂ«ÃÂÃÂ­ÃÂÃÂÃÂÃÂ«ÃÂÃÂ¨ÃÂÃÂ¹ÃÂÃÂ¬ÃÂÃÂ§ÃÂÃÂ */
 .food-page {
   max-width: 980px;
   margin: 0 auto;
@@ -3204,7 +3204,7 @@ body:not(.is-admin):not(.is-budget) .budget-manage-only {
   }
 }
 
-/* ÃÂ¢ÃÂÃÂÃÂ¢ÃÂÃÂ Mobile / tablet (iPhone ÃÂÃÂ· Galaxy ÃÂÃÂ· iPad) ÃÂ¢ÃÂÃÂÃÂ¢ÃÂÃÂ */
+/* ÃÂÃÂ¢ÃÂÃÂÃÂÃÂÃÂÃÂ¢ÃÂÃÂÃÂÃÂ Mobile / tablet (iPhone ÃÂÃÂÃÂÃÂ· Galaxy ÃÂÃÂÃÂÃÂ· iPad) ÃÂÃÂ¢ÃÂÃÂÃÂÃÂÃÂÃÂ¢ÃÂÃÂÃÂÃÂ */
 html {
   -webkit-text-size-adjust: 100%;
   text-size-adjust: 100%;
@@ -3250,7 +3250,7 @@ input,
 select,
 textarea,
 button {
-  font-size: 16px; /* iOS ÃÂ¬ÃÂÃÂÃÂ«ÃÂÃÂ ÃÂ­ÃÂÃÂÃÂ«ÃÂÃÂ ÃÂ«ÃÂ°ÃÂ©ÃÂ¬ÃÂ§ÃÂ */
+  font-size: 16px; /* iOS ÃÂÃÂ¬ÃÂÃÂÃÂÃÂÃÂÃÂ«ÃÂÃÂÃÂÃÂ ÃÂÃÂ­ÃÂÃÂÃÂÃÂÃÂÃÂ«ÃÂÃÂÃÂÃÂ ÃÂÃÂ«ÃÂÃÂ°ÃÂÃÂ©ÃÂÃÂ¬ÃÂÃÂ§ÃÂÃÂ */
 }
 
 .wheel {
@@ -3379,7 +3379,7 @@ dialog#modal::backdrop {
   }
 }
 
-/* ÃÂ¢ÃÂÃÂÃÂ¢ÃÂÃÂ ÃÂ¬ÃÂÃÂ¬ÃÂ¬ÃÂÃÂ©ÃÂ«ÃÂ°ÃÂ©ÃÂ«ÃÂ²ÃÂ (Work Pulse overview feel) ÃÂ¢ÃÂÃÂÃÂ¢ÃÂÃÂ */
+/* ÃÂÃÂ¢ÃÂÃÂÃÂÃÂÃÂÃÂ¢ÃÂÃÂÃÂÃÂ ÃÂÃÂ¬ÃÂÃÂÃÂÃÂ¬ÃÂÃÂ¬ÃÂÃÂÃÂÃÂ©ÃÂÃÂ«ÃÂÃÂ°ÃÂÃÂ©ÃÂÃÂ«ÃÂÃÂ²ÃÂÃÂ (Work Pulse overview feel) ÃÂÃÂ¢ÃÂÃÂÃÂÃÂÃÂÃÂ¢ÃÂÃÂÃÂÃÂ */
 .overview-page {
   max-width: 720px;
   margin: 0 auto;
@@ -3495,7 +3495,7 @@ dialog#modal::backdrop {
   }
 }
 
-/* ÃÂ¢ÃÂÃÂÃÂ¢ÃÂÃÂ AI ÃÂ¬ÃÂ·ÃÂ¨ÃÂ­ÃÂÃÂ©ÃÂ«ÃÂ¶ÃÂÃÂ¬ÃÂÃÂ / ÃÂ«ÃÂ³ÃÂ´ÃÂªÃÂ³ÃÂ ÃÂ¬ÃÂÃÂ ÃÂªÃÂ·ÃÂ¸ÃÂ«ÃÂ¦ÃÂ¼ ÃÂ¢ÃÂÃÂÃÂ¢ÃÂÃÂ */
+/* ÃÂÃÂ¢ÃÂÃÂÃÂÃÂÃÂÃÂ¢ÃÂÃÂÃÂÃÂ AI ÃÂÃÂ¬ÃÂÃÂ·ÃÂÃÂ¨ÃÂÃÂ­ÃÂÃÂÃÂÃÂ©ÃÂÃÂ«ÃÂÃÂ¶ÃÂÃÂÃÂÃÂ¬ÃÂÃÂÃÂÃÂ / ÃÂÃÂ«ÃÂÃÂ³ÃÂÃÂ´ÃÂÃÂªÃÂÃÂ³ÃÂÃÂ ÃÂÃÂ¬ÃÂÃÂÃÂÃÂ ÃÂÃÂªÃÂÃÂ·ÃÂÃÂ¸ÃÂÃÂ«ÃÂÃÂ¦ÃÂÃÂ¼ ÃÂÃÂ¢ÃÂÃÂÃÂÃÂÃÂÃÂ¢ÃÂÃÂÃÂÃÂ */
 .ai-page {
   display: flex;
   flex-direction: column;
@@ -3726,7 +3726,7 @@ dialog#modal::backdrop {
   }
 }
 
-/* ÃÂ¢ÃÂÃÂÃÂ¢ÃÂÃÂ ÃÂ«ÃÂ ÃÂÃÂ¬ÃÂÃÂ´ÃÂ¬ÃÂÃÂÃÂ¬ÃÂÃÂ ÃÂ¬ÃÂÃÂÃÂ¬ÃÂÃÂ´ÃÂ¬ÃÂÃÂ´ÃÂ­ÃÂÃÂÃÂ«ÃÂ ÃÂÃÂ¬ÃÂÃÂ ÃÂ¢ÃÂÃÂÃÂ¢ÃÂÃÂ */
+/* ÃÂÃÂ¢ÃÂÃÂÃÂÃÂÃÂÃÂ¢ÃÂÃÂÃÂÃÂ ÃÂÃÂ«ÃÂÃÂ ÃÂÃÂÃÂÃÂ¬ÃÂÃÂÃÂÃÂ´ÃÂÃÂ¬ÃÂÃÂÃÂÃÂÃÂÃÂ¬ÃÂÃÂÃÂÃÂ ÃÂÃÂ¬ÃÂÃÂÃÂÃÂÃÂÃÂ¬ÃÂÃÂÃÂÃÂ´ÃÂÃÂ¬ÃÂÃÂÃÂÃÂ´ÃÂÃÂ­ÃÂÃÂÃÂÃÂÃÂÃÂ«ÃÂÃÂ ÃÂÃÂÃÂÃÂ¬ÃÂÃÂÃÂÃÂ ÃÂÃÂ¢ÃÂÃÂÃÂÃÂÃÂÃÂ¢ÃÂÃÂÃÂÃÂ */
 .lw-slide {
   width: 100%;
   height: 100%;
@@ -4123,7 +4123,7 @@ dialog#modal::backdrop {
   outline: 2px solid rgba(29, 107, 53, 0.35);
 }
 
-/* ÃÂ¬ÃÂÃÂÃÂ«ÃÂÃÂ ÃÂ«ÃÂÃÂ¨ÃÂªÃÂ³ÃÂÃÂ«ÃÂ³ÃÂ ÃÂ«ÃÂÃÂÃÂ«ÃÂÃÂ¬ÃÂ«ÃÂÃÂ´ÃÂªÃÂ¸ÃÂ° */
+/* ÃÂÃÂ¬ÃÂÃÂÃÂÃÂÃÂÃÂ«ÃÂÃÂÃÂÃÂ ÃÂÃÂ«ÃÂÃÂÃÂÃÂ¨ÃÂÃÂªÃÂÃÂ³ÃÂÃÂÃÂÃÂ«ÃÂÃÂ³ÃÂÃÂ ÃÂÃÂ«ÃÂÃÂÃÂÃÂÃÂÃÂ«ÃÂÃÂÃÂÃÂ¬ÃÂÃÂ«ÃÂÃÂÃÂÃÂ´ÃÂÃÂªÃÂÃÂ¸ÃÂÃÂ° */
 .dw-slide {
   width: 100%;
   height: 100%;
@@ -4394,7 +4394,7 @@ dialog#modal::backdrop {
   transform: none;
 }
 
-/* ÃÂ¬ÃÂÃÂ°ÃÂ¬ÃÂÃÂ±ÃÂ«ÃÂÃÂ ÃÂ¬ÃÂ°ÃÂ¸ÃÂªÃÂ³ÃÂ ÃÂ«ÃÂÃÂÃÂ¬ÃÂÃÂÃÂ­ÃÂÃÂ ÃÂ¬ÃÂÃÂÃÂ¬ÃÂÃÂ´ÃÂ¬ÃÂÃÂ´ÃÂ­ÃÂÃÂÃÂ«ÃÂ ÃÂÃÂ¬ÃÂÃÂ */
+/* ÃÂÃÂ¬ÃÂÃÂÃÂÃÂ°ÃÂÃÂ¬ÃÂÃÂÃÂÃÂ±ÃÂÃÂ«ÃÂÃÂÃÂÃÂ ÃÂÃÂ¬ÃÂÃÂ°ÃÂÃÂ¸ÃÂÃÂªÃÂÃÂ³ÃÂÃÂ ÃÂÃÂ«ÃÂÃÂÃÂÃÂÃÂÃÂ¬ÃÂÃÂÃÂÃÂÃÂÃÂ­ÃÂÃÂÃÂÃÂ ÃÂÃÂ¬ÃÂÃÂÃÂÃÂÃÂÃÂ¬ÃÂÃÂÃÂÃÂ´ÃÂÃÂ¬ÃÂÃÂÃÂÃÂ´ÃÂÃÂ­ÃÂÃÂÃÂÃÂÃÂÃÂ«ÃÂÃÂ ÃÂÃÂÃÂÃÂ¬ÃÂÃÂÃÂÃÂ */
 .dw-slide.dw-rich {
   gap: 2.5%;
   padding: 3.5% 3%;
@@ -5058,7 +5058,7 @@ dialog#modal::backdrop {
   color: var(--accent);
 }
 
-/* ÃÂ¢ÃÂÃÂÃÂ¢ÃÂÃÂ ÃÂ¬ÃÂÃÂ¤ÃÂ«ÃÂÃÂÃÂÃÂ·ÃÂ«ÃÂ¦ÃÂ¬ÃÂ«ÃÂ·ÃÂ° ÃÂ¢ÃÂÃÂÃÂ¢ÃÂÃÂ */
+/* ÃÂÃÂ¢ÃÂÃÂÃÂÃÂÃÂÃÂ¢ÃÂÃÂÃÂÃÂ ÃÂÃÂ¬ÃÂÃÂÃÂÃÂ¤ÃÂÃÂ«ÃÂÃÂÃÂÃÂÃÂÃÂÃÂÃÂ·ÃÂÃÂ«ÃÂÃÂ¦ÃÂÃÂ¬ÃÂÃÂ«ÃÂÃÂ·ÃÂÃÂ° ÃÂÃÂ¢ÃÂÃÂÃÂÃÂÃÂÃÂ¢ÃÂÃÂÃÂÃÂ */
 .review-page {
   display: flex;
   flex-direction: column;
@@ -5475,7 +5475,7 @@ dialog#modal::backdrop {
   }
 }
 
-/* ÃÂ¢ÃÂÃÂÃÂ¢ÃÂÃÂ ÃÂ«ÃÂ³ÃÂ´ÃÂªÃÂ³ÃÂ ÃÂ¬ÃÂÃÂ ÃÂ«ÃÂ§ÃÂÃÂ«ÃÂÃÂ¤ÃÂªÃÂ¸ÃÂ° (Work Pulse IA/ÃÂ­ÃÂÃÂ¤ ÃÂªÃÂ³ÃÂÃÂ¬ÃÂÃÂ¹) ÃÂ¢ÃÂÃÂÃÂ¢ÃÂÃÂ */
+/* ÃÂÃÂ¢ÃÂÃÂÃÂÃÂÃÂÃÂ¢ÃÂÃÂÃÂÃÂ ÃÂÃÂ«ÃÂÃÂ³ÃÂÃÂ´ÃÂÃÂªÃÂÃÂ³ÃÂÃÂ ÃÂÃÂ¬ÃÂÃÂÃÂÃÂ ÃÂÃÂ«ÃÂÃÂ§ÃÂÃÂÃÂÃÂ«ÃÂÃÂÃÂÃÂ¤ÃÂÃÂªÃÂÃÂ¸ÃÂÃÂ° (Work Pulse IA/ÃÂÃÂ­ÃÂÃÂÃÂÃÂ¤ ÃÂÃÂªÃÂÃÂ³ÃÂÃÂÃÂÃÂ¬ÃÂÃÂÃÂÃÂ¹) ÃÂÃÂ¢ÃÂÃÂÃÂÃÂÃÂÃÂ¢ÃÂÃÂÃÂÃÂ */
 .report-make {
   gap: 14px;
 }
@@ -5669,7 +5669,7 @@ dialog#modal::backdrop {
   }
 }
 
-/* ?? Work Pulse ÃÂ¸ÃÂ°ÃÂ´ÃÂ ÃÂ¡ÃÂ¤ ÃÂ¿ÃÂ¹ÃÂ»ÃÂª ÃÂÃÂÃÂ·ÃÂ ?? */
+/* ?? Work Pulse ÃÂÃÂ¸ÃÂÃÂ°ÃÂÃÂ´ÃÂÃÂ ÃÂÃÂ¡ÃÂÃÂ¤ ÃÂÃÂ¿ÃÂÃÂ¹ÃÂÃÂ»ÃÂÃÂª ÃÂÃÂÃÂÃÂÃÂÃÂ·ÃÂÃÂ ?? */
 dialog.wp-modal,
 dialog#modal {
   width: min(560px, calc(100vw - 24px));
@@ -5964,7 +5964,7 @@ dialog#modal::backdrop {
   }
 }
 
-/* Ã¢ÂÂÃ¢ÂÂ Work Pulse Ã«Â¦Â¬Ã«Â§ÂÃ¬ÂÂ¸Ã«ÂÂ Ã¬ÂÂ¹Ã¬ÂÂ Ã¢ÂÂÃ¢ÂÂ */
+/* ÃÂ¢ÃÂÃÂÃÂ¢ÃÂÃÂ Work Pulse ÃÂ«ÃÂ¦ÃÂ¬ÃÂ«ÃÂ§ÃÂÃÂ¬ÃÂÃÂ¸ÃÂ«ÃÂÃÂ ÃÂ¬ÃÂÃÂ¹ÃÂ¬ÃÂÃÂ ÃÂ¢ÃÂÃÂÃÂ¢ÃÂÃÂ */
 @keyframes tag-twinkle {
   0%,
   100% {
@@ -6386,7 +6386,7 @@ dialog#modal::backdrop {
     grid-column: 1 / -1;
   }
 }
-/* Ã¢ÂÂÃ¢ÂÂ Work Pulse heatmap calendar Ã¢ÂÂÃ¢ÂÂ */
+/* ÃÂ¢ÃÂÃÂÃÂ¢ÃÂÃÂ Work Pulse heatmap calendar ÃÂ¢ÃÂÃÂÃÂ¢ÃÂÃÂ */
 .heatmap-dash { animation: fade-up .32s var(--ease); }
 .heatmap-hero { display: block; text-align: center; padding: 22px 8px 14px; }
 .heatmap-hero .load-desc { margin-left: auto; margin-right: auto; }
@@ -6467,7 +6467,7 @@ dialog#modal::backdrop {
   .heat-grid.agenda .heat-cell.tall { min-height: 72px; }
   .range-step { font-size: .62rem; padding: 5px 1px; }
 }
-/* Ã¢ÂÂÃ¢ÂÂ Work Pulse task-row (Ã¬ÂÂ¼Ã¬Â Â Ã«ÂªÂ©Ã«Â¡Â) Ã¢ÂÂÃ¢ÂÂ */
+/* ÃÂ¢ÃÂÃÂÃÂ¢ÃÂÃÂ Work Pulse task-row (ÃÂ¬ÃÂÃÂ¼ÃÂ¬ÃÂ ÃÂ ÃÂ«ÃÂªÃÂ©ÃÂ«ÃÂ¡ÃÂ) ÃÂ¢ÃÂÃÂÃÂ¢ÃÂÃÂ */
 .work-feed { display: flex; flex-direction: column; gap: 0; }
 .swipe-row { position: relative; overflow: hidden; border-radius: 0; }
 .swipe-front { position: relative; z-index: 1; background: var(--bg-elevated, #fff); }
@@ -6565,7 +6565,7 @@ dialog#modal::backdrop {
   .due-cluster { grid-area: due; justify-content: flex-start; }
   .status-select { grid-area: status; justify-self: start; }
 }
-/* Ã¢ÂÂÃ¢ÂÂ Ã¬ÂÂ°Ã¬ÂÂ´Ã­ÂÂ Ã­ÂÂ ÃÂ· Ã¬ÂÂ±ÃªÂ³Â¼Ã¬Â§ÂÃ­ÂÂ Ã¢ÂÂÃ¢ÂÂ */
+/* ÃÂ¢ÃÂÃÂÃÂ¢ÃÂÃÂ ÃÂ¬ÃÂÃÂ°ÃÂ¬ÃÂÃÂ´ÃÂ­ÃÂÃÂ ÃÂ­ÃÂÃÂ ÃÂÃÂ· ÃÂ¬ÃÂÃÂ±ÃÂªÃÂ³ÃÂ¼ÃÂ¬ÃÂ§ÃÂÃÂ­ÃÂÃÂ ÃÂ¢ÃÂÃÂÃÂ¢ÃÂÃÂ */
 .yeonu-hero {
   display: grid;
   grid-template-columns: 120px 1fr;
@@ -6681,21 +6681,47 @@ dialog#modal::backdrop {
 }
 .home-flow-card strong { font-size: var(--text-sm); letter-spacing: -0.02em; }
 .home-flow-card em { font-style: normal; font-size: var(--text-xs); color: var(--ink-faint); }
-.home-todo-strip { margin-bottom: 12px; }
-.home-todo-inline { list-style: none; margin: 0; padding: 0; display: flex; flex-direction: column; gap: 6px; }
+.home-todo-strip {
+  margin: 0 0 10px;
+  padding: 8px 10px;
+  border: 1px solid var(--line);
+  border-radius: 12px;
+  background: var(--bg-elevated, #fff);
+}
+.home-todo-head {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 8px;
+  margin-bottom: 6px;
+}
+.home-todo-head strong {
+  font-size: var(--text-sm);
+  letter-spacing: -0.02em;
+}
+.home-todo-head span {
+  font-size: 0.72rem;
+  font-weight: 800;
+  color: #c93400;
+  font-variant-numeric: tabular-nums;
+}
+.home-todo-inline { list-style: none; margin: 0; padding: 0; display: flex; flex-direction: column; gap: 4px; }
 .home-todo-inline button {
   width: 100%;
   display: flex;
   justify-content: space-between;
   gap: 10px;
   border: none;
-  background: var(--bg);
-  border-radius: 10px;
-  padding: 10px 12px;
+  background: transparent;
+  border-radius: 8px;
+  padding: 6px 8px;
   cursor: pointer;
   font: inherit;
   text-align: left;
+  color: inherit;
 }
+.home-todo-inline button:hover { background: rgba(0, 113, 227, 0.05); }
+.home-todo-inline strong { font-size: var(--text-sm); letter-spacing: -0.02em; }
 .home-todo-inline span { color: var(--ink-faint); font-size: var(--text-xs); }
 .home-urgency { margin-bottom: 10px; }
 .home-cal-panel { margin-bottom: 12px; }
@@ -6771,113 +6797,74 @@ dialog#modal::backdrop {
     display: none;
   }
 }
-/* —— 홈 진행 현황 프로그레스 바 —— */
-.home-progress { margin-bottom: 14px; }
-.home-progress-overall-label {
+/* —— 홈 영역별 완료 칩 —— */
+.home-status {
   display: flex;
-  flex-direction: column;
-  align-items: flex-end;
-  gap: 2px;
-  line-height: 1.1;
-}
-.home-progress-overall-label strong {
-  font-size: 1.35rem;
-  font-weight: 800;
-  letter-spacing: -0.03em;
-  color: var(--accent);
-  font-variant-numeric: tabular-nums;
-}
-.home-progress-overall {
-  height: 12px;
-  border-radius: 999px;
-  background: rgba(142, 142, 147, 0.16);
-  overflow: hidden;
-  margin: 0 0 14px;
-}
-.home-progress-overall i {
-  display: block;
-  height: 100%;
-  border-radius: inherit;
-  background: linear-gradient(90deg, #0a7ea4, var(--accent));
-  transition: width 320ms var(--ease);
-}
-.home-progress-list {
-  display: flex;
-  flex-direction: column;
-  gap: 8px;
-}
-.home-progress-row {
-  display: grid;
-  grid-template-columns: minmax(7.5rem, 9.5rem) 1fr auto;
-  gap: 10px 12px;
+  flex-wrap: wrap;
   align-items: center;
-  width: 100%;
-  padding: 10px 12px;
+  gap: 8px 12px;
+  margin: 0 0 10px;
+  padding: 8px 10px;
   border: 1px solid var(--line);
   border-radius: 12px;
   background: var(--bg-elevated, #fff);
-  cursor: pointer;
-  text-align: left;
-  font: inherit;
-  color: inherit;
-  transition: border-color 140ms var(--ease), background 140ms var(--ease);
 }
-.home-progress-row:hover {
-  border-color: rgba(0, 113, 227, 0.35);
-  background: rgba(0, 113, 227, 0.03);
-}
-.home-progress-text {
+.home-status-head {
   display: flex;
-  flex-direction: column;
-  gap: 2px;
-  min-width: 0;
+  align-items: baseline;
+  gap: 8px;
+  flex-shrink: 0;
 }
-.home-progress-text strong {
+.home-status-head strong {
   font-size: var(--text-sm);
   letter-spacing: -0.02em;
 }
-.home-progress-text span {
-  font-size: 0.68rem;
+.home-status-head span {
+  font-size: 0.72rem;
   color: var(--ink-faint);
-  white-space: nowrap;
-  overflow: hidden;
-  text-overflow: ellipsis;
-}
-.home-progress-track {
-  height: 8px;
-  border-radius: 999px;
-  background: rgba(142, 142, 147, 0.14);
-  overflow: hidden;
-}
-.home-progress-track i {
-  display: block;
-  height: 100%;
-  border-radius: inherit;
-  background: #8e8e93;
-  transition: width 280ms var(--ease);
-}
-.home-progress-row.is-low .home-progress-track i { background: #ff3b30; }
-.home-progress-row.is-warn .home-progress-track i { background: #ff9500; }
-.home-progress-row.is-good .home-progress-track i { background: #0071e3; }
-.home-progress-row.is-done .home-progress-track i { background: #34c759; }
-.home-progress-pct {
-  font-style: normal;
-  font-size: 0.85rem;
-  font-weight: 800;
   font-variant-numeric: tabular-nums;
+}
+.home-status-chips {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 6px;
+  flex: 1;
+  min-width: 0;
+}
+.home-status-chip {
+  display: inline-flex;
+  align-items: center;
+  gap: 4px;
+  padding: 5px 9px 5px 7px;
+  border: 1px solid var(--line);
+  border-radius: 999px;
+  background: #fff;
+  cursor: pointer;
+  font: inherit;
+  font-size: 0.78rem;
+  font-weight: 650;
   letter-spacing: -0.02em;
   color: var(--ink-soft);
-  min-width: 2.6em;
-  text-align: right;
+  line-height: 1;
 }
-@media (max-width: 640px) {
-  .home-progress-row {
-    grid-template-columns: 1fr auto;
-    grid-template-areas:
-      "text pct"
-      "bar bar";
-  }
-  .home-progress-text { grid-area: text; }
-  .home-progress-track { grid-area: bar; }
-  .home-progress-pct { grid-area: pct; }
+.home-status-chip i {
+  font-style: normal;
+  font-weight: 800;
+  width: 0.9em;
+  text-align: center;
+  font-variant-numeric: tabular-nums;
+}
+.home-status-chip:hover { border-color: rgba(0, 113, 227, 0.35); }
+.home-status-chip.is-done {
+  border-color: rgba(52, 199, 89, 0.45);
+  background: rgba(52, 199, 89, 0.08);
+  color: #1a7f37;
+}
+.home-status-chip.is-doing {
+  border-color: rgba(0, 113, 227, 0.35);
+  background: rgba(0, 113, 227, 0.06);
+  color: #005bb5;
+}
+.home-status-chip.is-todo {
+  color: var(--ink-faint);
 }

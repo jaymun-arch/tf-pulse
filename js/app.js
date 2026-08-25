@@ -67,44 +67,20 @@ const BUDGET_CATALOG = {
 };
 
 const VIEW_META = {
-  dashboard: {
-    title: "연어회",
-    desc: "연성의 말(語)가 모여 회(會)를 이루면 못할 일이 없다.",
-  },
-  parts: { title: "목차·할당", desc: "보고서 목차와 파트별 할당 분량을 관리합니다." },
-  collections: {
-    title: "취합",
-    desc: "1·2·3차 내 파트를 업로드하면 분량·구성 요약을 바로 확인합니다.",
-  },
-  review: {
-    title: "윤독",
-    desc: "취합본의 주요 검토사항을 인터랙티브하게 남기고 관리합니다.",
-  },
-  requests: { title: "요청", desc: "관리자가 작업을 요청하고, 담당자는 일정을 확인하며 진행합니다." },
-  budget: {
-    title: "예산",
-    desc: "영역·프로그램별 예산·산출내역 입력, 엑셀 일괄 업/다운로드, 비목별 자동 합산.",
-  },
-  schedule: {
-    title: "일정",
-    desc: "보고서 제출일까지 달력으로 일정을 보고 진행도를 관리합니다.",
-  },
-  drive: { title: "드라이브", desc: "주요 문서 구글드라이브 링크입니다." },
-  resources: { title: "양식", desc: "공통양식·스타일 가이드를 공유합니다." },
-  food: { title: "오늘 뭐먹지", desc: "보고서 쓰다 배고플 때, 돌림판으로 메뉴를 정해 보세요." },
-  members: { title: "구성원", desc: "TF 참여 구성원을 등록·관리합니다." },
-  "ai-art": {
-    title: "그림",
-    desc: "조건에 맞춰 보고서용 그림을 자동 생성합니다.",
-  },
-  kpi: {
-    title: "성과지표",
-    desc: "성과지표명·기준값·근거·산식으로 목표 달성 시뮬레이션을 합니다.",
-  },
-  guide: {
-    title: "사용방법",
-    desc: "심플한 TF 운영 흐름을 메뉴별로 안내합니다.",
-  },
+  dashboard: { title: "연어회", desc: "진행·일정·할 일" },
+  parts: { title: "목차·할당", desc: "목차와 파트 분량" },
+  collections: { title: "취합", desc: "차수별 제출·점검" },
+  review: { title: "윤독", desc: "검토사항 기록" },
+  requests: { title: "요청", desc: "작업 요청·진행" },
+  budget: { title: "예산", desc: "입력·취합·엑셀" },
+  schedule: { title: "일정", desc: "달력·마감" },
+  drive: { title: "드라이브", desc: "문서 링크" },
+  resources: { title: "양식", desc: "공통양식·가이드" },
+  food: { title: "오늘 뭐먹지", desc: "메뉴 돌림판" },
+  members: { title: "구성원", desc: "TF 멤버" },
+  "ai-art": { title: "그림", desc: "보고서용 그림" },
+  kpi: { title: "성과지표", desc: "목표 달성 시뮬레이션" },
+  guide: { title: "사용방법", desc: "메뉴별 안내" },
 };
 
 /** 심플 TF 운영 메뉴: 홈(달력) → 보고서 → 요청 → 예산 → 성과 → 식사 → 설정 */
@@ -901,9 +877,7 @@ function setView(name) {
       : "본인 담당 파트의 작성 페이지·제출 상태를 입력합니다.";
   }
   if (viewName === "dashboard") {
-    desc = isAdmin()
-      ? "달력으로 일정을 보고, 구성원에게 요청·목차 할당으로 TF를 운영합니다."
-      : "보고서 제출까지 남은 기간을 확인하고, 일정에 맞춰 내 파트를 진행합니다.";
+    desc = "영역별 완료 여부와 일정·할 일을 한눈에 봅니다.";
   }
   if (viewName === "budget") {
     const modeMeta = budgetModeMeta();
@@ -1833,6 +1807,12 @@ function closeRequestPopup() {
 }
 
 /** 홈 진행률 바용 지표 */
+function statusOfPct(pct) {
+  if (pct >= 100) return "done";
+  if (pct > 0) return "doing";
+  return "todo";
+}
+
 function buildHomeProgressItems() {
   const admin = isAdmin();
   const me = currentMember();
@@ -1890,62 +1870,49 @@ function buildHomeProgressItems() {
     kpiPct = Math.round(rates.reduce((a, b) => a + b, 0) / rates.length);
   }
 
-  const items = admin
+  const raw = admin
     ? [
-        { key: "resources", label: "양식·서식", detail: resources ? `${resources}건 등록` : "미등록", pct: resPct, goto: "resources" },
-        { key: "parts", label: "목차·할당", detail: `담당 ${partsAssigned}/${partsTotal} · ${pageAlloc}/${pageTarget || "?"}p`, pct: pagePct, goto: "parts" },
-        { key: "requests", label: "작업 요청", detail: `완료 ${reqDone}/${reqTotal || 0}`, pct: reqPct, goto: "requests" },
-        { key: "collections", label: "취합 점검", detail: `제출 ${colDone}/${colTotal || 0}`, pct: colPct, goto: "collections" },
-        { key: "review", label: "윤독", detail: reviewComments ? `코멘트 ${reviewComments}건` : "검토 대기", pct: reviewPct, goto: "review" },
-        { key: "budget", label: "예산 입력", detail: `산출 ${budDone}/${budTotal || 0}`, pct: budPct, goto: "budget" },
-        { key: "kpi", label: "성과지표", detail: kpis.length ? `평균 달성 ${kpiPct}%` : "지표 없음", pct: kpiPct, goto: "kpi" },
-        { key: "schedule", label: "일정", detail: `완료 ${schedDone}/${schedTotal || 0}`, pct: schedPct, goto: "schedule" },
+        { label: "양식", pct: resPct, goto: "resources" },
+        { label: "목차", pct: pagePct, goto: "parts" },
+        { label: "요청", pct: reqPct, goto: "requests" },
+        { label: "취합", pct: colPct, goto: "collections" },
+        { label: "윤독", pct: reviewPct, goto: "review" },
+        { label: "예산", pct: budPct, goto: "budget" },
+        { label: "성과", pct: kpiPct, goto: "kpi" },
+        { label: "일정", pct: schedPct, goto: "schedule" },
       ]
     : [
-        { key: "resources", label: "양식 확인", detail: resources ? `${resources}건` : "없음", pct: resPct, goto: "resources" },
-        { key: "collections", label: "내 파트 취합", detail: `제출 ${colDone}/${colTotal || 0}`, pct: colPct, goto: "collections" },
-        { key: "requests", label: "받은 요청", detail: reqTotal ? `완료 ${reqDone}/${reqTotal}` : "요청 없음", pct: reqPct, goto: "requests" },
-        { key: "budget", label: "내 예산", detail: budTotal ? `입력 ${budDone}/${budTotal}` : "배정 없음", pct: budPct, goto: "budget" },
-        { key: "kpi", label: "성과지표", detail: kpis.length ? `평균 ${kpiPct}%` : "—", pct: kpiPct, goto: "kpi" },
-        { key: "schedule", label: "일정", detail: `완료 ${schedDone}/${schedTotal || 0}`, pct: schedPct, goto: "schedule" },
+        { label: "양식", pct: resPct, goto: "resources" },
+        { label: "취합", pct: colPct, goto: "collections" },
+        { label: "요청", pct: reqPct, goto: "requests" },
+        { label: "예산", pct: budPct, goto: "budget" },
+        { label: "성과", pct: kpiPct, goto: "kpi" },
+        { label: "일정", pct: schedPct, goto: "schedule" },
       ];
 
-  const overall = items.length
-    ? Math.round(items.reduce((s, i) => s + i.pct, 0) / items.length)
-    : 0;
-  return { overall, items };
+  const items = raw.map((it) => ({ ...it, status: statusOfPct(it.pct) }));
+  const doneCount = items.filter((i) => i.status === "done").length;
+  return { doneCount, total: items.length, items };
 }
 
-function homeProgressBarHtml({ overall, items }) {
+function homeStatusStripHtml({ doneCount, total, items }) {
+  const mark = { done: "✓", doing: "…", todo: "·" };
+  const label = { done: "완료", doing: "진행", todo: "대기" };
   return `
-    <section class="panel home-progress" aria-label="TF 진행 현황">
-      <div class="panel-head">
-        <div>
-          <h2 class="panel-title">진행 현황</h2>
-          <p class="muted" style="margin:4px 0 0">영역을 누르면 해당 메뉴로 이동합니다.</p>
-        </div>
-        <div class="home-progress-overall-label">
-          <span class="muted">전체</span>
-          <strong>${overall}%</strong>
-        </div>
+    <section class="home-status" aria-label="영역별 완료 여부">
+      <div class="home-status-head">
+        <strong>진행</strong>
+        <span>완료 ${doneCount}/${total}</span>
       </div>
-      <div class="home-progress-overall" role="progressbar" aria-valuenow="${overall}" aria-valuemin="0" aria-valuemax="100">
-        <i style="width:${overall}%"></i>
-      </div>
-      <div class="home-progress-list">
+      <div class="home-status-chips">
         ${items
-          .map((it) => {
-            const tone = it.pct >= 100 ? "is-done" : it.pct >= 60 ? "is-good" : it.pct >= 30 ? "is-warn" : "is-low";
-            return `
-          <button type="button" class="home-progress-row ${tone}" data-goto="${escapeAttr(it.goto)}">
-            <div class="home-progress-text">
-              <strong>${escapeHtml(it.label)}</strong>
-              <span>${escapeHtml(it.detail)}</span>
-            </div>
-            <div class="home-progress-track" aria-hidden="true"><i style="width:${Math.max(0, Math.min(100, it.pct))}%"></i></div>
-            <em class="home-progress-pct">${it.pct}%</em>
-          </button>`;
-          })
+          .map(
+            (it) => `
+          <button type="button" class="home-status-chip is-${it.status}" data-goto="${escapeAttr(it.goto)}" title="${escapeAttr(label[it.status])}">
+            <i aria-hidden="true">${mark[it.status]}</i>
+            <span>${escapeHtml(it.label)}</span>
+          </button>`
+          )
           .join("")}
       </div>
     </section>`;
@@ -1985,31 +1952,23 @@ function renderDashboard() {
       <div class="yeonu-hero-copy">
         <p class="yeonu-kicker">Yeonuhue · TF</p>
         <h1 class="yeonu-title">연어회</h1>
-        <p class="yeonu-story">
-          <strong>연성</strong>의 <strong>말(語)</strong>가 모여<br />
-          <strong>회(會)</strong>를 이루면 못할 일이 없다.
-        </p>
-        <p class="yeonu-sub muted">말과 사람이 모이면 보고서도, 일정도, 예산도 함께 완성됩니다.</p>
-        <p class="yeonu-deadline">
-          보고서 제출까지
-          <strong id="homeDeadlineRemain">—</strong>
-          남았습니다.
-        </p>
+        <p class="yeonu-story"><strong>연성</strong>의 <strong>말(語)</strong>가 모여 <strong>회(會)</strong>를 이루면 못할 일이 없다.</p>
+        <p class="yeonu-deadline">제출까지 <strong id="homeDeadlineRemain">—</strong></p>
       </div>
     </section>
 
-    ${homeProgressBarHtml(progress)}
+    ${homeStatusStripHtml(progress)}
 
     ${
       actions.length
-        ? `<div class="panel home-todo-strip">
-        <div class="panel-head">
-          <h2 class="panel-title">${escapeHtml(who)}님, 지금 챙길 일</h2>
-          <span class="badge warn">${actions.length}건</span>
+        ? `<div class="home-todo-strip">
+        <div class="home-todo-head">
+          <strong>${escapeHtml(who)} · 할 일</strong>
+          <span>${actions.length}</span>
         </div>
         <ul class="home-todo-inline">
           ${actions
-            .slice(0, 4)
+            .slice(0, 3)
             .map(
               (a) =>
                 `<li><button type="button" data-goto="${escapeAttr(a.goto)}"><strong>${escapeHtml(a.title)}</strong><span>${escapeHtml(a.meta)}</span></button></li>`
