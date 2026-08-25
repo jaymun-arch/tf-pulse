@@ -8,6 +8,7 @@ import {
 } from "./ai.js";
 import { REPORT_LAYOUTS, downloadReportLayoutPpt, layoutPreviewWireHtml } from "./report-layouts.js";
 import { downloadEditableDiagramPpt, diagramPreviewWireHtml } from "./report-diagrams.js";
+import { downloadReportArtPackagePpt } from "./report-art-pack.js";
 
 const STORAGE_KEY = "tf-ops-data-v13";
 const USER_KEY = "tf-ops-user-v1";
@@ -892,7 +893,11 @@ function setView(name) {
   $("#viewTitle").textContent = title;
   $("#viewDesc").textContent = desc;
   const hero = $("#pageHero");
-  if (hero) hero.hidden = viewName === "dashboard";
+  if (hero) {
+    hero.hidden = viewName === "dashboard";
+    hero.classList.toggle("is-merged-away", viewName === "dashboard");
+  }
+  document.body.classList.toggle("view-home", viewName === "dashboard");
   renderView(viewName);
 }
 
@@ -1322,14 +1327,19 @@ function ensureHeatDayTip() {
   });
   tip.addEventListener("mouseleave", () => {
     tip.dataset.sticky = "";
-    hideHeatDayTip();
+    hideHeatDayTip(true);
   });
   tip.addEventListener("click", () => {
     const iso = tip.dataset.iso;
     if (!iso) return;
-    hideHeatDayTip();
+    hideHeatDayTip(true);
     openDayDeadlineDetail(iso);
   });
+  if (!window.__heatTipChromeBound) {
+    window.__heatTipChromeBound = true;
+    window.addEventListener("scroll", () => hideHeatDayTip(true), true);
+    window.addEventListener("resize", () => hideHeatDayTip(true));
+  }
   return tip;
 }
 
@@ -2196,18 +2206,26 @@ function renderDashboard() {
     ? eventsOnDate(selected).filter((s) => (s.status || "") !== "완료")
     : [];
   const progress = buildHomeProgressItems();
+  const tfLabel = state.meta?.reportTitle || state.meta?.tfName || "2026 교육혁신 성과보고서 TF";
 
   el.innerHTML = `
-    <section class="yeonu-hero" aria-label="연어회">
+    <section class="yeonu-hero yeonu-hero-unified" aria-label="연어회">
       <div class="yeonu-hero-visual">
         <img src="assets/yeonuhue-hero.png" alt="연어들이 모여 회를 이루는 일러스트" width="1280" height="720" />
       </div>
       <div class="yeonu-hero-copy">
-        <p class="yeonu-kicker">Yeonuhue · TF</p>
+        <p class="yeonu-kicker">${escapeHtml(tfLabel)}</p>
         <h1 class="yeonu-title">연어회</h1>
         <p class="yeonu-story"><strong>연성</strong>의 <strong>말(語)</strong>가 모여 <strong>회(會)</strong>를 이루면 못할 일이 없다.</p>
-        <p class="yeonu-deadline">제출까지 <strong id="homeDeadlineRemain">—</strong></p>
       </div>
+      <aside class="yeonu-hero-aside report-deadline" aria-live="polite">
+        <p class="deadline-remain">
+          보고서 제출까지
+          <strong id="homeDeadlineRemain">—</strong>
+          남았습니다.
+        </p>
+        <p class="deadline-base">최종 제출일 8월 3일 오후 4시 기준</p>
+      </aside>
     </section>
 
     ${homeStatusStripHtml(progress)}
@@ -2291,9 +2309,7 @@ function renderDashboard() {
   `;
 
   const tickHomeDeadline = () => {
-    const strong = $("#homeDeadlineRemain");
-    const src = $("#deadlineRemain");
-    if (strong && src) strong.innerHTML = src.innerHTML;
+    updateReportDeadline();
   };
   tickHomeDeadline();
 
@@ -5808,34 +5824,30 @@ function renderAiArt() {
     )
     .join("");
   const groups = artTypesByGroup();
-  // 단일 선택: 이전 다중 선택이 남아 있으면 첫 항목만 유지
-  const selectedLayoutId = Array.isArray(state._reportLayoutIds)
-    ? state._reportLayoutIds[0] || ""
-    : "";
-  if (state._reportLayoutIds?.length > 1) state._reportLayoutIds = selectedLayoutId ? [selectedLayoutId] : [];
+  // 다중 선택: 없으면 전체 레이아웃을 기본 재료로 선택
+  let selectedLayoutIds = Array.isArray(state._reportLayoutIds)
+    ? state._reportLayoutIds.filter((id) => REPORT_LAYOUTS.some((l) => l.id === id))
+    : [];
+  if (!selectedLayoutIds.length) {
+    selectedLayoutIds = REPORT_LAYOUTS.map((l) => l.id);
+    state._reportLayoutIds = [...selectedLayoutIds];
+  }
 
   ensureReportDoc();
   const doc = reportDocKindMeta();
   const docKind = getReportDocKind();
-  const sub = ["layout", "diagram", "result"].includes(state._aiArtSub) ? state._aiArtSub : "diagram";
+  const sub = ["layout", "diagram", "result"].includes(state._aiArtSub) ? state._aiArtSub : "layout";
   state._aiArtSub = sub;
   const who = sessionUser || "작성자";
-  const layoutName = selectedLayoutId
-    ? REPORT_LAYOUTS.find((l) => l.id === selectedLayoutId)?.name || "선택됨"
-    : "미선택";
+  const layoutCount = selectedLayoutIds.length;
+  const flowStep = sub === "layout" ? 1 : sub === "diagram" ? 2 : 3;
 
   el.innerHTML = `
     <div class="ai-page report-make">
       <header class="report-make-hero">
-        <p class="report-make-kicker">보고서 만들기</p>
-        <h2 class="report-make-title"><span class="mine-name">${escapeHtml(who)}</span> 님, 양식과 도식을 골라 보고서를 만드세요.</h2>
-        <p class="report-make-desc">흑백 편집 PPT · GPT 기획 · 참고 그림을 한곳에서 다룹니다.</p>
-        <div class="report-make-chips" aria-label="현재 선택 요약">
-          <span class="rm-chip is-accent">${escapeHtml(doc.name)}</span>
-          <span class="rm-chip">양식 · ${escapeHtml(layoutName)}</span>
-          <span class="rm-chip">도식 · ${escapeHtml(frame.name)} / ${escapeHtml(type.name)}</span>
-          <span class="rm-chip">${arts.length ? `참고 ${arts.length}장` : "참고 없음"}</span>
-        </div>
+        <p class="report-make-kicker">보고서 그림</p>
+        <h2 class="report-make-title"><span class="mine-name">${escapeHtml(who)}</span> 님, 기본 재료로 상세 그림을 완성하세요.</h2>
+        <p class="report-make-desc">양식 레이아웃 → 도식 → 패키지 받기의 흐름이 한눈에 보이도록 구성했습니다.</p>
         ${
           isAdmin()
             ? `<div class="report-make-mode" role="group" aria-label="작성 기준">
@@ -5846,24 +5858,63 @@ function renderAiArt() {
         }
       </header>
 
-      <nav class="report-make-tabs" role="tablist" aria-label="보고서 만들기 단계">
-        <button type="button" class="report-make-tab ${sub === "layout" ? "active" : ""}" data-art-sub="layout" role="tab" aria-selected="${sub === "layout"}">양식 레이아웃</button>
-        <button type="button" class="report-make-tab ${sub === "diagram" ? "active" : ""}" data-art-sub="diagram" role="tab" aria-selected="${sub === "diagram"}">도식 만들기</button>
-        <button type="button" class="report-make-tab ${sub === "result" ? "active" : ""}" data-art-sub="result" role="tab" aria-selected="${sub === "result"}">결과·참고</button>
+      <ol class="art-flow" aria-label="보고서 그림 제작 흐름">
+        <li class="art-flow-step ${flowStep === 1 ? "is-on" : flowStep > 1 ? "is-done" : ""}">
+          <button type="button" data-art-sub="layout">
+            <span class="art-flow-num">1</span>
+            <strong>양식 레이아웃</strong>
+            <em>${layoutCount}종 선택</em>
+          </button>
+        </li>
+        <li class="art-flow-arrow" aria-hidden="true">→</li>
+        <li class="art-flow-step ${flowStep === 2 ? "is-on" : flowStep > 2 ? "is-done" : ""}">
+          <button type="button" data-art-sub="diagram">
+            <span class="art-flow-num">2</span>
+            <strong>도식 설계</strong>
+            <em>${escapeHtml(type.name)}</em>
+          </button>
+        </li>
+        <li class="art-flow-arrow" aria-hidden="true">→</li>
+        <li class="art-flow-step ${flowStep === 3 ? "is-on" : ""}">
+          <button type="button" data-art-sub="result">
+            <span class="art-flow-num">3</span>
+            <strong>재료 PPT</strong>
+            <em>${escapeHtml(doc.name)}</em>
+          </button>
+        </li>
+      </ol>
+
+      <div class="art-pack-bar">
+        <div>
+          <strong>전체 재료 패키지</strong>
+          <span class="muted">양식 ${REPORT_LAYOUTS.length}종 + 도식 8종을 한 PPT로 받습니다.</span>
+        </div>
+        <button type="button" class="btn btn-primary" id="artPackageDownload">${flaticonIcon("fi-rr-download")} 전체 재료 PPT 다운로드</button>
+        <span class="muted" id="artPackageStatus"></span>
+      </div>
+
+      <nav class="report-make-tabs" role="tablist" aria-label="보고서 그림 단계" hidden>
+        <button type="button" class="report-make-tab ${sub === "layout" ? "active" : ""}" data-art-sub="layout" role="tab">양식</button>
+        <button type="button" class="report-make-tab ${sub === "diagram" ? "active" : ""}" data-art-sub="diagram" role="tab">도식</button>
+        <button type="button" class="report-make-tab ${sub === "result" ? "active" : ""}" data-art-sub="result" role="tab">결과</button>
       </nav>
 
       <section class="panel layout-ppt-panel report-make-panel" data-art-panel="layout" ${sub === "layout" ? "" : "hidden"}>
         <div class="panel-head">
           <div>
-            <h2 class="panel-title">${flaticonIcon("fi-rr-table-layout", "panel-title-icon")} 보고서 양식 레이아웃</h2>
-            <p class="panel-desc">장번호·요약박스·표 스타일 기본 레이아웃입니다. <strong>하나만</strong> 고른 뒤 PPT로 받아 수치·문장만 바꾸세요.</p>
+            <h2 class="panel-title">${flaticonIcon("fi-rr-table-layout", "panel-title-icon")} 1. 양식 레이아웃 재료</h2>
+            <p class="panel-desc">상세 그림의 바탕이 되는 표·조직·SWOT·타임라인·예산 레이아웃입니다. <strong>여러 개</strong> 고른 뒤 내려받으세요.</p>
+          </div>
+          <div class="row">
+            <button type="button" class="btn btn-sm" id="layoutPptAll">전체 선택</button>
+            <button type="button" class="btn btn-sm" id="layoutPptNone">선택 해제</button>
           </div>
         </div>
-        <div class="layout-ppt-grid" role="radiogroup" aria-label="보고서 레이아웃">
+        <div class="layout-ppt-grid" role="group" aria-label="보고서 레이아웃">
           ${REPORT_LAYOUTS.map(
             (l) => `
-            <label class="layout-ppt-card ${l.id === selectedLayoutId ? "is-on" : ""}" data-layout-card="${escapeAttr(l.id)}" data-layout-name="${escapeAttr(l.name)}">
-              <input type="radio" name="report-layout" data-layout-id="${escapeAttr(l.id)}" ${l.id === selectedLayoutId ? "checked" : ""} />
+            <label class="layout-ppt-card ${selectedLayoutIds.includes(l.id) ? "is-on" : ""}" data-layout-card="${escapeAttr(l.id)}" data-layout-name="${escapeAttr(l.name)}">
+              <input type="checkbox" data-layout-id="${escapeAttr(l.id)}" ${selectedLayoutIds.includes(l.id) ? "checked" : ""} />
               <div class="layout-card-icon" aria-hidden="true">${flaticonIcon(l.icon || "fi-rr-table-layout")}</div>
               <div class="layout-thumb" aria-hidden="true">${layoutPreviewWireHtml(l.id)}</div>
               <span class="layout-ppt-preview">${escapeHtml(l.preview)}</span>
@@ -5886,18 +5937,17 @@ function renderAiArt() {
           </label>
         </div>
         <div class="report-make-actions">
-          <button type="button" class="btn btn-primary" id="layoutPptDownload">${flaticonIcon("fi-rr-download")} 선택 레이아웃 PPT 다운로드</button>
-          <button type="button" class="btn btn-sm" id="layoutPptNone">${flaticonIcon("fi-rr-rectangle-xmark")} 선택 해제</button>
+          <button type="button" class="btn btn-primary" id="layoutPptDownload">${flaticonIcon("fi-rr-download")} 선택 레이아웃 PPT</button>
+          <button type="button" class="btn" data-art-sub="diagram">다음 · 도식 설계 →</button>
           <span class="muted" id="layoutPptStatus"></span>
         </div>
-        <p class="flaticon-credit muted" style="margin-top:10px">Icons by <a href="https://www.flaticon.com/uicons" target="_blank" rel="noopener noreferrer">Flaticon</a></p>
       </section>
 
       <section class="panel diagram-wizard report-make-panel" data-art-panel="diagram" ${sub === "diagram" ? "" : "hidden"}>
         <div class="panel-head">
           <div>
-            <h2 class="panel-title">${flaticonIcon("fi-rr-paintbrush-pencil", "panel-title-icon")} 도식 만들기</h2>
-            <p class="panel-desc">작성 틀 → 도식 타입 → 내용 순으로 고른 뒤, 아래에서 흑백 편집 PPT를 만듭니다.</p>
+            <h2 class="panel-title">${flaticonIcon("fi-rr-paintbrush-pencil", "panel-title-icon")} 2. 도식 설계</h2>
+            <p class="panel-desc">작성 틀과 도식 타입을 고르면, 편집용 도식 재료(본도식·빈 골격·8종 키트)가 PPT로 만들어집니다.</p>
           </div>
         </div>
 
@@ -5967,9 +6017,9 @@ function renderAiArt() {
         </div>
 
         <div class="diagram-cta report-make-cta">
-          <button type="button" class="btn btn-primary btn-lg" id="diagramBuildBtn">${flaticonIcon("fi-rr-magic-wand")} 보고서용 그림 만들기</button>
+          <button type="button" class="btn btn-primary btn-lg" id="diagramBuildBtn">${flaticonIcon("fi-rr-magic-wand")} 도식 재료 PPT 만들기</button>
           <p class="muted">선택: <strong id="diagramChoiceSummary">${escapeHtml(frame.name)} · ${escapeHtml(type.name)}</strong></p>
-          <p class="muted" style="margin:4px 0 0">GPT가 보고서 내용을 먼저 구조화한 뒤, 목적에 맞는 흑백 도식 PPT를 만듭니다.</p>
+          <p class="muted" style="margin:4px 0 0">본도식 + 빈 골격 + 도식 8종 키트가 한 파일로 저장됩니다.</p>
         </div>
       </section>
 
@@ -5977,8 +6027,8 @@ function renderAiArt() {
         <div class="diagram-result" id="diagramResult">
           <div class="diagram-result-head">
             <div>
-              <h3 class="panel-title" style="margin:0">결과·참고</h3>
-              <span class="muted" id="diagramResultMeta">도식 만들기를 실행하면 미리보기와 다운로드가 여기에 모입니다.</span>
+              <h3 class="panel-title" style="margin:0">3. 재료 PPT · 참고</h3>
+              <span class="muted" id="diagramResultMeta">도식을 만들거나 위에서 전체 재료 패키지를 받으세요.</span>
             </div>
           </div>
           <div class="ai-art-progress diagram-build-progress" id="aiArtProgress" hidden aria-hidden="true">
@@ -5998,7 +6048,7 @@ function renderAiArt() {
             </div>
           </div>
           <div class="diagram-result-actions report-make-actions">
-            <button type="button" class="btn btn-primary" id="aiArtEditablePpt" disabled>편집용 PPT 다운로드</button>
+            <button type="button" class="btn btn-primary" id="aiArtEditablePpt" disabled>도식 재료 PPT 다시 받기</button>
             <button type="button" class="btn" id="aiArtRun">AI 참고 그림도 만들기 (선택)</button>
             <button type="button" class="btn" id="aiArtPpt" ${arts.length ? "" : "disabled"}>참고 그림 PPT</button>
             <span class="muted" id="diagramBuildDoneHint"></span>
@@ -6033,16 +6083,16 @@ function renderAiArt() {
             )
             .join("")}
         </div>`
-            : `<div class="empty" style="margin-top:12px">아직 참고 그림이 없습니다. 도식 만들기 후 「AI 참고 그림도 만들기」를 실행하세요.</div>`
+            : `<div class="empty" style="margin-top:12px">참고 비트맵은 선택 사항입니다. 먼저 전체 재료 PPT 또는 도식 재료 PPT를 받으세요.</div>`
         }
-        <p class="flaticon-credit muted" style="margin-top:12px">Icons by <a href="https://www.flaticon.com/uicons" target="_blank" rel="noopener noreferrer">Flaticon</a></p>
       </section>
     </div>
   `;
 
   const showArtSub = (next) => {
-    const id = ["layout", "diagram", "result"].includes(next) ? next : "diagram";
+    const id = ["layout", "diagram", "result"].includes(next) ? next : "layout";
     state._aiArtSub = id;
+    const step = id === "layout" ? 1 : id === "diagram" ? 2 : 3;
     el.querySelectorAll("[data-art-sub]").forEach((btn) => {
       const on = btn.dataset.artSub === id;
       btn.classList.toggle("active", on);
@@ -6050,6 +6100,13 @@ function renderAiArt() {
     });
     el.querySelectorAll("[data-art-panel]").forEach((panel) => {
       panel.hidden = panel.dataset.artPanel !== id;
+    });
+    el.querySelectorAll(".art-flow-step").forEach((li) => {
+      const btn = li.querySelector("[data-art-sub]");
+      if (!btn) return;
+      const sid = btn.dataset.artSub === "layout" ? 1 : btn.dataset.artSub === "diagram" ? 2 : 3;
+      li.classList.toggle("is-on", sid === step);
+      li.classList.toggle("is-done", sid < step);
     });
   };
 
@@ -6073,10 +6130,8 @@ function renderAiArt() {
     if ($("#aiArtStyleGuide")) $("#aiArtStyleGuide").value = guide;
   };
 
-  const collectLayoutIds = () => {
-    const checked = el.querySelector("[data-layout-id]:checked");
-    return checked?.dataset.layoutId ? [checked.dataset.layoutId] : [];
-  };
+  const collectLayoutIds = () =>
+    el.querySelectorAll("[data-layout-id]:checked").map((inp) => inp.dataset.layoutId).filter(Boolean);
 
   const syncLayoutCards = () => {
     el.querySelectorAll(".layout-ppt-card").forEach((card) => {
@@ -6084,10 +6139,54 @@ function renderAiArt() {
       card.classList.toggle("is-on", Boolean(on));
     });
     state._reportLayoutIds = collectLayoutIds();
+    const countEm = el.querySelector('.art-flow-step [data-art-sub="layout"] em');
+    if (countEm) countEm.textContent = `${state._reportLayoutIds.length}종 선택`;
   };
 
   el.querySelectorAll("[data-layout-id]").forEach((inp) => {
     inp.addEventListener("change", syncLayoutCards);
+  });
+
+  $("#layoutPptAll")?.addEventListener("click", () => {
+    el.querySelectorAll("[data-layout-id]").forEach((c) => {
+      c.checked = true;
+    });
+    syncLayoutCards();
+  });
+  $("#layoutPptNone")?.addEventListener("click", () => {
+    el.querySelectorAll("[data-layout-id]").forEach((c) => {
+      c.checked = false;
+    });
+    syncLayoutCards();
+  });
+
+  $("#artPackageDownload")?.addEventListener("click", async () => {
+    const status = $("#artPackageStatus");
+    const btn = $("#artPackageDownload");
+    const ids = collectLayoutIds().length ? collectLayoutIds() : REPORT_LAYOUTS.map((l) => l.id);
+    try {
+      if (btn) btn.disabled = true;
+      if (status) status.textContent = "전체 재료 PPT 작성 중…";
+      state._layoutChapterNo = ($("#layoutChapterNo")?.value || "3").trim();
+      state._reportLayoutIds = ids;
+      const plan = state._lastDiagramPlan || {};
+      await downloadReportArtPackagePpt({
+        layoutIds: ids,
+        chapterNo: state._layoutChapterNo,
+        typeId: state._aiArtType || selectedType,
+        title: ($("#aiArtTitle")?.value || "").trim() || reportArtTypeById(state._aiArtType || selectedType).name,
+        labels: plan.labels || plan,
+        docKindName: reportDocKindMeta().name,
+        fileName: `연성대_보고서_그림_전체재료_${today()}`,
+      });
+      if (status) status.textContent = `완료 · 양식 ${ids.length}종 + 도식 키트`;
+      showArtSub("result");
+    } catch (err) {
+      if (status) status.textContent = "";
+      alert(err.message || "전체 재료 PPT 저장에 실패했습니다.");
+    } finally {
+      if (btn) btn.disabled = false;
+    }
   });
 
   const layoutFloat = $("#layoutFloat");
@@ -6135,18 +6234,12 @@ function renderAiArt() {
     });
   });
 
-  $("#layoutPptNone")?.addEventListener("click", () => {
-    el.querySelectorAll("[data-layout-id]").forEach((c) => {
-      c.checked = false;
-    });
-    syncLayoutCards();
-  });
   $("#layoutPptDownload")?.addEventListener("click", async () => {
     const ids = collectLayoutIds();
     const status = $("#layoutPptStatus");
     const btn = $("#layoutPptDownload");
     if (!ids.length) {
-      alert("내려받을 레이아웃을 하나 선택해 주세요.");
+      alert("내려받을 레이아웃을 하나 이상 선택해 주세요.");
       return;
     }
     try {
@@ -6159,6 +6252,7 @@ function renderAiArt() {
         layoutIds: ids,
         chapterNo: state._layoutChapterNo,
         titlePrefix: state._layoutFilePrefix,
+        pack: ids.length > 1,
       });
       if (status) status.textContent = `${ids.length}종 레이아웃 다운로드 완료`;
     } catch (err) {
@@ -8297,32 +8391,29 @@ function formatDeadlineRemain(ms) {
 function updateReportDeadline() {
   const remain = REPORT_DEADLINE.getTime() - Date.now();
   const text = remain <= 0 ? null : formatDeadlineRemain(remain).text;
-  const line = document.querySelector(".deadline-remain");
-  const el = $("#deadlineRemain");
-  const home = $("#homeDeadlineRemain");
+  const lines = document.querySelectorAll(".deadline-remain");
 
   if (remain <= 0) {
-    if (line) {
+    lines.forEach((line) => {
       line.classList.add("is-over");
       line.textContent = "보고서 제출일이 지났습니다.";
-    }
-    if (home) home.textContent = "제출일 경과";
+    });
     if (deadlineTimer) {
       window.clearInterval(deadlineTimer);
       deadlineTimer = null;
     }
     return;
   }
-  if (line) {
+  lines.forEach((line) => {
     line.classList.remove("is-over");
-    if (!el) {
-      line.innerHTML =
-        '보고서 제출까지 <strong id="deadlineRemain">00일 00시간 00분</strong> 남았습니다.';
+    let strong = line.querySelector("strong");
+    if (!strong) {
+      const id = line.closest(".yeonu-hero-aside") ? "homeDeadlineRemain" : "deadlineRemain";
+      line.innerHTML = `보고서 제출까지 <strong id="${id}">00일 00시간 00분</strong> 남았습니다.`;
+      strong = line.querySelector("strong");
     }
-  }
-  const strong = $("#deadlineRemain");
-  if (strong) strong.textContent = text;
-  if (home) home.textContent = text;
+    if (strong) strong.textContent = text;
+  });
 }
 
 function startReportDeadlineClock() {

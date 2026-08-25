@@ -851,6 +851,230 @@ const BUILDERS = {
   roadmap: buildRoadmap,
 };
 
+export const DIAGRAM_MATERIALS = [
+  { id: "overview", name: "핵심사업 개요도", desc: "중첩 그리드 + 프로세스 패널" },
+  { id: "governance", name: "거버넌스·추진체계", desc: "계층 바 + 단계 타임라인" },
+  { id: "certification", name: "인증·단계 체계", desc: "3단계 패널·화살표" },
+  { id: "icc-matrix", name: "ICC 매트릭스", desc: "2×2 + 전략 박스" },
+  { id: "platform", name: "플랫폼·허브", desc: "중심 허브 + 프로그램" },
+  { id: "diffusion", name: "확산 프로세스", desc: "4단계 흐름" },
+  { id: "improvement", name: "개선·성과 비교", desc: "연도 막대 + 비교" },
+  { id: "roadmap", name: "로드맵", desc: "비전·필러·연도표" },
+];
+
+function addDiagramCover(pptx, { title, subtitle } = {}) {
+  const s = pptx.addSlide();
+  s.addShape("rect", { x: 0, y: 0, w: 10, h: 5.625, fill: { color: BW.white } });
+  s.addShape("rect", { x: 0, y: 0, w: 0.16, h: 5.625, fill: { color: BW.headDark } });
+  s.addText("연성대학교 · TF Pulse", {
+    x: 0.6,
+    y: 1.4,
+    w: 8.8,
+    h: 0.35,
+    fontSize: 13,
+    color: BW.mid,
+    fontFace: "Malgun Gothic",
+  });
+  s.addText(title || "보고서 도식 재료 키트", {
+    x: 0.6,
+    y: 1.9,
+    w: 8.8,
+    h: 0.6,
+    fontSize: 26,
+    bold: true,
+    color: BW.ink,
+    fontFace: "Malgun Gothic",
+  });
+  s.addText(
+    subtitle ||
+      "흑백 편집용 도식입니다. 박스·표·숫자를 수정해 상세 그림을 완성하고 한글 보고서에 삽입하세요.",
+    {
+      x: 0.6,
+      y: 2.7,
+      w: 8.5,
+      h: 1.0,
+      fontSize: 13,
+      color: BW.soft,
+      fontFace: "Malgun Gothic",
+    }
+  );
+}
+
+function addDiagramPurposeSlide(pptx, labels = {}) {
+  const s = pptx.addSlide();
+  s.addShape("rect", { x: 0, y: 0, w: 10, h: 5.625, fill: { color: BW.white } });
+  s.addShape("rect", {
+    x: 0.35,
+    y: 0.3,
+    w: 9.3,
+    h: 0.45,
+    fill: { color: BW.fill },
+    line: { color: BW.lineSoft, width: 0.75 },
+  });
+  s.addText("도식 기획 · 핵심 메시지", {
+    x: 0.5,
+    y: 0.35,
+    w: 9,
+    h: 0.35,
+    fontSize: 16,
+    bold: true,
+    color: BW.ink,
+    fontFace: "Malgun Gothic",
+    valign: "middle",
+  });
+  box(s, {
+    x: 0.4,
+    y: 1.0,
+    w: 9.2,
+    h: 1.2,
+    text: `목적\n${labels.purpose || "이 도식으로 전달할 핵심 목적·독자·활용 장면을 적습니다."}`,
+    fill: BW.fillSoft,
+    align: "left",
+    valign: "top",
+    size: 13,
+  });
+  const msgs = Array.isArray(labels.keyMessages) && labels.keyMessages.length
+    ? labels.keyMessages
+    : ["핵심 메시지 1 (수정)", "핵심 메시지 2 (수정)", "핵심 메시지 3 (수정)"];
+  msgs.slice(0, 4).forEach((m, i) => {
+    const y = 2.45 + i * 0.55;
+    numCircle(s, 0.5, y + 0.05, i + 1);
+    box(s, {
+      x: 1.05,
+      y,
+      w: 8.4,
+      h: 0.45,
+      text: m,
+      fill: BW.white,
+      align: "left",
+      size: 13,
+    });
+  });
+}
+
+function addDiagramIndexSlide(pptx, focusId) {
+  const s = pptx.addSlide();
+  s.addShape("rect", { x: 0, y: 0, w: 10, h: 5.625, fill: { color: BW.white } });
+  s.addText("도식 재료 목차", {
+    x: 0.5,
+    y: 0.35,
+    w: 9,
+    h: 0.4,
+    fontSize: 20,
+    bold: true,
+    color: BW.ink,
+    fontFace: "Malgun Gothic",
+  });
+  const rows = DIAGRAM_MATERIALS.map((d, i) => [
+    { text: String(i + 1), options: { align: "center" } },
+    {
+      text: d.name + (d.id === focusId ? " ★" : ""),
+      options: { bold: d.id === focusId },
+    },
+    { text: d.desc, options: {} },
+  ]);
+  s.addTable(
+    [
+      [
+        { text: "No", options: { fill: { color: BW.head }, color: BW.white, bold: true, align: "center" } },
+        { text: "도식", options: { fill: { color: BW.head }, color: BW.white, bold: true, align: "center" } },
+        { text: "구성", options: { fill: { color: BW.head }, color: BW.white, bold: true, align: "center" } },
+      ],
+      ...rows,
+    ],
+    {
+      x: 0.5,
+      y: 0.95,
+      w: 9,
+      colW: [0.7, 3.0, 5.3],
+      border: [{ pt: 0.5, color: BW.line }],
+      fontFace: "Malgun Gothic",
+      fontSize: 12,
+      color: BW.ink,
+    }
+  );
+}
+
+function addDiagramTipSlide(pptx) {
+  const tip = pptx.addSlide();
+  tip.addShape("rect", { x: 0, y: 0, w: 10, h: 5.625, fill: { color: BW.white } });
+  tip.addShape("rect", {
+    x: 0.4,
+    y: 0.9,
+    w: 9.2,
+    h: 0.5,
+    fill: { color: BW.fill },
+    line: { color: BW.lineSoft, width: 0.75 },
+  });
+  tip.addText("한글 보고서 활용 · 상세 그림 완성 안내", {
+    x: 0.55,
+    y: 0.95,
+    w: 8.8,
+    h: 0.4,
+    fontSize: 18,
+    bold: true,
+    color: BW.ink,
+    fontFace: "Malgun Gothic",
+    valign: "middle",
+  });
+  tip.addText(
+    [
+      { text: "1. 필요한 도식 슬라이드를 복제하고, 박스·표·숫자를 더블클릭해 실제 내용으로 수정합니다.", options: { breakLine: true } },
+      { text: "2. 같은 유형의 '빈 골격' 슬라이드가 있으면 다른 사업·장에 재사용하세요.", options: { breakLine: true } },
+      { text: "3. 한글(HWP)에서는 PPT 슬라이드 복사·붙여넣기 또는 그림으로 삽입합니다.", options: { breakLine: true } },
+      { text: "4. 흑백·회색 톤·섹션번호·중첩박스는 자율혁신계획서 도식 양식을 따릅니다.", options: { breakLine: true } },
+      { text: "5. 수치 수정이 잦으면 AI 비트맵보다 이 편집용 PPT를 기본 재료로 쓰세요.", options: { breakLine: true } },
+    ],
+    {
+      x: 0.7,
+      y: 1.7,
+      w: 8.5,
+      h: 3.0,
+      fontSize: 14,
+      color: BW.soft,
+      fontFace: "Malgun Gothic",
+      paraSpacing: 10,
+    }
+  );
+}
+
+/**
+ * 도식 재료를 기존 pptx에 추가
+ */
+export function appendDiagramMaterialsDeck(pptx, opts = {}) {
+  const typeId = opts.typeId || "overview";
+  const labels = opts.labels || {};
+  const title = opts.title || labels.title || "보고서 도식";
+  const includeAll = opts.includeAll !== false;
+
+  if (opts.withCover !== false) {
+    addDiagramCover(pptx, {
+      title: opts.packTitle || "보고서 도식 재료 키트",
+      subtitle: opts.packSubtitle,
+    });
+  }
+  if (opts.withPurpose !== false) addDiagramPurposeSlide(pptx, { ...labels, purpose: labels.purpose });
+  if (includeAll) addDiagramIndexSlide(pptx, typeId);
+
+  const focusBuilder = BUILDERS[typeId] || buildOverview;
+  focusBuilder(pptx, { ...labels, title });
+
+  // 같은 타입 빈 골격(라벨 최소) — 복제·재사용용
+  const blankLabels = { title: `${title} (빈 골격 · 수정용)` };
+  focusBuilder(pptx, blankLabels);
+
+  if (includeAll) {
+    DIAGRAM_MATERIALS.forEach((d) => {
+      if (d.id === typeId) return;
+      const b = BUILDERS[d.id];
+      if (!b) return;
+      b(pptx, { title: d.name });
+    });
+  }
+
+  if (opts.withTip !== false) addDiagramTipSlide(pptx);
+}
+
 /** 화면 미리보기·작도 애니메이션용 와이어프레임 (참고도식 구조 반영) */
 export function diagramPreviewWireHtml(typeId) {
   const map = {
@@ -966,58 +1190,26 @@ export function diagramPreviewWireHtml(typeId) {
 }
 
 /**
- * 선택한 도식 타입을 흑백 편집용 PPT로 저장
+ * 선택한 도식 타입을 흑백 편집용 PPT로 저장 (표지·메시지·본도식·빈골격·전체 재료·안내)
  */
 export async function downloadEditableDiagramPpt({
   typeId = "overview",
   title = "",
   fileName = "",
   labels = {},
+  includeAll = true,
 } = {}) {
   const pptx = await loadPptx();
   pptx.title = title || "보고서_도식_편집용";
-  const builder = BUILDERS[typeId] || buildOverview;
-  builder(pptx, { ...labels, title: title || undefined });
-
-  const tip = pptx.addSlide();
-  tip.addShape("rect", { x: 0, y: 0, w: 10, h: 5.625, fill: { color: BW.white } });
-  tip.addShape("rect", {
-    x: 0.4,
-    y: 0.9,
-    w: 9.2,
-    h: 0.5,
-    fill: { color: BW.fill },
-    line: { color: BW.lineSoft, width: 0.75 },
+  appendDiagramMaterialsDeck(pptx, {
+    typeId,
+    title,
+    labels,
+    includeAll,
+    withCover: true,
+    withPurpose: true,
+    withTip: true,
   });
-  tip.addText("한글 보고서 활용 안내", {
-    x: 0.55,
-    y: 0.95,
-    w: 8.8,
-    h: 0.4,
-    fontSize: 18,
-    bold: true,
-    color: BW.ink,
-    fontFace: "Malgun Gothic",
-    valign: "middle",
-  });
-  tip.addText(
-    [
-      { text: "1. 이 PPT의 박스·표·숫자를 더블클릭해 실제 내용으로 수정합니다.", options: { breakLine: true } },
-      { text: "2. 한글(HWP)에서는 PPT 슬라이드 복사·붙여넣기 또는 그림으로 삽입합니다.", options: { breakLine: true } },
-      { text: "3. 흑백·회색 톤·섹션번호·중첩박스는 자율혁신계획서 도식 양식을 따릅니다.", options: { breakLine: true } },
-      { text: "4. 수치·라벨 수정이 잦으면 AI 비트맵보다 이 편집용 PPT를 사용하세요.", options: { breakLine: true } },
-    ],
-    {
-      x: 0.7,
-      y: 1.8,
-      w: 8.5,
-      h: 2.4,
-      fontSize: 14,
-      color: BW.soft,
-      fontFace: "Malgun Gothic",
-      paraSpacing: 10,
-    }
-  );
 
   const safe = (fileName || title || "보고서_도식_편집용").replace(/[\\/:*?"<>|]/g, "_");
   await pptx.writeFile({ fileName: `${safe}.pptx` });
