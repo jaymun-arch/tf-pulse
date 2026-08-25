@@ -69,7 +69,7 @@ const BUDGET_CATALOG = {
 const VIEW_META = {
   dashboard: {
     title: "연어회",
-    desc: "연셩의 말(어)가 모여 회(모임)를 이루면 못할 일이 없습니다.",
+    desc: "연성의 말(語)가 모여 회(會)를 이루면 못할 일이 없다.",
   },
   parts: { title: "목차·할당", desc: "보고서 목차와 파트별 할당 분량을 관리합니다." },
   collections: {
@@ -1871,8 +1871,8 @@ function renderDashboard() {
         <p class="yeonu-kicker">Yeonuhue · TF</p>
         <h1 class="yeonu-title">연어회</h1>
         <p class="yeonu-story">
-          <strong>연셩</strong>의 <strong>말(어)</strong>가 모여<br />
-          <strong>회(모임)</strong>을 이루면 못할 일이 없다.
+          <strong>연성</strong>의 <strong>말(語)</strong>가 모여<br />
+          <strong>회(會)</strong>를 이루면 못할 일이 없다.
         </p>
         <p class="yeonu-sub muted">말과 사람이 모이면 보고서도, 일정도, 예산도 함께 완성됩니다.</p>
         <p class="yeonu-deadline">

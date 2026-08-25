@@ -248,7 +248,7 @@ a {
   font-weight: 600;
 }
 
-/* ê´ë¦¬ì ì ì©: ì¤ì  ë©ë´ ê°ì¡° */
+/* ÃªÂ´ÂÃ«Â¦Â¬Ã¬ÂÂ Ã¬Â ÂÃ¬ÂÂ©: Ã¬ÂÂ¤Ã¬Â Â Ã«Â©ÂÃ«ÂÂ´ ÃªÂ°ÂÃ¬Â¡Â° */
 body.is-admin #mainNav .tab-btn[data-nav="setup"] {
   color: #c62828;
   font-weight: 700;
@@ -519,7 +519,7 @@ body.is-admin #mainNav .tab-btn[data-nav="setup"].active {
   color: var(--accent);
 }
 
-/* íÂ·íì íë¸ */
+/* Ã­ÂÂÃÂ·Ã­ÂÂÃ¬ÂÂ Ã­ÂÂÃ«Â¸Â */
 .hub-doc-banner {
   display: flex;
   justify-content: space-between;
@@ -1518,7 +1518,7 @@ dialog::backdrop {
   display: none !important;
 }
 
-/* ì¤ë ë­ë¨¹ì§ */
+/* Ã¬ÂÂ¤Ã«ÂÂ Ã«Â­ÂÃ«Â¨Â¹Ã¬Â§Â */
 .food-page {
   max-width: 980px;
   margin: 0 auto;
@@ -2604,14 +2604,15 @@ body:not(.is-admin):not(.is-food) .food-catalog-panel {
   white-space: nowrap;
 }
 
-.login-hero h1 {
+.login-hero h1,
+.login-story {
   margin: 0 0 12px;
   letter-spacing: -0.02em;
   font-size: clamp(1.05rem, 2.6vw, 1.25rem);
   font-weight: 700;
   line-height: 1.45;
   color: var(--ink-soft);
-  white-space: nowrap;
+  white-space: normal;
 }
 
 .login-prompt {
@@ -3203,7 +3204,7 @@ body:not(.is-admin):not(.is-budget) .budget-manage-only {
   }
 }
 
-/* ââ Mobile / tablet (iPhone Â· Galaxy Â· iPad) ââ */
+/* Ã¢ÂÂÃ¢ÂÂ Mobile / tablet (iPhone ÃÂ· Galaxy ÃÂ· iPad) Ã¢ÂÂÃ¢ÂÂ */
 html {
   -webkit-text-size-adjust: 100%;
   text-size-adjust: 100%;
@@ -3249,7 +3250,7 @@ input,
 select,
 textarea,
 button {
-  font-size: 16px; /* iOS ìë íë ë°©ì§ */
+  font-size: 16px; /* iOS Ã¬ÂÂÃ«ÂÂ Ã­ÂÂÃ«ÂÂ Ã«Â°Â©Ã¬Â§Â */
 }
 
 .wheel {
@@ -3378,7 +3379,7 @@ dialog#modal::backdrop {
   }
 }
 
-/* ââ ì¬ì©ë°©ë² (Work Pulse overview feel) ââ */
+/* Ã¢ÂÂÃ¢ÂÂ Ã¬ÂÂ¬Ã¬ÂÂ©Ã«Â°Â©Ã«Â²Â (Work Pulse overview feel) Ã¢ÂÂÃ¢ÂÂ */
 .overview-page {
   max-width: 720px;
   margin: 0 auto;
@@ -3494,7 +3495,7 @@ dialog#modal::backdrop {
   }
 }
 
-/* ââ AI ì·¨í©ë¶ì / ë³´ê³ ì ê·¸ë¦¼ ââ */
+/* Ã¢ÂÂÃ¢ÂÂ AI Ã¬Â·Â¨Ã­ÂÂ©Ã«Â¶ÂÃ¬ÂÂ / Ã«Â³Â´ÃªÂ³Â Ã¬ÂÂ ÃªÂ·Â¸Ã«Â¦Â¼ Ã¢ÂÂÃ¢ÂÂ */
 .ai-page {
   display: flex;
   flex-direction: column;
@@ -3725,7 +3726,7 @@ dialog#modal::backdrop {
   }
 }
 
-/* ââ ë ì´ìì ìì´ì´íë ì ââ */
+/* Ã¢ÂÂÃ¢ÂÂ Ã«Â ÂÃ¬ÂÂ´Ã¬ÂÂÃ¬ÂÂ Ã¬ÂÂÃ¬ÂÂ´Ã¬ÂÂ´Ã­ÂÂÃ«Â ÂÃ¬ÂÂ Ã¢ÂÂÃ¢ÂÂ */
 .lw-slide {
   width: 100%;
   height: 100%;
@@ -4122,7 +4123,7 @@ dialog#modal::backdrop {
   outline: 2px solid rgba(29, 107, 53, 0.35);
 }
 
-/* ìë ë¨ê³ë³ ëë¬ë´ê¸° */
+/* Ã¬ÂÂÃ«ÂÂ Ã«ÂÂ¨ÃªÂ³ÂÃ«Â³Â Ã«ÂÂÃ«ÂÂ¬Ã«ÂÂ´ÃªÂ¸Â° */
 .dw-slide {
   width: 100%;
   height: 100%;
@@ -4393,7 +4394,7 @@ dialog#modal::backdrop {
   transform: none;
 }
 
-/* ì°ì±ë ì°¸ê³ ëìí ìì´ì´íë ì */
+/* Ã¬ÂÂ°Ã¬ÂÂ±Ã«ÂÂ Ã¬Â°Â¸ÃªÂ³Â Ã«ÂÂÃ¬ÂÂÃ­ÂÂ Ã¬ÂÂÃ¬ÂÂ´Ã¬ÂÂ´Ã­ÂÂÃ«Â ÂÃ¬ÂÂ */
 .dw-slide.dw-rich {
   gap: 2.5%;
   padding: 3.5% 3%;
@@ -5057,7 +5058,7 @@ dialog#modal::backdrop {
   color: var(--accent);
 }
 
-/* ââ ì¤ëÂ·ë¦¬ë·° ââ */
+/* Ã¢ÂÂÃ¢ÂÂ Ã¬ÂÂ¤Ã«ÂÂÃÂ·Ã«Â¦Â¬Ã«Â·Â° Ã¢ÂÂÃ¢ÂÂ */
 .review-page {
   display: flex;
   flex-direction: column;
@@ -5474,7 +5475,7 @@ dialog#modal::backdrop {
   }
 }
 
-/* ââ ë³´ê³ ì ë§ë¤ê¸° (Work Pulse IA/í¤ ê³ì¹) ââ */
+/* Ã¢ÂÂÃ¢ÂÂ Ã«Â³Â´ÃªÂ³Â Ã¬ÂÂ Ã«Â§ÂÃ«ÂÂ¤ÃªÂ¸Â° (Work Pulse IA/Ã­ÂÂ¤ ÃªÂ³ÂÃ¬ÂÂ¹) Ã¢ÂÂÃ¢ÂÂ */
 .report-make {
   gap: 14px;
 }
@@ -5668,7 +5669,7 @@ dialog#modal::backdrop {
   }
 }
 
-/* ?? Work Pulse ¸ð´Þ ¡¤ ¿¹»ê ÀÔ·Â ?? */
+/* ?? Work Pulse Â¸Ã°Â´Ã Â¡Â¤ Â¿Â¹Â»Ãª ÃÃÂ·Ã ?? */
 dialog.wp-modal,
 dialog#modal {
   width: min(560px, calc(100vw - 24px));
@@ -5963,7 +5964,7 @@ dialog#modal::backdrop {
   }
 }
 
-/* —— Work Pulse 리마인드 섹션 —— */
+/* ââ Work Pulse ë¦¬ë§ì¸ë ì¹ì ââ */
 @keyframes tag-twinkle {
   0%,
   100% {
@@ -6385,7 +6386,7 @@ dialog#modal::backdrop {
     grid-column: 1 / -1;
   }
 }
-/* —— Work Pulse heatmap calendar —— */
+/* ââ Work Pulse heatmap calendar ââ */
 .heatmap-dash { animation: fade-up .32s var(--ease); }
 .heatmap-hero { display: block; text-align: center; padding: 22px 8px 14px; }
 .heatmap-hero .load-desc { margin-left: auto; margin-right: auto; }
@@ -6466,7 +6467,7 @@ dialog#modal::backdrop {
   .heat-grid.agenda .heat-cell.tall { min-height: 72px; }
   .range-step { font-size: .62rem; padding: 5px 1px; }
 }
-/* —— Work Pulse task-row (일정 목록) —— */
+/* ââ Work Pulse task-row (ì¼ì  ëª©ë¡) ââ */
 .work-feed { display: flex; flex-direction: column; gap: 0; }
 .swipe-row { position: relative; overflow: hidden; border-radius: 0; }
 .swipe-front { position: relative; z-index: 1; background: var(--bg-elevated, #fff); }
@@ -6564,7 +6565,7 @@ dialog#modal::backdrop {
   .due-cluster { grid-area: due; justify-content: flex-start; }
   .status-select { grid-area: status; justify-self: start; }
 }
-/* —— 연어회 홈 · 성과지표 —— */
+/* ââ ì°ì´í í Â· ì±ê³¼ì§í ââ */
 .yeonu-hero {
   display: grid;
   grid-template-columns: 1.15fr 1fr;
