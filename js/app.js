@@ -1832,6 +1832,125 @@ function closeRequestPopup() {
   updateRequestPlane();
 }
 
+/** 홈 진행률 바용 지표 */
+function buildHomeProgressItems() {
+  const admin = isAdmin();
+  const me = currentMember();
+  ensureBudget();
+  ensureRequests();
+  ensureKpis();
+  ensureReviewSession();
+
+  const board = buildTeamCollectionBoard(latestCollection());
+  const colDone = board.filter((r) => r.status.id === "done").length;
+  const colTotal = board.length;
+  const colPct = colTotal ? Math.round((colDone / colTotal) * 100) : 0;
+
+  const partsTotal = state.parts?.length || 0;
+  const partsAssigned = (state.parts || []).filter((p) => p.assigneeId).length;
+  const partsPct = partsTotal ? Math.round((partsAssigned / partsTotal) * 100) : 0;
+  const pageTarget = Number(state.meta?.totalTargetPages) || 0;
+  const pageAlloc = allocatedTotal();
+  const pagePct = pageTarget ? Math.min(100, Math.round((pageAlloc / pageTarget) * 100)) : partsPct;
+
+  const resources = Array.isArray(state.resources) ? state.resources.length : 0;
+  const resPct = resources > 0 ? 100 : 0;
+
+  const reqs = admin
+    ? state.requests || []
+    : (state.requests || []).filter((r) => r.recipient === sessionUser);
+  const reqDone = reqs.filter((r) => r.status === "완료").length;
+  const reqTotal = reqs.length;
+  const reqPct = reqTotal ? Math.round((reqDone / reqTotal) * 100) : 100;
+
+  const mode = getBudgetInputMode();
+  const budItems = admin
+    ? state.budget.items || []
+    : (state.budget.items || []).filter((i) => me && i.assigneeId === me.id);
+  const budDone = budItems.filter((i) => !!budgetCalcOf(i, mode)).length;
+  const budTotal = budItems.length;
+  const budPct = budTotal ? Math.round((budDone / budTotal) * 100) : 100;
+
+  const sched = state.schedule || [];
+  const schedDone = sched.filter((s) => (s.status || "") === "완료").length;
+  const schedTotal = sched.length;
+  const schedPct = schedTotal ? Math.round((schedDone / schedTotal) * 100) : 100;
+
+  const reviewComments = state.reviewSession?.comments?.length || 0;
+  const reviewPct = Math.min(100, reviewComments * 20);
+
+  const kpis = state.kpis || [];
+  let kpiPct = 0;
+  if (kpis.length) {
+    const rates = kpis.map((k) => {
+      const t = Number(k.target) || 0;
+      if (t <= 0) return 0;
+      return Math.max(0, Math.min(100, ((Number(k.actual) || 0) / t) * 100));
+    });
+    kpiPct = Math.round(rates.reduce((a, b) => a + b, 0) / rates.length);
+  }
+
+  const items = admin
+    ? [
+        { key: "resources", label: "양식·서식", detail: resources ? `${resources}건 등록` : "미등록", pct: resPct, goto: "resources" },
+        { key: "parts", label: "목차·할당", detail: `담당 ${partsAssigned}/${partsTotal} · ${pageAlloc}/${pageTarget || "?"}p`, pct: pagePct, goto: "parts" },
+        { key: "requests", label: "작업 요청", detail: `완료 ${reqDone}/${reqTotal || 0}`, pct: reqPct, goto: "requests" },
+        { key: "collections", label: "취합 점검", detail: `제출 ${colDone}/${colTotal || 0}`, pct: colPct, goto: "collections" },
+        { key: "review", label: "윤독", detail: reviewComments ? `코멘트 ${reviewComments}건` : "검토 대기", pct: reviewPct, goto: "review" },
+        { key: "budget", label: "예산 입력", detail: `산출 ${budDone}/${budTotal || 0}`, pct: budPct, goto: "budget" },
+        { key: "kpi", label: "성과지표", detail: kpis.length ? `평균 달성 ${kpiPct}%` : "지표 없음", pct: kpiPct, goto: "kpi" },
+        { key: "schedule", label: "일정", detail: `완료 ${schedDone}/${schedTotal || 0}`, pct: schedPct, goto: "schedule" },
+      ]
+    : [
+        { key: "resources", label: "양식 확인", detail: resources ? `${resources}건` : "없음", pct: resPct, goto: "resources" },
+        { key: "collections", label: "내 파트 취합", detail: `제출 ${colDone}/${colTotal || 0}`, pct: colPct, goto: "collections" },
+        { key: "requests", label: "받은 요청", detail: reqTotal ? `완료 ${reqDone}/${reqTotal}` : "요청 없음", pct: reqPct, goto: "requests" },
+        { key: "budget", label: "내 예산", detail: budTotal ? `입력 ${budDone}/${budTotal}` : "배정 없음", pct: budPct, goto: "budget" },
+        { key: "kpi", label: "성과지표", detail: kpis.length ? `평균 ${kpiPct}%` : "—", pct: kpiPct, goto: "kpi" },
+        { key: "schedule", label: "일정", detail: `완료 ${schedDone}/${schedTotal || 0}`, pct: schedPct, goto: "schedule" },
+      ];
+
+  const overall = items.length
+    ? Math.round(items.reduce((s, i) => s + i.pct, 0) / items.length)
+    : 0;
+  return { overall, items };
+}
+
+function homeProgressBarHtml({ overall, items }) {
+  return `
+    <section class="panel home-progress" aria-label="TF 진행 현황">
+      <div class="panel-head">
+        <div>
+          <h2 class="panel-title">진행 현황</h2>
+          <p class="muted" style="margin:4px 0 0">영역을 누르면 해당 메뉴로 이동합니다.</p>
+        </div>
+        <div class="home-progress-overall-label">
+          <span class="muted">전체</span>
+          <strong>${overall}%</strong>
+        </div>
+      </div>
+      <div class="home-progress-overall" role="progressbar" aria-valuenow="${overall}" aria-valuemin="0" aria-valuemax="100">
+        <i style="width:${overall}%"></i>
+      </div>
+      <div class="home-progress-list">
+        ${items
+          .map((it) => {
+            const tone = it.pct >= 100 ? "is-done" : it.pct >= 60 ? "is-good" : it.pct >= 30 ? "is-warn" : "is-low";
+            return `
+          <button type="button" class="home-progress-row ${tone}" data-goto="${escapeAttr(it.goto)}">
+            <div class="home-progress-text">
+              <strong>${escapeHtml(it.label)}</strong>
+              <span>${escapeHtml(it.detail)}</span>
+            </div>
+            <div class="home-progress-track" aria-hidden="true"><i style="width:${Math.max(0, Math.min(100, it.pct))}%"></i></div>
+            <em class="home-progress-pct">${it.pct}%</em>
+          </button>`;
+          })
+          .join("")}
+      </div>
+    </section>`;
+}
+
 /* ---------- Renderers ---------- */
 
 function renderDashboard() {
@@ -1839,13 +1958,8 @@ function renderDashboard() {
   ensureReportDoc();
   ensureBudget();
   ensureRequests();
-  const admin = isAdmin();
   const who = sessionUser || "작성자";
   const actions = buildMyActionItems();
-  const col = latestCollection();
-  const board = buildTeamCollectionBoard(col);
-  const doneCount = board.filter((r) => r.status.id === "done").length;
-  const pendingReq = myPendingRequests();
 
   if (!state._calCursor) state._calCursor = today().slice(0, 7) + "-01";
   if (!state._calSelected) state._calSelected = today();
@@ -1861,6 +1975,7 @@ function renderDashboard() {
   const dayItems = selected
     ? eventsOnDate(selected).filter((s) => (s.status || "") !== "완료")
     : [];
+  const progress = buildHomeProgressItems();
 
   el.innerHTML = `
     <section class="yeonu-hero" aria-label="연어회">
@@ -1883,28 +1998,7 @@ function renderDashboard() {
       </div>
     </section>
 
-    <div class="home-flow" aria-label="TF 운영 흐름">
-      ${
-        admin
-          ? `
-        <button type="button" class="home-flow-card" data-goto="resources"><span>1</span><strong>양식 공유</strong><em>스타일 가이드</em></button>
-        <button type="button" class="home-flow-card" data-goto="parts"><span>2</span><strong>목차·할당</strong><em>분량 조절</em></button>
-        <button type="button" class="home-flow-card" data-goto="requests"><span>3</span><strong>작업 요청</strong><em>구성원별</em></button>
-        <button type="button" class="home-flow-card" data-goto="collections"><span>4</span><strong>취합 점검</strong><em>${doneCount}/${board.length || 0}</em></button>
-        <button type="button" class="home-flow-card" data-goto="review"><span>5</span><strong>윤독</strong><em>검토사항</em></button>
-        <button type="button" class="home-flow-card" data-goto="budget"><span>6</span><strong>예산</strong><em>취합·엑셀</em></button>
-        <button type="button" class="home-flow-card" data-goto="kpi"><span>7</span><strong>성과지표</strong><em>시뮬레이션</em></button>
-      `
-          : `
-        <button type="button" class="home-flow-card" data-goto="resources"><span>1</span><strong>양식 확인</strong><em>공통 서식</em></button>
-        <button type="button" class="home-flow-card" data-goto="collections"><span>2</span><strong>내 파트 업로드</strong><em>1·2·3차</em></button>
-        <button type="button" class="home-flow-card" data-goto="requests"><span>3</span><strong>받은 요청</strong><em>${pendingReq.length}건</em></button>
-        <button type="button" class="home-flow-card" data-goto="ai-art"><span>4</span><strong>그림 생성</strong><em>보고서용</em></button>
-        <button type="button" class="home-flow-card" data-goto="budget"><span>5</span><strong>예산 입력</strong><em>내 담당</em></button>
-        <button type="button" class="home-flow-card" data-goto="kpi"><span>6</span><strong>성과지표</strong><em>목표 확인</em></button>
-      `
-      }
-    </div>
+    ${homeProgressBarHtml(progress)}
 
     ${
       actions.length

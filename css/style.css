@@ -6771,3 +6771,113 @@ dialog#modal::backdrop {
     display: none;
   }
 }
+/* —— 홈 진행 현황 프로그레스 바 —— */
+.home-progress { margin-bottom: 14px; }
+.home-progress-overall-label {
+  display: flex;
+  flex-direction: column;
+  align-items: flex-end;
+  gap: 2px;
+  line-height: 1.1;
+}
+.home-progress-overall-label strong {
+  font-size: 1.35rem;
+  font-weight: 800;
+  letter-spacing: -0.03em;
+  color: var(--accent);
+  font-variant-numeric: tabular-nums;
+}
+.home-progress-overall {
+  height: 12px;
+  border-radius: 999px;
+  background: rgba(142, 142, 147, 0.16);
+  overflow: hidden;
+  margin: 0 0 14px;
+}
+.home-progress-overall i {
+  display: block;
+  height: 100%;
+  border-radius: inherit;
+  background: linear-gradient(90deg, #0a7ea4, var(--accent));
+  transition: width 320ms var(--ease);
+}
+.home-progress-list {
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+}
+.home-progress-row {
+  display: grid;
+  grid-template-columns: minmax(7.5rem, 9.5rem) 1fr auto;
+  gap: 10px 12px;
+  align-items: center;
+  width: 100%;
+  padding: 10px 12px;
+  border: 1px solid var(--line);
+  border-radius: 12px;
+  background: var(--bg-elevated, #fff);
+  cursor: pointer;
+  text-align: left;
+  font: inherit;
+  color: inherit;
+  transition: border-color 140ms var(--ease), background 140ms var(--ease);
+}
+.home-progress-row:hover {
+  border-color: rgba(0, 113, 227, 0.35);
+  background: rgba(0, 113, 227, 0.03);
+}
+.home-progress-text {
+  display: flex;
+  flex-direction: column;
+  gap: 2px;
+  min-width: 0;
+}
+.home-progress-text strong {
+  font-size: var(--text-sm);
+  letter-spacing: -0.02em;
+}
+.home-progress-text span {
+  font-size: 0.68rem;
+  color: var(--ink-faint);
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+.home-progress-track {
+  height: 8px;
+  border-radius: 999px;
+  background: rgba(142, 142, 147, 0.14);
+  overflow: hidden;
+}
+.home-progress-track i {
+  display: block;
+  height: 100%;
+  border-radius: inherit;
+  background: #8e8e93;
+  transition: width 280ms var(--ease);
+}
+.home-progress-row.is-low .home-progress-track i { background: #ff3b30; }
+.home-progress-row.is-warn .home-progress-track i { background: #ff9500; }
+.home-progress-row.is-good .home-progress-track i { background: #0071e3; }
+.home-progress-row.is-done .home-progress-track i { background: #34c759; }
+.home-progress-pct {
+  font-style: normal;
+  font-size: 0.85rem;
+  font-weight: 800;
+  font-variant-numeric: tabular-nums;
+  letter-spacing: -0.02em;
+  color: var(--ink-soft);
+  min-width: 2.6em;
+  text-align: right;
+}
+@media (max-width: 640px) {
+  .home-progress-row {
+    grid-template-columns: 1fr auto;
+    grid-template-areas:
+      "text pct"
+      "bar bar";
+  }
+  .home-progress-text { grid-area: text; }
+  .home-progress-track { grid-area: bar; }
+  .home-progress-pct { grid-area: pct; }
+}
