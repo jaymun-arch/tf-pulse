@@ -4063,7 +4063,7 @@ function renderBudget() {
         <div class="panel-head">
           <div>
             <h2 class="panel-title">${escapeHtml(manage ? meta.detailTitleManage : meta.detailTitleMine)}</h2>
-            <p class="muted" style="margin:4px 0 0">${escapeHtml(yearLabel)} · 카드에서 바로 입력합니다.</p>
+            <p class="muted" style="margin:4px 0 0">${escapeHtml(yearLabel)} · 카드를 누르면 수정합니다.</p>
           </div>
           <div class="row budget-toolbar">
             <button type="button" class="btn btn-sm ${incompleteOnly ? "btn-primary" : ""}" id="budgetIncompleteToggle">${
@@ -4087,7 +4087,7 @@ function renderBudget() {
                     const amount = budgetAmountOf(item, mode);
                     const filled = Boolean(calcPreview);
                     return `
-                    <article class="budget-item-card ${filled ? "is-done" : "is-todo"}">
+                    <article class="budget-item-card ${filled ? "is-done" : "is-todo"} ${canEdit || manage ? "is-clickable" : ""}" data-budget-open="${escapeAttr(item.id)}" role="button" tabindex="0">
                       <div class="budget-item-top">
                         <div>
                           <span class="budget-item-kicker">${escapeHtml(item.no ? `${item.no} · ` : "")}${escapeHtml(item.expenseType || "비목 미정")}</span>
@@ -4111,16 +4111,6 @@ function renderBudget() {
                           ? `<p class="budget-item-calc">${escapeHtml(calcPreview)}</p>`
                           : `<p class="budget-item-calc muted">산출내역을 입력해 주세요.</p>`
                       }
-                      <div class="budget-item-actions">
-                        ${canEdit ? `<button type="button" class="btn btn-primary btn-sm" data-entry="${item.id}">${filled ? "수정" : "입력"}</button>` : ""}
-                        ${
-                          manage
-                            ? `<button type="button" class="btn btn-sm" data-edit="${item.id}">관리 수정</button>
-                               <button type="button" class="btn btn-sm" data-ask="${item.id}">요청</button>
-                               <button type="button" class="btn btn-sm btn-danger" data-del="${item.id}">삭제</button>`
-                            : ""
-                        }
-                      </div>
                     </article>`;
                   })
                   .join("")
@@ -4182,26 +4172,32 @@ function renderBudget() {
   $("#downloadBudgetExcel2")?.addEventListener("click", () =>
     downloadBudgetExcel({ mineOnly: !manage })
   );
-  el.querySelectorAll("[data-edit]").forEach((btn) =>
-    btn.addEventListener("click", () => openBudgetItemModal(btn.dataset.edit))
-  );
-  el.querySelectorAll("[data-entry]").forEach((btn) =>
-    btn.addEventListener("click", () => openBudgetEntryModal(btn.dataset.entry))
-  );
-  el.querySelectorAll("[data-del]").forEach((btn) =>
-    btn.addEventListener("click", () => {
-      if (!canManageBudget()) return;
-      if (!confirm("이 예산 항목을 삭제할까요?")) return;
-      const id = btn.dataset.del;
-      state.budget.items = state.budget.items.filter((i) => i.id !== id);
-      state.budget.details = state.budget.details.filter((d) => d.itemId !== id);
-      saveAndRender("budget");
-    })
-  );
-  el.querySelectorAll("[data-ask]").forEach((btn) =>
-    btn.addEventListener("click", () => sendBudgetInputRequest(btn.dataset.ask))
-  );
+  el.querySelectorAll("[data-budget-open]").forEach((card) => {
+    const open = () => openBudgetCard(card.dataset.budgetOpen);
+    card.addEventListener("click", open);
+    card.addEventListener("keydown", (e) => {
+      if (e.key === "Enter" || e.key === " ") {
+        e.preventDefault();
+        open();
+      }
+    });
+  });
   bindBudgetTips(el);
+}
+
+function openBudgetCard(itemId) {
+  ensureBudget();
+  const item = state.budget.items.find((i) => i.id === itemId);
+  if (!item) return;
+  if (canManageBudget()) {
+    openBudgetItemModal(itemId);
+    return;
+  }
+  if (canEditBudgetItem(item)) {
+    openBudgetEntryModal(itemId);
+    return;
+  }
+  denySchedulePermission("권한이 없습니다. 배정된 항목만 입력할 수 있습니다.");
 }
 
 function typeLabel(type) {
@@ -9099,6 +9095,14 @@ function openBudgetItemModal(id) {
     bodyHtml: `
       ${budgetFormFieldsHtml(item, { includeAssignee: true, fullEdit: true, mode: "both" })}
       <p class="muted wp-form-hint">입력담당자를 지정하면 「${escapeHtml(modeMeta.requestTitle)}」 요청이 자동 발송됩니다.</p>
+      ${
+        item
+          ? `<div class="budget-modal-extra">
+              <button type="button" class="btn btn-sm" id="budgetAskInModal">입력 요청</button>
+              <button type="button" class="btn btn-sm btn-danger" id="budgetDeleteInModal">삭제</button>
+            </div>`
+          : ""
+      }
     `,
     onSubmit: (fd) => {
       const data = readBudgetItemFields(fd, item || {}, { mode: "both" });
@@ -9127,6 +9131,20 @@ function openBudgetItemModal(id) {
     },
   });
   bindBudgetFormChips($("#modalBody"));
+  $("#budgetAskInModal")?.addEventListener("click", (e) => {
+    e.preventDefault();
+    if (!item) return;
+    sendBudgetInputRequest(item.id);
+  });
+  $("#budgetDeleteInModal")?.addEventListener("click", (e) => {
+    e.preventDefault();
+    if (!item || !canManageBudget()) return;
+    if (!confirm("이 예산 항목을 삭제할까요?")) return;
+    state.budget.items = state.budget.items.filter((i) => i.id !== item.id);
+    state.budget.details = (state.budget.details || []).filter((d) => d.itemId !== item.id);
+    closeModal();
+    saveAndRender("budget");
+  });
 }
 
 function openBudgetEntryModal(itemId) {
