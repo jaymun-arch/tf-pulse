@@ -29,13 +29,23 @@
     </div>
     <div class="login-card">
       <div class="login-hero">
-        <p class="login-kicker">연어회 · 2026 혁신지원사업 연차평가보고서</p>
-        <h1 class="login-story">연성의 말(語)가 모여<br />회(會)를 이루면 못할 일이 없다.</h1>
-        <p class="login-prompt">권한을 선택해 접속하세요</p>
-        <p class="login-prompt-sub"><strong>내 이름을 선택하여 시작</strong></p>
+        <div class="login-hero-visual">
+          <img src="assets/yeonuhue-hero.png" alt="연어회 일러스트" width="320" height="180" />
+        </div>
+        <h1 class="login-title-hanja">연어회<span>(硏語會)</span></h1>
+        <p class="login-story">
+          연<span>(硏)</span>성의 말<span>(語)</span>이 모이면<span>(會)</span><br />
+          못 이룰것이 없다.
+        </p>
+        <p class="login-prompt">TF주제와 권한을 선택해 접속하세요</p>
         <p class="login-srs">
           <button type="button" class="btn btn-sm" id="btnDownloadSrsLogin">SRS 문서 다운로드</button>
         </p>
+      </div>
+      <div class="login-topic-block">
+        <label class="login-topic-label" for="loginTfTopic">TF주제 리스트</label>
+        <select id="loginTfTopic" class="wp-input wp-select" aria-label="TF주제 선택"></select>
+        <p class="muted login-topic-desc" id="loginTfTopicDesc"></p>
       </div>
       <div class="member-list" id="loginMemberList"></div>
     </div>
@@ -74,13 +84,11 @@
       </header>
 
       <nav class="tab-bar" id="mainNav" aria-label="주요 메뉴">
-        <button type="button" class="tab-btn active" data-nav="home">홈</button>
-        <button type="button" class="tab-btn" data-nav="report">보고서</button>
-        <button type="button" class="tab-btn" data-nav="request">요청</button>
-        <button type="button" class="tab-btn" data-nav="budget">예산</button>
-        <button type="button" class="tab-btn" data-nav="kpi">성과지표</button>
-        <button type="button" class="tab-btn" data-nav="food">오늘 뭐먹지</button>
-        <button type="button" class="tab-btn admin-only" data-nav="setup">설정</button>
+        <button type="button" class="tab-btn active" data-nav="home">TF 요약</button>
+        <button type="button" class="tab-btn" data-nav="mywork">내업무</button>
+        <button type="button" class="tab-btn" data-nav="tfall">TF 업무 모두보기</button>
+        <button type="button" class="tab-btn" data-nav="guide">사용방법</button>
+        <button type="button" class="tab-btn admin-only" data-nav="setup">Setting</button>
       </nav>
       <nav class="sub-tab-bar" id="subNav" hidden aria-label="세부 메뉴"></nav>
     </div>
@@ -102,6 +110,8 @@
     </header>
 
     <section class="view active" id="view-dashboard"></section>
+    <section class="view" id="view-my-work"></section>
+    <section class="view" id="view-tf-all"></section>
     <section class="view" id="view-parts"></section>
     <section class="view" id="view-collections"></section>
     <section class="view" id="view-review"></section>

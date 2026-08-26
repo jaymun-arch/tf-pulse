@@ -1,0 +1,429 @@
+/**
+ * PDF 개발요청 반영 — TF요약 / 내업무 / TF모두보기 / 레고 레이아웃 / Flaticon
+ */
+
+export const TF_MILESTONES = [
+  { id: "kickoff", label: "TF 킥오프", short: "킥오프" },
+  { id: "round1", label: "1차 원고수합", short: "1차" },
+  { id: "round2", label: "2차 원고취합", short: "2차" },
+  { id: "budget", label: "예산확정", short: "예산" },
+  { id: "kpi", label: "성과지표 확정", short: "성과" },
+  { id: "final", label: "최종 통합", short: "최종" },
+];
+
+export const DEFAULT_TF_TOPICS = [
+  {
+    id: "yeonu-2026",
+    name: "연어회 · 2026 교육혁신 성과보고서",
+    desc: "연차평가·성과보고서 TF",
+  },
+];
+
+/** 레고 조립용 블록 — 샘플 텍스트·수치 포함 */
+export const LEGO_BLOCKS = [
+  {
+    id: "title",
+    label: "제목 바",
+    sample: { title: "3. 핵심역량 기반 교육과정 체계혁신", sub: "추진체계 · 성과 · 환류" },
+  },
+  {
+    id: "kpi-row",
+    label: "KPI 카드 3열",
+    sample: {
+      items: [
+        { name: "비교과 참여율", value: "87.4%", note: "목표 85%" },
+        { name: "취업률", value: "72.1%", note: "목표 70%" },
+        { name: "만족도", value: "4.32", note: "5점 만점" },
+      ],
+    },
+  },
+  {
+    id: "process",
+    label: "프로세스 화살표",
+    sample: { steps: ["계획", "실행", "점검", "개선"] },
+  },
+  {
+    id: "table",
+    label: "실적 표",
+    sample: {
+      headers: ["구분", "2024", "2025", "2026(목표)"],
+      rows: [
+        ["참여 학생", "1,240", "1,380", "1,500"],
+        ["개설 프로그램", "42", "51", "60"],
+      ],
+    },
+  },
+  {
+    id: "swot",
+    label: "SWOT 4칸",
+    sample: {
+      s: "산학 네트워크 강화",
+      w: "성과 환류 주기 부족",
+      o: "지역 연계 확대",
+      t: "재정·인력 제약",
+    },
+  },
+  {
+    id: "note",
+    label: "시사점 박스",
+    sample: { text: "환류(PDCA)를 분기 단위로 정례화하고, 핵심 KPI 3개를 우선 관리한다." },
+  },
+  {
+    id: "org",
+    label: "조직·역할",
+    sample: {
+      roles: [
+        { role: "TF 총괄", who: "관리자" },
+        { role: "원고 취합", who: "파트 담당" },
+        { role: "예산·KPI", who: "예산·성과 담당" },
+      ],
+    },
+  },
+];
+
+export function computeMilestoneProgress(ctx) {
+  const {
+    hasKickoff = true,
+    round1Done = false,
+    round2Done = false,
+    budgetDone = false,
+    kpiDone = false,
+    finalDone = false,
+  } = ctx || {};
+  const flags = [hasKickoff, round1Done, round2Done, budgetDone, kpiDone, finalDone];
+  let done = 0;
+  for (const f of flags) {
+    if (f) done += 1;
+    else break;
+  }
+  return {
+    doneCount: done,
+    total: TF_MILESTONES.length,
+    pct: Math.round((done / TF_MILESTONES.length) * 100),
+    currentIndex: Math.min(done, TF_MILESTONES.length - 1),
+  };
+}
+
+export function marathonTrackHtml(progress, escapeHtml) {
+  const { doneCount, pct, currentIndex } = progress;
+  const runnerLeft = Math.min(96, Math.max(2, (doneCount / TF_MILESTONES.length) * 100));
+  return `
+    <section class="marathon-panel" aria-label="TF 일정 진도">
+      <div class="marathon-head">
+        <strong>TF 일정 진도</strong>
+        <span>${pct}% · ${escapeHtml(TF_MILESTONES[Math.min(currentIndex, TF_MILESTONES.length - 1)]?.label || "")}</span>
+      </div>
+      <div class="marathon-track" role="img" aria-label="마라톤 진도 ${pct}%">
+        <div class="marathon-bar"><i style="width:${pct}%"></i></div>
+        <div class="marathon-runner" style="left:${runnerLeft}%">🏃</div>
+        <ol class="marathon-flags">
+          ${TF_MILESTONES.map(
+            (m, i) => `
+            <li class="${i < doneCount ? "is-done" : i === doneCount ? "is-now" : ""}">
+              <span class="marathon-peg"></span>
+              <em>${escapeHtml(m.short)}</em>
+              <strong>${escapeHtml(m.label)}</strong>
+            </li>`
+          ).join("")}
+        </ol>
+      </div>
+    </section>`;
+}
+
+export function flaticonSearchHtml() {
+  return `
+    <section class="panel flaticon-panel">
+      <div class="panel-head">
+        <div>
+          <h2 class="panel-title">그림 검색 (Flaticon)</h2>
+          <p class="muted" style="margin:4px 0 0">키워드로 Flaticon에서 아이콘을 찾아 바로 열거나 다운로드하세요.</p>
+        </div>
+      </div>
+      <div class="flaticon-search-row">
+        <input type="search" id="flaticonQuery" class="wp-input" placeholder="예: report, chart, education" />
+        <button type="button" class="btn btn-primary" id="flaticonSearchBtn">검색</button>
+      </div>
+      <p class="muted" style="margin-top:8px;font-size:0.75rem">
+        검색 결과는 Flaticon 사이트에서 열립니다.
+        <a href="https://www.flaticon.com/kr" target="_blank" rel="noopener noreferrer">flaticon.com/kr</a>
+      </p>
+    </section>`;
+}
+
+export function bindFlaticonSearch(root) {
+  const go = () => {
+    const q = (root.querySelector("#flaticonQuery")?.value || "").trim() || "report";
+    const url = `https://www.flaticon.com/kr/search?word=${encodeURIComponent(q)}`;
+    window.open(url, "_blank", "noopener,noreferrer");
+  };
+  root.querySelector("#flaticonSearchBtn")?.addEventListener("click", go);
+  root.querySelector("#flaticonQuery")?.addEventListener("keydown", (e) => {
+    if (e.key === "Enter") {
+      e.preventDefault();
+      go();
+    }
+  });
+}
+
+function escape(str = "") {
+  return String(str)
+    .replaceAll("&", "&amp;")
+    .replaceAll("<", "&lt;")
+    .replaceAll(">", "&gt;")
+    .replaceAll('"', "&quot;");
+}
+
+function blockPreviewHtml(typeId, sample) {
+  const s = sample || LEGO_BLOCKS.find((b) => b.id === typeId)?.sample || {};
+  if (typeId === "title") {
+    return `<div class="lego-pv lego-pv-title"><strong>${escape(s.title)}</strong><span>${escape(s.sub || "")}</span></div>`;
+  }
+  if (typeId === "kpi-row") {
+    return `<div class="lego-pv lego-pv-kpi">${(s.items || [])
+      .map((it) => `<div><em>${escape(it.name)}</em><b>${escape(it.value)}</b><small>${escape(it.note || "")}</small></div>`)
+      .join("")}</div>`;
+  }
+  if (typeId === "process") {
+    return `<div class="lego-pv lego-pv-process">${(s.steps || [])
+      .map((st, i) => `${i ? "<i>→</i>" : ""}<span>${escape(st)}</span>`)
+      .join("")}</div>`;
+  }
+  if (typeId === "table") {
+    return `<div class="lego-pv lego-pv-table"><table><thead><tr>${(s.headers || [])
+      .map((h) => `<th>${escape(h)}</th>`)
+      .join("")}</tr></thead><tbody>${(s.rows || [])
+      .map((r) => `<tr>${r.map((c) => `<td>${escape(c)}</td>`).join("")}</tr>`)
+      .join("")}</tbody></table></div>`;
+  }
+  if (typeId === "swot") {
+    return `<div class="lego-pv lego-pv-swot"><div><b>S</b>${escape(s.s || "")}</div><div><b>W</b>${escape(s.w || "")}</div><div><b>O</b>${escape(s.o || "")}</div><div><b>T</b>${escape(s.t || "")}</div></div>`;
+  }
+  if (typeId === "note") {
+    return `<div class="lego-pv lego-pv-note">${escape(s.text || "")}</div>`;
+  }
+  if (typeId === "org") {
+    return `<div class="lego-pv lego-pv-org">${(s.roles || [])
+      .map((r) => `<span><em>${escape(r.role)}</em>${escape(r.who)}</span>`)
+      .join("")}</div>`;
+  }
+  return `<div class="lego-pv">${escape(typeId)}</div>`;
+}
+
+export function legoBuilderHtml(placedIds = ["title", "kpi-row", "process", "note"]) {
+  const placed = placedIds.length ? placedIds : ["title", "kpi-row"];
+  return `
+    <section class="panel lego-panel" id="legoBuilderPanel">
+      <div class="panel-head">
+        <div>
+          <h2 class="panel-title">레고 조립 · 레이아웃 초안</h2>
+          <p class="muted" style="margin:4px 0 0">대학 보고서용 블록을 드래그해 배치하세요. 샘플 수치·문구가 들어 있는 초안입니다.</p>
+        </div>
+      </div>
+      <div class="lego-workspace">
+        <aside class="lego-palette" aria-label="블록 팔레트">
+          <p class="lego-palette-label">블록</p>
+          ${LEGO_BLOCKS.map(
+            (b) => `
+            <button type="button" class="lego-chip" draggable="true" data-lego-type="${escape(b.id)}" title="드래그하거나 클릭해 추가">
+              ${escape(b.label)}
+            </button>`
+          ).join("")}
+        </aside>
+        <div class="lego-canvas-wrap">
+          <div class="lego-canvas" id="legoCanvas" data-dropzone="1">
+            ${placed
+              .map((id, idx) => {
+                const meta = LEGO_BLOCKS.find((b) => b.id === id) || { label: id, sample: {} };
+                return `
+                <article class="lego-block" draggable="true" data-lego-placed="${escape(id)}" data-lego-idx="${idx}">
+                  <header>
+                    <strong>${escape(meta.label)}</strong>
+                    <button type="button" class="btn btn-sm btn-ghost" data-lego-remove="${idx}" aria-label="제거">×</button>
+                  </header>
+                  ${blockPreviewHtml(id, meta.sample)}
+                </article>`;
+              })
+              .join("")}
+          </div>
+          <div class="lego-compose form-grid two">
+            <label class="field">보고서 영역
+              <input id="legoArea" value="핵심역량 기반 교육과정" />
+            </label>
+            <label class="field">주요 내용
+              <input id="legoFocus" value="추진체계 · KPI · 환류(PDCA)" />
+            </label>
+          </div>
+          <div class="report-make-actions" style="margin-top:10px">
+            <button type="button" class="btn btn-primary" id="legoComposeBtn">작성 · PPT 받기</button>
+            <span class="muted" id="legoComposeStatus"></span>
+          </div>
+          <div class="lego-progress" id="legoProgress" hidden>
+            <div class="ai-art-progress-bar"><div class="ai-art-progress-fill" id="legoProgressFill"></div></div>
+            <p class="muted" id="legoProgressStep">초안 구성 중…</p>
+          </div>
+        </div>
+      </div>
+    </section>`;
+}
+
+export function readLegoPlaced(root) {
+  return [...(root.querySelectorAll("[data-lego-placed]") || [])].map((el) => el.dataset.legoPlaced);
+}
+
+export function bindLegoBuilder(root, { onCompose } = {}) {
+  const canvas = root.querySelector("#legoCanvas");
+  if (!canvas) return;
+
+  const rerender = (ids) => {
+    const html = legoBuilderHtml(ids);
+    const wrap = root.querySelector("#legoBuilderPanel");
+    if (!wrap) return;
+    const tmp = document.createElement("div");
+    tmp.innerHTML = html;
+    const next = tmp.firstElementChild;
+    wrap.replaceWith(next);
+    bindLegoBuilder(root, { onCompose });
+  };
+
+  root.querySelectorAll(".lego-chip").forEach((chip) => {
+    chip.addEventListener("dragstart", (e) => {
+      e.dataTransfer.setData("text/lego-type", chip.dataset.legoType);
+      e.dataTransfer.effectAllowed = "copy";
+    });
+    chip.addEventListener("click", () => {
+      const ids = readLegoPlaced(root);
+      ids.push(chip.dataset.legoType);
+      rerender(ids);
+    });
+  });
+
+  canvas.addEventListener("dragover", (e) => {
+    e.preventDefault();
+    canvas.classList.add("is-dragover");
+  });
+  canvas.addEventListener("dragleave", () => canvas.classList.remove("is-dragover"));
+  canvas.addEventListener("drop", (e) => {
+    e.preventDefault();
+    canvas.classList.remove("is-dragover");
+    const type = e.dataTransfer.getData("text/lego-type");
+    const fromIdx = e.dataTransfer.getData("text/lego-idx");
+    let ids = readLegoPlaced(root);
+    if (fromIdx !== "") {
+      const i = Number(fromIdx);
+      const [moved] = ids.splice(i, 1);
+      if (moved) ids.push(moved);
+    } else if (type) {
+      ids.push(type);
+    }
+    rerender(ids);
+  });
+
+  root.querySelectorAll(".lego-block").forEach((block) => {
+    block.addEventListener("dragstart", (e) => {
+      e.dataTransfer.setData("text/lego-idx", block.dataset.legoIdx || "");
+      e.dataTransfer.effectAllowed = "move";
+    });
+  });
+
+  root.querySelectorAll("[data-lego-remove]").forEach((btn) => {
+    btn.addEventListener("click", () => {
+      const idx = Number(btn.dataset.legoRemove);
+      const ids = readLegoPlaced(root).filter((_, i) => i !== idx);
+      rerender(ids.length ? ids : ["title"]);
+    });
+  });
+
+  root.querySelector("#legoComposeBtn")?.addEventListener("click", async () => {
+    if (typeof onCompose === "function") {
+      await onCompose({
+        blocks: readLegoPlaced(root),
+        area: root.querySelector("#legoArea")?.value || "",
+        focus: root.querySelector("#legoFocus")?.value || "",
+        statusEl: root.querySelector("#legoComposeStatus"),
+        progressEl: root.querySelector("#legoProgress"),
+        fillEl: root.querySelector("#legoProgressFill"),
+        stepEl: root.querySelector("#legoProgressStep"),
+      });
+    }
+  });
+}
+
+/** 레고 초안 → PPT 다운로드 */
+export async function downloadLegoDraftPpt({ blocks, area, focus, fileName }) {
+  const PptxGenJS = (await import("https://cdn.jsdelivr.net/npm/pptxgenjs@3.12.0/+esm")).default;
+  const pptx = new PptxGenJS();
+  pptx.defineLayout({ name: "WIDE", width: 10, height: 5.625 });
+  pptx.layout = "WIDE";
+  const slide = pptx.addSlide();
+  slide.addText(area || "보고서 레이아웃 초안", {
+    x: 0.4,
+    y: 0.25,
+    w: 9.2,
+    h: 0.4,
+    fontSize: 20,
+    bold: true,
+    fontFace: "Malgun Gothic",
+    color: "222222",
+  });
+  if (focus) {
+    slide.addText(focus, {
+      x: 0.4,
+      y: 0.65,
+      w: 9.2,
+      h: 0.28,
+      fontSize: 12,
+      fontFace: "Malgun Gothic",
+      color: "555555",
+    });
+  }
+  let y = 1.05;
+  for (const id of blocks || []) {
+    const meta = LEGO_BLOCKS.find((b) => b.id === id);
+    const s = meta?.sample || {};
+    slide.addText(meta?.label || id, {
+      x: 0.4,
+      y,
+      w: 9.2,
+      h: 0.26,
+      fontSize: 11,
+      bold: true,
+      fontFace: "Malgun Gothic",
+      color: "0B2C5F",
+    });
+    y += 0.28;
+    let body = "";
+    if (id === "title") body = `${s.title || ""}\n${s.sub || ""}`;
+    else if (id === "kpi-row")
+      body = (s.items || []).map((it) => `${it.name}: ${it.value} (${it.note || ""})`).join("  |  ");
+    else if (id === "process") body = (s.steps || []).join(" → ");
+    else if (id === "table")
+      body = [(s.headers || []).join(" | "), ...(s.rows || []).map((r) => r.join(" | "))].join("\n");
+    else if (id === "swot") body = `S ${s.s || ""}\nW ${s.w || ""}\nO ${s.o || ""}\nT ${s.t || ""}`;
+    else if (id === "note") body = s.text || "";
+    else if (id === "org") body = (s.roles || []).map((r) => `${r.role}: ${r.who}`).join("  ·  ");
+    else body = JSON.stringify(s);
+    const lines = Math.min(4, Math.max(1, String(body).split("\n").length));
+    slide.addText(body, {
+      x: 0.5,
+      y,
+      w: 9,
+      h: 0.28 * lines,
+      fontSize: 11,
+      fontFace: "Malgun Gothic",
+      color: "333333",
+      valign: "top",
+    });
+    y += 0.28 * lines + 0.12;
+    if (y > 5.1) break;
+  }
+  slide.addText("TF Pulse · 레고 레이아웃 초안 · 수치·문구를 수정해 사용하세요", {
+    x: 0.4,
+    y: 5.25,
+    w: 9.2,
+    h: 0.25,
+    fontSize: 9,
+    color: "888888",
+    fontFace: "Malgun Gothic",
+  });
+  await pptx.writeFile({ fileName: `${fileName || "연성대_레고레이아웃_초안"}.pptx` });
+}

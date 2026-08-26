@@ -9,10 +9,21 @@ import {
 import { REPORT_LAYOUTS, downloadReportLayoutPpt, layoutPreviewWireHtml } from "./report-layouts.js";
 import { downloadEditableDiagramPpt, diagramPreviewWireHtml } from "./report-diagrams.js";
 import { downloadReportArtPackagePpt } from "./report-art-pack.js";
+import {
+  DEFAULT_TF_TOPICS,
+  computeMilestoneProgress,
+  marathonTrackHtml,
+  flaticonSearchHtml,
+  bindFlaticonSearch,
+  legoBuilderHtml,
+  bindLegoBuilder,
+  downloadLegoDraftPpt,
+} from "./tf-redesign.js";
 
-const STORAGE_KEY = "tf-ops-data-v13";
+const STORAGE_KEY = "tf-ops-data-v14";
 const USER_KEY = "tf-ops-user-v1";
 const REMIND_KEY = "tf-ops-schedule-remind-v1";
+const TF_TOPIC_KEY = "tf-ops-topic-v1";
 const REMIND_BEFORE_DAYS = 14;
 
 const BUDGET_CATALOG = {
@@ -68,67 +79,66 @@ const BUDGET_CATALOG = {
 };
 
 const VIEW_META = {
-  dashboard: { title: "연어회", desc: "진행·일정·할 일" },
+  dashboard: { title: "TF 요약", desc: "제출일시·잔여기간·일정 진도" },
+  "my-work": { title: "내 업무", desc: "내가 할 일·작성·제출·피드백" },
+  "tf-all": { title: "TF 업무 모두보기", desc: "보고서·예산·성과지표 통합" },
   parts: { title: "목차·할당", desc: "목차와 파트 분량" },
-  collections: { title: "취합", desc: "차수별 제출·점검" },
+  collections: { title: "보고서 통합", desc: "차수별 제출·분량 분석" },
   review: { title: "윤독", desc: "검토사항 기록" },
   requests: { title: "요청", desc: "작업 요청·진행" },
-  budget: { title: "예산", desc: "입력·취합·엑셀" },
+  budget: { title: "예산 통합", desc: "영역·비목별 통계" },
   schedule: { title: "일정", desc: "달력·마감" },
   drive: { title: "드라이브", desc: "문서 링크" },
   resources: { title: "양식", desc: "공통양식·가이드" },
-  food: { title: "오늘 뭐먹지", desc: "메뉴 돌림판" },
+  food: { title: "오늘 뭐먹지", desc: "메뉴 돌림판·투표" },
   members: { title: "구성원", desc: "TF 멤버" },
-  "ai-art": { title: "그림", desc: "보고서용 그림" },
-  kpi: { title: "성과지표", desc: "목표 달성 시뮬레이션" },
+  "ai-art": { title: "보고서 그림", desc: "레이아웃·도식·PPT" },
+  kpi: { title: "성과지표", desc: "달성·밸런스 분석" },
   guide: { title: "사용방법", desc: "메뉴별 안내" },
 };
 
-/** 심플 TF 운영 메뉴: 홈(달력) → 보고서 → 요청 → 예산 → 성과 → 식사 → 설정 */
+/** PDF 요청: TF요약 · 내업무 · TF모두보기 · 사용방법 (+ Setting) */
 const NAV_GROUPS = {
   home: {
-    label: "홈",
+    label: "TF 요약",
     views: ["dashboard"],
     defaultView: "dashboard",
   },
-  report: {
-    label: "보고서",
-    views: ["resources", "parts", "collections", "review", "ai-art"],
+  mywork: {
+    label: "내업무",
+    views: ["my-work", "ai-art", "food", "requests"],
     labels: {
-      resources: "양식",
-      parts: "목차·할당",
-      collections: "취합",
-      review: "윤독",
-      "ai-art": "그림",
+      "my-work": "할 일",
+      "ai-art": "보고서 그림",
+      food: "오늘 뭐먹지",
+      requests: "요청",
     },
-    adminViews: ["parts"],
-    defaultView: "collections",
+    defaultView: "my-work",
   },
-  request: {
-    label: "요청",
-    views: ["requests"],
-    defaultView: "requests",
+  tfall: {
+    label: "TF 업무 모두보기",
+    views: ["tf-all", "collections", "budget", "kpi", "schedule", "review", "resources"],
+    labels: {
+      "tf-all": "통합현황",
+      collections: "보고서 통합",
+      budget: "예산 통합",
+      kpi: "성과지표",
+      schedule: "일정",
+      review: "윤독",
+      resources: "양식",
+    },
+    defaultView: "tf-all",
   },
-  budget: {
-    label: "예산",
-    views: ["budget"],
-    defaultView: "budget",
-  },
-  kpi: {
-    label: "성과지표",
-    views: ["kpi"],
-    defaultView: "kpi",
-  },
-  food: {
-    label: "오늘 뭐먹지",
-    views: ["food"],
-    defaultView: "food",
+  guide: {
+    label: "사용방법",
+    views: ["guide"],
+    defaultView: "guide",
   },
   setup: {
-    label: "설정",
+    label: "Setting",
     adminOnly: true,
-    views: ["members", "drive", "guide"],
-    labels: { members: "구성원", drive: "드라이브", guide: "사용방법" },
+    views: ["members", "parts", "drive"],
+    labels: { members: "구성원", parts: "목차·할당", drive: "드라이브" },
     defaultView: "members",
   },
 };
@@ -701,6 +711,7 @@ async function initState() {
       ensureAiArts();
       ensureReviewDocs();
       ensureReviewSession();
+      ensureTfTopics();
       persist();
       return;
     } catch {
@@ -718,7 +729,70 @@ async function initState() {
   ensureAiArts();
   ensureReviewDocs();
   ensureReviewSession();
+  ensureTfTopics();
   persist();
+}
+
+function ensureTfTopics() {
+  if (!Array.isArray(state.tfTopics) || !state.tfTopics.length) {
+    state.tfTopics = DEFAULT_TF_TOPICS.map((t) => ({
+      ...t,
+      memberIds: (state.members || []).map((m) => m.id),
+    }));
+  }
+  state.tfTopics = state.tfTopics.map((t) => ({
+    id: t.id || uid("tf"),
+    name: t.name || "TF",
+    desc: t.desc || "",
+    memberIds: Array.isArray(t.memberIds) && t.memberIds.length
+      ? t.memberIds
+      : (state.members || []).map((m) => m.id),
+  }));
+  if (!state.activeTfTopicId || !state.tfTopics.some((t) => t.id === state.activeTfTopicId)) {
+    state.activeTfTopicId = state.tfTopics[0]?.id || "";
+  }
+}
+
+function activeTfTopic() {
+  ensureTfTopics();
+  return state.tfTopics.find((t) => t.id === state.activeTfTopicId) || state.tfTopics[0] || null;
+}
+
+function membersForActiveTopic() {
+  const topic = activeTfTopic();
+  if (!topic) return state.members || [];
+  const set = new Set(topic.memberIds || []);
+  const filtered = (state.members || []).filter((m) => set.has(m.id));
+  return filtered.length ? filtered : state.members || [];
+}
+
+function milestoneProgressFromState() {
+  ensureBudget();
+  ensureKpis();
+  const cols = state.collections || [];
+  const r1 = cols.find((c) => c.round === 1);
+  const r2 = cols.find((c) => c.round === 2);
+  const roundDone = (col) => {
+    if (!col?.submissions?.length) return false;
+    return col.submissions.every((s) => submissionBoardStatus(s).id === "done");
+  };
+  const mode = getBudgetInputMode();
+  const budItems = state.budget?.items || [];
+  const budgetDone =
+    budItems.length > 0 && budItems.every((i) => !!budgetCalcOf(i, mode));
+  const kpis = state.kpis || [];
+  const kpiDone =
+    kpis.length > 0 &&
+    kpis.every((k) => Number(k.target) > 0 && Number(k.actual) >= Number(k.target) * 0.8);
+  const finalDone = roundDone(cols.find((c) => c.round >= 3)) || false;
+  return computeMilestoneProgress({
+    hasKickoff: true,
+    round1Done: roundDone(r1),
+    round2Done: roundDone(r2),
+    budgetDone,
+    kpiDone,
+    finalDone,
+  });
 }
 
 function ensureAiBriefs() {
@@ -999,23 +1073,55 @@ function showLoginGate() {
   $("#loginGate").hidden = false;
   $("#appShell").hidden = true;
   applyLoginWeather();
-  const list = $("#loginMemberList");
-  list.innerHTML = state.members
-    .map(
-      (m) => `
-      <button type="button" class="member-btn ${m.role === "admin" ? "is-admin" : ""} ${m.role === "budget" ? "is-budget" : ""} ${m.role === "food" ? "is-food" : ""}" data-login="${escapeAttr(m.name)}">
-        <span class="member-name">${escapeHtml(m.name)}</span>
-        <span class="role">${roleLabel(m.role)}</span>
-      </button>`
-    )
-    .join("");
-  list.querySelectorAll("[data-login]").forEach((btn) => {
-    btn.addEventListener("click", () => enterAs(btn.dataset.login));
-  });
+  ensureTfTopics();
+
+  const topicSel = $("#loginTfTopic");
+  const topicDesc = $("#loginTfTopicDesc");
+  const savedTopic = localStorage.getItem(TF_TOPIC_KEY);
+  if (savedTopic && state.tfTopics.some((t) => t.id === savedTopic)) {
+    state.activeTfTopicId = savedTopic;
+  }
+  if (topicSel) {
+    topicSel.innerHTML = state.tfTopics
+      .map(
+        (t) =>
+          `<option value="${escapeAttr(t.id)}" ${t.id === state.activeTfTopicId ? "selected" : ""}>${escapeHtml(t.name)}</option>`
+      )
+      .join("");
+    topicSel.onchange = () => {
+      state.activeTfTopicId = topicSel.value;
+      localStorage.setItem(TF_TOPIC_KEY, topicSel.value);
+      renderLoginMembers();
+      if (topicDesc) topicDesc.textContent = activeTfTopic()?.desc || "";
+    };
+  }
+  if (topicDesc) topicDesc.textContent = activeTfTopic()?.desc || "";
+  renderLoginMembers();
+
   $("#btnDownloadSrsLogin")?.addEventListener("click", (e) => {
     e.preventDefault();
     e.stopPropagation();
     downloadSrsDocument();
+  });
+}
+
+function renderLoginMembers() {
+  const list = $("#loginMemberList");
+  if (!list) return;
+  const members = membersForActiveTopic();
+  list.innerHTML = members.length
+    ? members
+        .map(
+          (m) => `
+      <button type="button" class="member-btn ${m.role === "admin" ? "is-admin" : ""} ${m.role === "budget" ? "is-budget" : ""} ${m.role === "food" ? "is-food" : ""}" data-login="${escapeAttr(m.name)}">
+        <span class="member-name">${escapeHtml(m.name)}</span>
+        <span class="role">${roleLabel(m.role)}</span>
+      </button>`
+        )
+        .join("")
+    : `<p class="empty">이 TF주제에 등록된 참가자가 없습니다.</p>`;
+  list.querySelectorAll("[data-login]").forEach((btn) => {
+    btn.addEventListener("click", () => enterAs(btn.dataset.login));
   });
 }
 
@@ -1731,7 +1837,7 @@ function updateRemindBell() {
   const countEl = $("#remindBellCount");
   if (!bell || !sessionUser) return;
   const pending = getUpcomingReminders();
-  const feed = myPendingRequests();
+  const feed = myCommentFeedItems();
   const count = pending.length + feed.length;
   if (count > 0) {
     bell.hidden = false;
@@ -1753,8 +1859,9 @@ function remindTaskCardHtml(s, sourceLabel = "") {
       : days === 0
         ? ""
         : ` · ${days}일 남음`;
+  const glow = days < 0 ? " is-overdue-glow" : days === 0 ? " is-approaching" : "";
   return `
-    <button type="button" class="remind-item" data-goto-schedule="${escapeAttr(s.id)}">
+    <button type="button" class="remind-item${glow}" data-goto-schedule="${escapeAttr(s.id)}">
       <span class="remind-from-row">
         <span class="from-owner">${escapeHtml(from)}</span>
         <span class="origin-tag solo">${escapeHtml(typeLabel(s.type))}</span>
@@ -1772,17 +1879,25 @@ function remindFeedCardHtml(r) {
   const timing =
     days != null && days < 0
       ? ` · <span class="remind-yoy is-late">${Math.abs(days)}일 지남</span>`
-      : "";
+      : days != null && days <= 3
+        ? ` · <span class="remind-yoy">${days}일 남음</span>`
+        : "";
+  const glow = days != null && days < 0 ? " is-overdue-glow" : "";
+  const kindLabel =
+    { review: "윤독", budget: "예산", kpi: "성과지표", file: "파일", request: "요청" }[r.kind] || "코멘트";
+  const gotoAttr = r.requestId
+    ? `data-goto-request="${escapeAttr(r.requestId)}"`
+    : `data-goto-view="${escapeAttr(r.goto || "requests")}"`;
   return `
-    <button type="button" class="remind-item remind-comment-item" data-goto-request="${escapeAttr(r.id)}">
+    <button type="button" class="remind-item remind-comment-item${glow}" ${gotoAttr}>
       <span class="remind-from-row">
         <span class="from-owner">${escapeHtml(r.requester || "관리자")}로부터</span>
-        <span class="origin-tag comment">코멘트</span>
+        <span class="origin-tag comment">${escapeHtml(kindLabel)}</span>
       </span>
       <strong>${escapeHtml(r.title)}</strong>
       <span class="remind-item-meta remind-comment-preview">${escapeHtml(r.requester || "관리자")} · ${
         r.dueDate ? escapeHtml(formatKorDate(r.dueDate)) : "기한 없음"
-      }${timing}${r.memo ? ` · ${escapeHtml(String(r.memo).slice(0, 60))}` : ""}</span>
+      }${timing}${r.memo ? ` · ${escapeHtml(String(r.memo).slice(0, 80))}` : ""}</span>
     </button>`;
 }
 
@@ -1793,7 +1908,7 @@ function renderRemindList() {
   const overdue = items.filter((s) => s.daysUntil < 0);
   const todayItems = items.filter((s) => s.daysUntil === 0);
   const soon = items.filter((s) => s.daysUntil > 0 && s.daysUntil <= 7);
-  const feed = myPendingRequests();
+  const feed = myCommentFeedItems();
   const overdueNote = "빨리 처리하거나, 처리 일정을 재수립하거나, 완료 여부를 점검하세요";
 
   const section = (tone, title, count, cards, { glow = false, note = "", bird = false } = {}) => {
@@ -1863,6 +1978,13 @@ function renderRemindList() {
       cancelRemindPopupAutoClose();
       closeRemindPopup();
       setView("requests");
+    });
+  });
+  root.querySelectorAll("[data-goto-view]").forEach((el) => {
+    el.addEventListener("click", () => {
+      cancelRemindPopupAutoClose();
+      closeRemindPopup();
+      setView(el.dataset.gotoView || "requests");
     });
   });
 }
@@ -1936,7 +2058,7 @@ function openRemindPopup(browseAll = false) {
     if (map.hideToday === today()) return;
   }
   const pending = getUpcomingReminders({ includeDismissed: browseAll });
-  const feed = myPendingRequests();
+  const feed = myCommentFeedItems();
   if (!browseAll && !pending.length && !feed.length) {
     closeRemindPopup({ skipHideOpts: true });
     updateRemindBell();
@@ -1980,6 +2102,86 @@ function myPendingRequests() {
   return state.requests.filter(
     (r) => r.recipient === sessionUser && r.status !== "완료"
   );
+}
+
+/** 파일·예산·성과지표·윤독 코멘트 피드 */
+function myCommentFeedItems() {
+  if (!sessionUser) return [];
+  const items = [];
+  const mine = new Set(myPartIds());
+  const me = currentMember();
+
+  (state.reviewSession?.comments || []).forEach((c) => {
+    if (!c?.text) return;
+    if (mine.has(c.partId) || c.partId === "__overall__") {
+      items.push({
+        id: `rev-${c.id}`,
+        title: "윤독 코멘트",
+        memo: c.text,
+        requester: c.author || "관리자",
+        dueDate: null,
+        goto: "review",
+        kind: "review",
+      });
+    }
+  });
+
+  myPendingRequests().forEach((r) => {
+    const blob = `${r.title || ""} ${r.memo || ""}`;
+    let goto = "requests";
+    let kind = "request";
+    if (/예산/.test(blob)) {
+      goto = "budget";
+      kind = "budget";
+    } else if (/성과|KPI|지표/.test(blob)) {
+      goto = "kpi";
+      kind = "kpi";
+    } else if (/취합|원고|파일|업로드|점검/.test(blob)) {
+      goto = "collections";
+      kind = "file";
+    }
+    items.push({
+      id: `req-${r.id}`,
+      title: r.title || "요청 코멘트",
+      memo: r.memo || "",
+      requester: r.requester || "관리자",
+      dueDate: r.dueDate || null,
+      goto,
+      kind,
+      requestId: r.id,
+    });
+  });
+
+  if (me) {
+    (state.budget?.items || []).forEach((i) => {
+      if (i.assigneeId === me.id && i.adminNote) {
+        items.push({
+          id: `budnote-${i.id}`,
+          title: `예산 코멘트 · ${i.program || i.area || "항목"}`,
+          memo: i.adminNote,
+          requester: "예산·관리자",
+          dueDate: null,
+          goto: "budget",
+          kind: "budget",
+        });
+      }
+    });
+    (state.kpis || []).forEach((k) => {
+      if (k.note && (k.ownerId === me.id || !k.ownerId)) {
+        items.push({
+          id: `kpinote-${k.id}`,
+          title: `성과지표 코멘트 · ${k.name || ""}`,
+          memo: k.note,
+          requester: "관리자",
+          dueDate: null,
+          goto: "kpi",
+          kind: "kpi",
+        });
+      }
+    });
+  }
+
+  return items.slice(0, 12);
 }
 
 function updateRequestPlane() {
@@ -2220,8 +2422,6 @@ function renderDashboard() {
   ensureBudget();
   ensureRequests();
   const admin = isAdmin();
-  const who = sessionUser || "작성자";
-  const actions = buildMyActionItems();
 
   if (!state._calCursor) state._calCursor = today().slice(0, 7) + "-01";
   if (!state._calSelected) state._calSelected = today();
@@ -2239,48 +2439,30 @@ function renderDashboard() {
     : [];
   const progress = buildHomeProgressItems();
   const tfLabel = state.meta?.reportTitle || state.meta?.tfName || "2026 교육혁신 성과보고서 TF";
+  const topic = activeTfTopic();
+  const mile = milestoneProgressFromState();
 
   el.innerHTML = `
-    <section class="yeonu-hero yeonu-hero-unified" aria-label="연어회">
+    <section class="yeonu-hero yeonu-hero-unified" aria-label="TF 요약">
       <div class="yeonu-hero-visual">
-        <img src="assets/yeonuhue-hero.png" alt="연어들이 모여 회를 이루는 일러스트" width="1280" height="720" />
+        <img src="assets/yeonuhue-hero.png" alt="연어회 일러스트" width="1280" height="720" />
       </div>
       <div class="yeonu-hero-copy">
-        <p class="yeonu-kicker">${escapeHtml(tfLabel)}</p>
-        <h1 class="yeonu-title">연어회</h1>
-        <p class="yeonu-story"><strong>연성</strong>의 <strong>말(語)</strong>가 모여 <strong>회(會)</strong>를 이루면 못할 일이 없다.</p>
+        <p class="yeonu-kicker">${escapeHtml(topic?.name || tfLabel)}</p>
+        <h1 class="yeonu-title">연어회<span class="yeonu-hanja">(硏語會)</span></h1>
+        <p class="yeonu-story">연<span>(硏)</span>성의 말<span>(語)</span>이 모이면<span>(會)</span> 못 이룰것이 없다.</p>
       </div>
       <aside class="yeonu-hero-aside report-deadline" aria-live="polite">
+        <p class="deadline-label">보고서 제출일시</p>
+        <p class="deadline-when">2026년 8월 3일 오후 4시</p>
         <p class="deadline-remain">
-          보고서 제출까지
+          잔여
           <strong id="homeDeadlineRemain">—</strong>
-          남았습니다.
         </p>
-        <p class="deadline-base">최종 제출일 8월 3일 오후 4시 기준</p>
       </aside>
     </section>
 
     ${homeStatusStripHtml(progress)}
-
-    ${
-      actions.length
-        ? `<div class="home-todo-strip">
-        <div class="home-todo-head">
-          <strong>${escapeHtml(who)} · 할 일</strong>
-          <span>${actions.length}</span>
-        </div>
-        <ul class="home-todo-inline">
-          ${actions
-            .slice(0, 3)
-            .map(
-              (a) =>
-                `<li><button type="button" data-goto="${escapeAttr(a.goto)}"><strong>${escapeHtml(a.title)}</strong><span>${escapeHtml(a.meta)}</span></button></li>`
-            )
-            .join("")}
-        </ul>
-      </div>`
-        : ""
-    }
 
     <div class="urgency-strip home-urgency" aria-label="마감 요약">
       <button type="button" class="urgency-pill critical" data-goto="schedule"><strong>${counts.urgent}</strong><span>긴급</span></button>
@@ -2324,6 +2506,8 @@ function renderDashboard() {
       </div>
       ${buildHeatCalendarHtml(cursor, { mode, selectedIso: selected, bandFilter: null })}
     </section>
+
+    ${marathonTrackHtml(mile, escapeHtml)}
 
     ${
       dayItems.length
@@ -4368,6 +4552,8 @@ function ensureFoodCatalog() {
       .filter(Boolean)
       .slice(0, 5),
     mealTypes: Array.isArray(v.mealTypes) && v.mealTypes.length ? v.mealTypes : ["lunch", "dinner", "snack", "late"],
+    photoUrl: v.photoUrl || "",
+    photoDataUrl: v.photoDataUrl || "",
   }));
 }
 
@@ -4609,17 +4795,25 @@ function copyFoodPollForKakao() {
     return;
   }
   const url = foodPollShareUrl(poll.id);
+  const menuLines = (poll.places || [])
+    .map((p, i) => `${i + 1}. ${p.name}`)
+    .join("\n");
   const text = [
-    `[TF 식사 투표] ${poll.date} ${poll.mealLabel}`,
-    poll.body,
+    `🍽 [연어회 TF 식사 투표]`,
+    `${poll.date} ${poll.mealLabel}`,
     "",
-    `투표하러 가기 ↓`,
+    poll.body || "",
+    "",
+    "▼ 후보 메뉴",
+    menuLines || "(메뉴 확인)",
+    "",
+    "▶ 투표하러 가기 (이름 선택 후 메뉴 체크)",
     url,
     "",
-    `(링크에서 이름 선택 후 메뉴를 체크하면 여기에 누적됩니다)`,
+    "※ 선택하면 성명·메뉴가 TF Pulse에 자동 취합됩니다.",
   ].join("\n");
   navigator.clipboard.writeText(text).then(
-    () => alert("카톡에 붙여넣을 문구와 URL을 복사했습니다."),
+    () => alert("카톡에 붙여넣을 안내 문구와 링크를 복사했습니다."),
     () => {
       prompt("복사해서 카톡에 붙여넣으세요:", text);
     }
@@ -4814,7 +5008,11 @@ function renderFoodCatalogPanel() {
     <tr data-vendor-id="${escapeAttr(v.id)}">
       <td>${escapeHtml(v.category)}</td>
       <td>${escapeHtml(v.name)}</td>
-      <td class="muted">${escapeHtml((v.menus || []).join(", "))}</td>
+      <td class="muted">${escapeHtml((v.menus || []).join(", "))}${
+        v.photoDataUrl || v.photoUrl
+          ? ` · <span class="food-photo-tag">메뉴판</span>`
+          : ""
+      }</td>
       <td class="muted">${escapeHtml((v.mealTypes || []).map((k) => FOOD_MENUS[k]?.label || k).join(", "))}</td>
       <td>
         <div class="row">
@@ -4881,18 +5079,25 @@ function openFoodVendorModal(id) {
         ${menus
           .map(
             (m, i) => `
-        <label class="field ${i === 0 ? "full" : ""}">대표메뉴 ${i + 1}
-          <input name="menu${i}" value="${escapeAttr(m)}" placeholder="메뉴명" />
+        <label class="field ${i === 0 ? "full" : ""}">대표메뉴 ${i + 1}${i < 3 ? " *" : ""}
+          <input name="menu${i}" value="${escapeAttr(m)}" placeholder="메뉴명 (3~5개 권장)" />
         </label>`
           )
           .join("")}
+        <label class="field full">메뉴판 사진 URL
+          <input name="photoUrl" value="${escapeAttr(item?.photoUrl || "")}" placeholder="https://… (선택)" />
+        </label>
+        <label class="field full">메뉴판 사진 파일
+          <input type="file" name="photoFile" accept="image/*" />
+          ${item?.photoDataUrl ? `<span class="muted" style="display:block;margin-top:4px">등록된 사진 있음</span>` : ""}
+        </label>
         <div class="field full">
           <span class="muted">식사구분</span>
           <div class="row" style="margin-top:6px;flex-wrap:wrap;gap:8px">${mealChecks}</div>
         </div>
       </div>
     `,
-    onSubmit: (fd) => {
+    onSubmit: async (fd) => {
       const category = fd.get("category").toString().trim();
       const name = fd.get("name").toString().trim();
       const menuList = [0, 1, 2, 3, 4]
@@ -4900,19 +5105,36 @@ function openFoodVendorModal(id) {
         .filter(Boolean)
         .slice(0, 5);
       const mealTypes = fd.getAll("mealTypes").map(String);
+      const photoUrl = (fd.get("photoUrl") || "").toString().trim();
       if (!category || !name) {
         alert("종목과 업체명을 입력해 주세요.");
         return false;
       }
-      if (!menuList.length) {
-        alert("대표메뉴를 1개 이상 입력해 주세요.");
+      if (menuList.length < 3) {
+        alert("대표메뉴를 3~5개 입력해 주세요.");
         return false;
+      }
+      let photoDataUrl = item?.photoDataUrl || "";
+      const file = fd.get("photoFile");
+      if (file && file instanceof File && file.size > 0) {
+        if (file.size > 2.5 * 1024 * 1024) {
+          alert("메뉴판 사진은 2.5MB 이하로 올려 주세요.");
+          return false;
+        }
+        photoDataUrl = await new Promise((resolve, reject) => {
+          const reader = new FileReader();
+          reader.onload = () => resolve(String(reader.result || ""));
+          reader.onerror = () => reject(new Error("읽기 실패"));
+          reader.readAsDataURL(file);
+        }).catch(() => "");
       }
       const data = {
         category,
         name,
         menus: menuList,
         mealTypes: mealTypes.length ? mealTypes : ["lunch", "dinner", "snack", "late"],
+        photoUrl,
+        photoDataUrl,
       };
       if (item) Object.assign(item, data);
       else state.foodCatalog.push({ id: uid("fv"), ...data });
@@ -4978,7 +5200,7 @@ function renderFood() {
 
   el.innerHTML = `
     <div class="food-page">
-      <p class="food-lead">돌림판은 <strong>종목</strong>을 고르고, 해당 종목의 <strong>업체</strong>를 랜덤으로 선정합니다. 대표메뉴 중 투표로 고릅니다.</p>
+      <p class="food-lead">담당자가 음식·식당·대표메뉴(3~5)·메뉴판 사진을 등록하면, 돌림판이 종목·업체를 랜덤 배정합니다. 투표 링크를 카톡으로 보내면 성명·메뉴가 자동 취합됩니다.</p>
       <div class="food-meal-tabs">
         ${Object.entries(FOOD_MENUS)
           .map(
@@ -5224,47 +5446,47 @@ const GUIDE_SECTIONS = [
 const GUIDE_MENU = [
   {
     tab: "dashboard",
-    name: "홈",
-    how: "연어회 스토리와 제출 D-day, 달력으로 TF 일정을 한눈에 봅니다.",
+    name: "TF 요약",
+    how: "제출일시·잔여기간, 달력, 마라톤 진도(킥오프→최종)를 한눈에 봅니다.",
   },
   {
-    tab: "collections",
-    name: "보고서",
-    how: "양식 → 목차·할당 → 취합(1·2·3차) → 윤독 → 그림 생성 순으로 보고서를 만듭니다.",
+    tab: "my-work",
+    name: "내업무",
+    how: "목차 할당·요청 기준 할 일 체크리스트와 작성·제출·피드백 허브입니다.",
   },
   {
-    tab: "requests",
-    name: "요청",
-    how: "관리자는 구성원별 작업을 요청하고, 담당자는 일정을 확인하며 완료합니다.",
+    tab: "ai-art",
+    name: "보고서 그림",
+    how: "레고 조립 레이아웃 → 도식 → PPT. 하단 Flaticon 검색으로 그림을 받습니다.",
   },
   {
-    tab: "budget",
-    name: "예산",
-    how: "영역·프로그램별 예산·산출내역을 입력하고 엑셀로 일괄 업/다운로드합니다. 비목·영역 합산과 미입력 규모를 봅니다.",
-  },
-  {
-    tab: "kpi",
-    name: "성과지표",
-    how: "지표명·기준값·근거·산식으로 목표 달성률을 시뮬레이션합니다.",
+    tab: "tf-all",
+    name: "TF 업무 모두보기",
+    how: "보고서 분량·예산 구성비·성과지표 달성·밸런스를 통합 분석합니다.",
   },
   {
     tab: "food",
     name: "오늘 뭐먹지",
-    how: "돌림판·식사 공지·투표를 유지합니다.",
+    how: "업체·대표메뉴 3~5개·메뉴판 사진 등록 후 돌림판·투표·카톡 공유합니다.",
+  },
+  {
+    tab: "guide",
+    name: "사용방법",
+    how: "메뉴 구성과 역할별 사용 팁을 안내합니다.",
   },
   {
     tab: "members",
-    name: "설정",
-    how: "관리자 전용. 구성원·드라이브·사용방법을 관리합니다.",
+    name: "Setting",
+    how: "관리자 전용. 구성원·목차·할당·드라이브를 관리합니다.",
     adminOnly: true,
   },
 ];
 
 const GUIDE_TIPS = [
-  "상단 메뉴는 홈 · 보고서 · 운영 · 예산 · 자료 · 설정(관리자) 여섯 칸입니다. 세부 기능은 그 아래 하위 탭에서 고릅니다.",
-  "상단 파란 ✈ 알람은 아직 처리하지 않은 공통 요청입니다. 누르면 요청 목록을 다시 볼 수 있습니다.",
-  "일정 알람(종)은 마감·회의가 다가올 때 표시됩니다. 닫아도 벨에서 다시 열 수 있습니다.",
-  "「오늘 뭐먹지」는 운영 메뉴 안에 있습니다. 확정·TF 공지를 누르면 전원에게 메뉴선택 요청이 갑니다.",
+  "상단 메뉴는 TF 요약 · 내업무 · TF 업무 모두보기 · 사용방법 네 칸입니다. 관리자는 Setting이 추가됩니다.",
+  "접속할 때마다 이름 선택 화면부터 시작합니다. TF주제 리스트에서 TF를 고른 뒤 참가자를 선택하세요.",
+  "종(알람)은 마감 임박·초과(지연 일수)·파일/예산/성과지표 코멘트를 모읍니다. 지연은 붉은 글로우로 표시됩니다.",
+  "「오늘 뭐먹지」는 내업무 안에 있습니다. 확정 후 카톡 문구·링크로 배포하면 성명·메뉴가 자동 취합됩니다.",
 ];
 
 function renderGuide() {
@@ -5975,6 +6197,8 @@ function renderAiArt() {
           <button type="button" class="btn" data-art-sub="diagram">다음 · 도식 설계 →</button>
           <span class="muted" id="layoutPptStatus"></span>
         </div>
+
+        ${legoBuilderHtml(state._legoBlocks || ["title", "kpi-row", "process", "note"])}
       </section>
 
       <section class="panel diagram-wizard report-make-panel" data-art-panel="diagram" ${sub === "diagram" ? "" : "hidden"}>
@@ -6120,6 +6344,8 @@ function renderAiArt() {
             : `<div class="empty" style="margin-top:12px">참고 비트맵은 선택 사항입니다. 먼저 전체 재료 PPT 또는 도식 재료 PPT를 받으세요.</div>`
         }
       </section>
+
+      ${flaticonSearchHtml()}
     </div>
   `;
 
@@ -6146,6 +6372,34 @@ function renderAiArt() {
 
   el.querySelectorAll("[data-art-sub]").forEach((btn) => {
     btn.addEventListener("click", () => showArtSub(btn.dataset.artSub));
+  });
+  bindFlaticonSearch(el);
+  bindLegoBuilder(el, {
+    onCompose: async ({ blocks, area, focus, statusEl, progressEl, fillEl, stepEl }) => {
+      state._legoBlocks = blocks;
+      if (progressEl) progressEl.hidden = false;
+      if (statusEl) statusEl.textContent = "작성 중…";
+      const steps = ["블록 배치 확인", "샘플 수치·문구 삽입", "PPT 생성"];
+      for (let i = 0; i < steps.length; i++) {
+        if (stepEl) stepEl.textContent = steps[i];
+        if (fillEl) fillEl.style.width = `${Math.round(((i + 1) / steps.length) * 100)}%`;
+        await new Promise((r) => setTimeout(r, 280));
+      }
+      try {
+        await downloadLegoDraftPpt({
+          blocks,
+          area,
+          focus,
+          fileName: `연성대_레고레이아웃_${today()}`,
+        });
+        if (statusEl) statusEl.textContent = "PPT 다운로드 완료";
+        if (stepEl) stepEl.textContent = "완료 — 바로 활용하세요";
+        showArtSub("result");
+      } catch (err) {
+        if (statusEl) statusEl.textContent = "";
+        alert(err.message || "레고 초안 PPT 저장에 실패했습니다.");
+      }
+    },
   });
   el.querySelectorAll("[data-doc-kind]").forEach((btn) => {
     btn.addEventListener("click", () => {
@@ -7737,6 +7991,8 @@ function openKpiModal(id = null) {
 function renderView(name) {
   const map = {
     dashboard: renderDashboard,
+    "my-work": renderMyWork,
+    "tf-all": renderTfAll,
     parts: renderParts,
     collections: renderCollections,
     review: renderReview,
@@ -7752,6 +8008,325 @@ function renderView(name) {
     guide: renderGuide,
   };
   map[name]?.();
+}
+
+function buildMyWorkChecklist() {
+  const items = [];
+  const styleGuides = (state.resources || []).filter((r) => r.category === "스타일" || /스타일|가이드/i.test(r.title || ""));
+  items.push({
+    id: "style",
+    done: styleGuides.length > 0,
+    title: "관리자의 스타일 가이드를 열람하세요.",
+    meta: styleGuides[0]?.title || "양식 메뉴에서 확인",
+    goto: "resources",
+    overdue: false,
+  });
+
+  const mine = myPartIds();
+  const col = latestCollection() || (state.collections || [])[0];
+  if (col && mine.length) {
+    mine.forEach((pid) => {
+      const sub = col.submissions.find((s) => s.partId === pid);
+      const st = submissionBoardStatus(sub);
+      const p = partById(pid);
+      items.push({
+        id: `col-${pid}`,
+        done: st.id === "done",
+        title: `${col.name || "취합"} · ${p ? `${p.section}. ${p.title}` : pid} 원고를 작성·업로드하세요.`,
+        meta: st.label,
+        goto: "collections",
+        overdue: st.id !== "done" && col.dueDate && daysUntil(col.dueDate) < 0,
+      });
+    });
+  } else {
+    items.push({
+      id: "col-none",
+      done: false,
+      title: "1차 원고를 작성하여 업로드 해주세요.",
+      meta: mine.length ? "취합 차수를 확인하세요" : "목차·할당에서 담당 파트를 배정받으세요",
+      goto: "collections",
+      overdue: false,
+    });
+  }
+
+  ensureBudget();
+  const me = currentMember();
+  const mode = getBudgetInputMode();
+  const meta = budgetModeMeta(mode);
+  const myBud = me
+    ? (state.budget.items || []).filter((i) => i.assigneeId === me.id)
+    : [];
+  const budPending = myBud.filter((i) => !budgetCalcOf(i, mode));
+  items.push({
+    id: "budget",
+    done: myBud.length ? budPending.length === 0 : false,
+    title: "예산을 수립하여 입력해 주세요.",
+    meta: myBud.length ? `${meta.short} ${myBud.length - budPending.length}/${myBud.length}` : "배정 항목 없음",
+    goto: "budget",
+    overdue: budPending.length > 0,
+  });
+
+  ensureKpis();
+  const kpiOpen = (state.kpis || []).filter((k) => Number(k.actual) <= 0);
+  items.push({
+    id: "kpi",
+    done: (state.kpis || []).length > 0 && kpiOpen.length === 0,
+    title: "성과지표를 수립하여 입력해 주세요.",
+    meta: (state.kpis || []).length ? `실적 미입력 ${kpiOpen.length}건` : "지표 등록 필요",
+    goto: "kpi",
+    overdue: false,
+  });
+
+  myPendingRequests().forEach((r) => {
+    const days = r.dueDate ? daysUntil(r.dueDate) : null;
+    items.push({
+      id: `req-${r.id}`,
+      done: false,
+      title: r.title || "공통 요청",
+      meta: r.dueDate ? `마감 ${r.dueDate}${days != null ? ` · ${timingLabel(days)}` : ""}` : "마감 미지정",
+      goto: "requests",
+      overdue: days != null && days < 0,
+      approaching: days != null && days >= 0 && days <= 3,
+    });
+  });
+
+  return items;
+}
+
+function renderMyWork() {
+  const el = $("#view-my-work");
+  if (!el) return;
+  const who = sessionUser || "작성자";
+  const list = buildMyWorkChecklist();
+  const open = list.filter((i) => !i.done);
+  const overdue = open.filter((i) => i.overdue);
+
+  el.innerHTML = `
+    <div class="mywork-page">
+      <section class="panel mywork-hero ${overdue.length ? "is-overdue-glow" : ""}">
+        <div class="panel-head" style="margin-bottom:0">
+          <div>
+            <h2 class="panel-title">${escapeHtml(who)}님의 할 일</h2>
+            <p class="muted" style="margin:4px 0 0">목차 할당·요청·예산·성과지표가 여기 모입니다. 작성·제출·피드백을 바로 이어가세요.</p>
+          </div>
+          <span class="badge ${overdue.length ? "danger" : "warn"}">${open.length}건 남음</span>
+        </div>
+      </section>
+
+      <section class="panel">
+        <div class="panel-head">
+          <h2 class="panel-title">체크리스트</h2>
+          <button type="button" class="btn btn-sm btn-primary" data-goto="ai-art">보고서 그림그리기</button>
+        </div>
+        <ol class="mywork-checklist">
+          ${list
+            .map(
+              (it, idx) => `
+            <li class="mywork-item ${it.done ? "is-done" : ""} ${it.overdue ? "is-overdue-glow" : ""} ${it.approaching ? "is-approaching" : ""}">
+              <span class="mywork-num">${idx + 1}</span>
+              <div class="mywork-body">
+                <strong>${escapeHtml(it.title)}</strong>
+                <span>${escapeHtml(it.meta)}${it.done ? " · 완료" : ""}</span>
+              </div>
+              <button type="button" class="btn btn-sm" data-goto="${escapeAttr(it.goto)}">${it.done ? "보기" : "작성"}</button>
+            </li>`
+            )
+            .join("")}
+        </ol>
+      </section>
+
+      <section class="panel">
+        <div class="panel-head">
+          <h2 class="panel-title">바로가기</h2>
+        </div>
+        <div class="mywork-shortcuts">
+          <button type="button" class="btn" data-goto="collections">취합 업로드</button>
+          <button type="button" class="btn" data-goto="budget">예산 입력</button>
+          <button type="button" class="btn" data-goto="kpi">성과지표</button>
+          <button type="button" class="btn" data-goto="requests">요청함</button>
+          <button type="button" class="btn" data-goto="food">오늘 뭐먹지</button>
+          <button type="button" class="btn btn-primary" data-goto="ai-art">보고서 그림</button>
+        </div>
+      </section>
+    </div>
+  `;
+
+  el.querySelectorAll("[data-goto]").forEach((btn) => {
+    btn.addEventListener("click", () => setView(btn.dataset.goto));
+  });
+}
+
+function renderTfAll() {
+  const el = $("#view-tf-all");
+  if (!el) return;
+  ensureBudget();
+  ensureKpis();
+  const col = latestCollection();
+  const board = col ? buildTeamCollectionBoard(col) : [];
+  const pageTarget = Number(state.meta?.totalTargetPages) || allocatedTotal() || 1;
+  const pageDone = board.reduce((s, r) => s + (Number(r.pages) || 0), 0);
+  const pagePct = Math.min(100, Math.round((pageDone / pageTarget) * 100));
+  const doneParts = board.filter((r) => r.status.id === "done").length;
+
+  const mode = getBudgetInputMode();
+  const meta = budgetModeMeta(mode);
+  const items = state.budget.items || [];
+  const totalBudget = Number(state.budget.total) || items.reduce((s, i) => s + (Number(mode === "result" ? i.spent : i.planned) || 0), 0);
+  const byArea = {};
+  const byExpense = {};
+  items.forEach((i) => {
+    const key = i.area || "기타";
+    const amt = Number(mode === "result" ? i.spent : i.planned) || 0;
+    byArea[key] = (byArea[key] || 0) + amt;
+    const exp = i.expenseType || i.expense || "기타비목";
+    byExpense[exp] = (byExpense[exp] || 0) + amt;
+  });
+  const areaRows = Object.entries(byArea).sort((a, b) => b[1] - a[1]);
+  const expenseRows = Object.entries(byExpense).sort((a, b) => b[1] - a[1]).slice(0, 8);
+
+  const kpis = (state.kpis || []).map(kpiSimRow);
+  const avgRate =
+    kpis.length && kpis.every((k) => k.rate != null)
+      ? kpis.reduce((s, k) => s + k.rate, 0) / kpis.length
+      : null;
+  const coreN = kpis.filter((k) => k.scope === "core").length;
+  const autoN = kpis.filter((k) => k.scope === "autonomy").length;
+
+  el.innerHTML = `
+    <div class="tfall-page">
+      <section class="panel">
+        <div class="panel-head">
+          <div>
+            <h2 class="panel-title">1. 보고서 통합</h2>
+            <p class="muted" style="margin:4px 0 0">목차·분량 대비 제출 현황 · ${escapeHtml(col?.name || "취합 없음")}</p>
+          </div>
+          <button type="button" class="btn btn-sm" data-goto="collections">상세</button>
+        </div>
+        <div class="tfall-metrics">
+          <div class="stat"><div class="label">제출</div><div class="value">${doneParts}/${board.length || 0}</div></div>
+          <div class="stat"><div class="label">작성 페이지</div><div class="value">${pageDone}p</div></div>
+          <div class="stat accent"><div class="label">목표 대비</div><div class="value">${pagePct}%</div><div class="sub">목표 ${pageTarget}p</div></div>
+        </div>
+        <div class="kpi-sim-bar tfall-bar"><i style="width:${pagePct}%"></i></div>
+        <div class="table-wrap" style="margin-top:12px">
+          <table>
+            <thead><tr><th>파트</th><th>담당</th><th>페이지</th><th>상태</th></tr></thead>
+            <tbody>
+              ${
+                board.length
+                  ? board
+                      .map(
+                        (r) => `<tr class="${r.status.id !== "done" ? "row-todo" : ""}">
+                    <td>${escapeHtml(r.section)}. ${escapeHtml(r.title)}</td>
+                    <td>${escapeHtml(r.assignee)}</td>
+                    <td>${r.pages}/${r.alloc || "?"}p</td>
+                    <td><span class="badge ${r.status.cls}">${escapeHtml(r.status.label)}</span></td>
+                  </tr>`
+                      )
+                      .join("")
+                  : `<tr><td colspan="4" class="muted">목차·할당 후 취합 현황이 표시됩니다.</td></tr>`
+              }
+            </tbody>
+          </table>
+        </div>
+      </section>
+
+      <section class="panel">
+        <div class="panel-head">
+          <div>
+            <h2 class="panel-title">2. 예산 통합</h2>
+            <p class="muted" style="margin:4px 0 0">${escapeHtml(meta.tabLabel)} · 영역·비목 구성비</p>
+          </div>
+          <button type="button" class="btn btn-sm" data-goto="budget">상세</button>
+        </div>
+        <div class="tfall-metrics">
+          <div class="stat accent"><div class="label">합계</div><div class="value">${totalBudget.toLocaleString("ko-KR")}</div></div>
+          <div class="stat"><div class="label">항목</div><div class="value">${items.length}</div></div>
+        </div>
+        <p class="tfall-subhead">영역별</p>
+        <ul class="tfall-ratio-list">
+          ${
+            areaRows.length
+              ? areaRows
+                  .map(([name, amt]) => {
+                    const pct = totalBudget ? Math.round((amt / totalBudget) * 100) : 0;
+                    return `<li>
+                      <div class="tfall-ratio-head"><strong>${escapeHtml(name)}</strong><span>${pct}% · ${amt.toLocaleString("ko-KR")}</span></div>
+                      <div class="kpi-sim-bar"><i style="width:${pct}%"></i></div>
+                    </li>`;
+                  })
+                  .join("")
+              : `<li class="muted">예산 항목이 없습니다.</li>`
+          }
+        </ul>
+        <p class="tfall-subhead">비목별</p>
+        <ul class="tfall-ratio-list">
+          ${
+            expenseRows.length
+              ? expenseRows
+                  .map(([name, amt]) => {
+                    const pct = totalBudget ? Math.round((amt / totalBudget) * 100) : 0;
+                    return `<li>
+                      <div class="tfall-ratio-head"><strong>${escapeHtml(name)}</strong><span>${pct}% · ${amt.toLocaleString("ko-KR")}</span></div>
+                      <div class="kpi-sim-bar"><i style="width:${pct}%"></i></div>
+                    </li>`;
+                  })
+                  .join("")
+              : `<li class="muted">비목 데이터가 없습니다.</li>`
+          }
+        </ul>
+      </section>
+
+      <section class="panel">
+        <div class="panel-head">
+          <div>
+            <h2 class="panel-title">3. 성과지표</h2>
+            <p class="muted" style="margin:4px 0 0">핵심 ${coreN} · 자율 ${autoN} · 평균 달성 ${avgRate != null ? avgRate.toFixed(1) + "%" : "—"}</p>
+          </div>
+          <button type="button" class="btn btn-sm" data-goto="kpi">상세</button>
+        </div>
+        <div class="table-wrap">
+          <table>
+            <thead><tr><th>구분</th><th>지표명</th><th>기준</th><th>목표</th><th>실적</th><th>달성</th></tr></thead>
+            <tbody>
+              ${
+                kpis.length
+                  ? kpis
+                      .map(
+                        (k) => `<tr>
+                    <td><span class="kpi-scope-badge is-${escapeAttr(k.scope || "core")}">${escapeHtml(kpiScopeMeta(k.scope).label)}</span></td>
+                    <td>${escapeHtml(k.name)}</td>
+                    <td>${escapeHtml(String(k.baseline))}${escapeHtml(k.unit || "")}</td>
+                    <td>${escapeHtml(String(k.target))}${escapeHtml(k.unit || "")}</td>
+                    <td>${escapeHtml(String(k.actual))}${escapeHtml(k.unit || "")}</td>
+                    <td>${k.rate != null ? k.rate.toFixed(1) + "%" : "—"}</td>
+                  </tr>`
+                      )
+                      .join("")
+                  : `<tr><td colspan="6" class="muted">등록된 성과지표가 없습니다.</td></tr>`
+              }
+            </tbody>
+          </table>
+        </div>
+        <p class="muted" style="margin-top:10px;font-size:0.78rem">
+          달성가능도: ${
+            avgRate == null
+              ? "실적 입력 후 판단"
+              : avgRate >= 90
+                ? "양호 — 목표 근접"
+                : avgRate >= 70
+                  ? "주의 — 추가 실적 필요"
+                  : "위험 — 지표 밸런스·목표 재검토 권장"
+          }
+          ${coreN && autoN ? ` · 핵심/자율 밸런스 ${coreN}:${autoN}` : ""}
+        </p>
+      </section>
+    </div>
+  `;
+
+  el.querySelectorAll("[data-goto]").forEach((btn) => {
+    btn.addEventListener("click", () => setView(btn.dataset.goto));
+  });
 }
 
 function renderAll() {
@@ -8603,6 +9178,7 @@ function formatDeadlineRemain(ms) {
 function updateReportDeadline() {
   const remain = REPORT_DEADLINE.getTime() - Date.now();
   const text = remain <= 0 ? null : formatDeadlineRemain(remain).text;
+  const homeStrong = document.querySelector("#homeDeadlineRemain");
   const lines = document.querySelectorAll(".deadline-remain");
 
   if (remain <= 0) {
@@ -8616,12 +9192,16 @@ function updateReportDeadline() {
     }
     return;
   }
+  if (homeStrong) {
+    homeStrong.textContent = text;
+    homeStrong.closest(".deadline-remain")?.classList.remove("is-over");
+  }
   lines.forEach((line) => {
+    if (line.querySelector("#homeDeadlineRemain")) return;
     line.classList.remove("is-over");
     let strong = line.querySelector("strong");
     if (!strong) {
-      const id = line.closest(".yeonu-hero-aside") ? "homeDeadlineRemain" : "deadlineRemain";
-      line.innerHTML = `보고서 제출까지 <strong id="${id}">00일 00시간 00분</strong> 남았습니다.`;
+      line.innerHTML = `보고서 제출까지 <strong id="deadlineRemain">00일 00시간 00분</strong> 남았습니다.`;
       strong = line.querySelector("strong");
     }
     if (strong) strong.textContent = text;
@@ -8725,12 +9305,16 @@ async function boot() {
 
   $("#modalClose").addEventListener("click", closeModal);
   $("#modalCancel").addEventListener("click", closeModal);
-  $("#modalForm").addEventListener("submit", (e) => {
+  $("#modalForm").addEventListener("submit", async (e) => {
     e.preventDefault();
     if (!modalHandler) return;
     const fd = new FormData(e.target);
-    const ok = modalHandler(fd);
-    if (ok !== false) closeModal();
+    try {
+      const ok = await modalHandler(fd);
+      if (ok !== false) closeModal();
+    } catch (err) {
+      alert(err?.message || "저장에 실패했습니다.");
+    }
   });
 }
 
