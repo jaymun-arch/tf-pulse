@@ -113,6 +113,7 @@ const NAV_GROUPS = {
       food: "오늘 뭐먹지",
       requests: "요청",
     },
+    adminViews: ["requests"],
     defaultView: "my-work",
   },
   tfall: {
@@ -2285,7 +2286,7 @@ function renderRequestPopupList(items) {
     el.addEventListener("click", () => {
       cancelRequestPopupAutoClose();
       closeRequestPopup();
-      setView("requests");
+      setView(isAdmin() ? "requests" : "my-work");
     });
   });
 }
@@ -4249,250 +4250,453 @@ function scheduleVisibleToUser(s, who = sessionUser) {
 
 function renderRequests() {
   ensureRequests();
-  const el = $("#view-requests");
-  const admin = isAdmin();
-  const mine = state.requests.filter((r) => r.recipient === sessionUser);
-  const mineOpen = mine.filter((r) => r.status !== "완료");
-  const mineDone = mine.filter((r) => r.status === "완료");
-  const mineOverdue = mineOpen.filter((r) => r.dueDate && daysUntil(r.dueDate) < 0);
-  const sentGroups = new Map();
-  if (admin) {
-    state.requests.forEach((r) => {
-      const key = r.groupId || r.id;
-      if (!sentGroups.has(key)) {
-        sentGroups.set(key, {
-          groupId: key,
-          title: r.title,
-          memo: r.memo,
-          dueDate: r.dueDate,
-          requester: r.requester,
-          rows: [],
-        });
-      }
-      sentGroups.get(key).rows.push(r);
-    });
+  if (!isAdmin()) {
+    setView("my-work");
+    return;
   }
-  const sentList = [...sentGroups.values()];
+  const el = $("#view-requests");
+  const sentGroups = new Map();
+  state.requests.forEach((r) => {
+    const key = r.groupId || r.id;
+    if (!sentGroups.has(key)) {
+      sentGroups.set(key, {
+        groupId: key,
+        title: r.title,
+        memo: r.memo,
+        dueDate: r.dueDate,
+        requester: r.requester,
+        processId: r.processId || "",
+        checks: Array.isArray(r.checks) ? r.checks : [],
+        rows: [],
+      });
+    }
+    sentGroups.get(key).rows.push(r);
+  });
+  const sentList = [...sentGroups.values()].sort((a, b) =>
+    String(b.dueDate || "").localeCompare(String(a.dueDate || ""))
+  );
   const sentOpenGroups = sentList.filter((g) => g.rows.some((r) => r.status !== "완료")).length;
+  const all = state.requests.length;
+  const done = state.requests.filter((r) => r.status === "완료").length;
 
   el.innerHTML = `
-    <div class="metrics" style="margin-bottom:10px;grid-template-columns:repeat(3,1fr)">
-      <div class="stat accent">
-        <div class="label">${admin ? "진행 중 요청(건)" : "내 미완료"}</div>
-        <div class="value">${admin ? sentOpenGroups : mineOpen.length}</div>
-        <div class="sub">${admin ? "그룹 기준 · 미완료 포함" : "홈·상단 알람과 연결"}</div>
-      </div>
-      <div class="stat">
-        <div class="label">${admin ? "전체 발송 그룹" : "기한 지남"}</div>
-        <div class="value">${admin ? sentList.length : mineOverdue.length}</div>
-        <div class="sub">${admin ? "보낸 요청" : "우선 처리"}</div>
-      </div>
-      <div class="stat">
-        <div class="label">${admin ? "대상자 완료율" : "내 완료"}</div>
-        <div class="value">${
-          admin
-            ? (() => {
-                const all = state.requests.length;
-                const done = state.requests.filter((r) => r.status === "완료").length;
-                return all ? `${Math.round((done / all) * 100)}%` : "—";
-              })()
-            : mineDone.length
-        }</div>
-        <div class="sub">${admin ? "개별 요청 기준" : `전체 받은 ${mine.length}건`}</div>
-      </div>
-    </div>
+    <div class="request-admin-page">
+      <section class="panel">
+        <div class="panel-head">
+          <div>
+            <h2 class="panel-title">보고서 주요업무 요청</h2>
+            <p class="muted" style="margin:4px 0 0">기본 프로세스 템플릿을 고른 뒤, 일정·대상·문구만 다듬어 발송합니다.</p>
+          </div>
+          <button type="button" class="btn btn-primary" id="addRequest">요청 등록</button>
+        </div>
+        <div class="request-process-grid" aria-label="기본 프로세스">
+          ${REQUEST_PROCESS_TEMPLATES.map(
+            (t) => `
+            <button type="button" class="request-process-card" data-process-new="${escapeAttr(t.id)}">
+              <strong>${escapeHtml(t.short)}</strong>
+              <span>${escapeHtml(t.label.replace(/^\d+\.\s*/, ""))}</span>
+            </button>`
+          ).join("")}
+        </div>
+      </section>
 
-    ${
-      admin
-        ? `<div class="panel" style="margin-bottom:10px">
-        <div class="panel-head">
-          <div>
-            <h2 class="panel-title">공통 요청 보내기</h2>
-            <p class="muted">제목 · 대상 · 마감만 짧게. 상단 파란 알람·홈 할 일로 리마인드됩니다.</p>
-          </div>
-          <button class="btn btn-primary" id="addRequest">요청 등록</button>
+      <div class="metrics" style="margin-bottom:10px;grid-template-columns:repeat(3,1fr)">
+        <div class="stat accent">
+          <div class="label">진행 중 요청</div>
+          <div class="value">${sentOpenGroups}</div>
+          <div class="sub">그룹 기준</div>
+        </div>
+        <div class="stat">
+          <div class="label">전체 발송 그룹</div>
+          <div class="value">${sentList.length}</div>
+          <div class="sub">보낸 요청</div>
+        </div>
+        <div class="stat">
+          <div class="label">대상자 완료율</div>
+          <div class="value">${all ? `${Math.round((done / all) * 100)}%` : "—"}</div>
+          <div class="sub">개별 요청 기준</div>
         </div>
       </div>
-      <div class="panel">
-        <div class="panel-head"><h2 class="panel-title">보낸 요청</h2></div>
-        <div class="table-wrap">
-          <table>
-            <thead>
-              <tr>
-                <th>제목</th>
-                <th>마감</th>
-                <th>진행</th>
-                <th>대상</th>
-                <th></th>
-              </tr>
-            </thead>
-            <tbody>
-              ${
-                sentList.length
-                  ? sentList
-                      .map((g) => {
-                        const done = g.rows.filter((r) => r.status === "완료").length;
-                        const overdue = g.dueDate && daysUntil(g.dueDate) < 0 && done < g.rows.length;
-                        return `<tr class="${overdue ? "row-todo" : ""}">
-                          <td>
-                            <strong>${escapeHtml(g.title)}</strong>
-                            <div class="muted">${escapeHtml(g.memo || "")}</div>
-                          </td>
-                          <td>${escapeHtml(g.dueDate || "-")}${overdue ? ` <span class="badge warn">지남</span>` : ""}</td>
-                          <td><span class="badge ${done === g.rows.length ? "ok" : "warn"}">${done}/${g.rows.length} 완료</span></td>
-                          <td class="muted">${g.rows.map((r) => escapeHtml(r.recipient)).join(", ")}</td>
-                          <td><button class="btn btn-sm btn-danger" data-del-group="${escapeAttr(g.groupId)}">삭제</button></td>
-                        </tr>`;
-                      })
-                      .join("")
-                  : `<tr><td colspan="5"><div class="empty">보낸 요청이 없습니다.</div></td></tr>`
-              }
-            </tbody>
-          </table>
-        </div>
-      </div>`
-        : `<div class="panel">
+
+      <section class="panel">
         <div class="panel-head">
-          <div>
-            <h2 class="panel-title">받은 공통 요청</h2>
-            <p class="muted">제목·마감·완료만 확인하면 됩니다. 처리 후 완료를 눌러 주세요.</p>
-          </div>
-          <button type="button" class="btn btn-sm" data-goto-home>홈 할 일</button>
+          <h2 class="panel-title">보낸 요청</h2>
+          <p class="muted" style="margin:0">카드를 누르면 수정 팝업이 열립니다.</p>
         </div>
-        <div class="table-wrap">
-          <table>
-            <thead>
-              <tr>
-                <th>제목</th>
-                <th>요청자</th>
-                <th>마감</th>
-                <th>상태</th>
-                <th></th>
-              </tr>
-            </thead>
-            <tbody>
-              ${
-                mine.length
-                  ? mine
-                      .map((r) => {
-                        const overdue = r.status !== "완료" && r.dueDate && daysUntil(r.dueDate) < 0;
-                        const soon =
-                          r.status !== "완료" && r.dueDate && daysUntil(r.dueDate) >= 0 && daysUntil(r.dueDate) <= 2;
-                        return `<tr class="${overdue ? "row-todo" : ""}">
-                        <td>
-                          <strong>${escapeHtml(r.title)}</strong>
-                          <div class="muted">${escapeHtml(r.memo || "")}</div>
-                        </td>
-                        <td>${escapeHtml(r.requester || "-")}</td>
-                        <td>${escapeHtml(r.dueDate || "-")}${
-                          overdue
-                            ? ` <span class="badge warn">지남</span>`
-                            : soon
-                              ? ` <span class="badge meeting">임박</span>`
-                              : ""
-                        }</td>
-                        <td><span class="badge ${r.status === "완료" ? "ok" : "warn"}">${escapeHtml(r.status)}</span></td>
-                        <td>
-                          ${
-                            r.status === "완료"
-                              ? `<span class="muted">완료됨</span>`
-                              : `<button class="btn btn-sm btn-primary" data-done-req="${r.id}">완료</button>`
-                          }
-                        </td>
-                      </tr>`;
-                      })
-                      .join("")
-                  : `<tr><td colspan="5"><div class="empty">받은 요청이 없습니다.</div></td></tr>`
-              }
-            </tbody>
-          </table>
+        <div class="request-sent-list">
+          ${
+            sentList.length
+              ? sentList
+                  .map((g) => {
+                    const doneN = g.rows.filter((r) => r.status === "완료").length;
+                    const overdue = g.dueDate && daysUntil(g.dueDate) < 0 && doneN < g.rows.length;
+                    const proc = requestProcessById(g.processId);
+                    return `
+                    <article class="request-sent-card ${overdue ? "is-overdue" : ""}" data-edit-group="${escapeAttr(g.groupId)}" role="button" tabindex="0">
+                      <div class="request-sent-top">
+                        <div>
+                          ${proc ? `<span class="request-process-tag">${escapeHtml(proc.short)}</span>` : ""}
+                          <h3>${escapeHtml(g.title)}</h3>
+                          <p class="muted">${escapeHtml((g.memo || "").split("\n")[0] || "세부 내용 없음")}</p>
+                        </div>
+                        <span class="badge ${doneN === g.rows.length ? "ok" : "warn"}">${doneN}/${g.rows.length}</span>
+                      </div>
+                      <div class="request-sent-meta">
+                        <span>마감 ${escapeHtml(g.dueDate || "-")}${overdue ? " · 지남" : ""}</span>
+                        <span>${g.rows.map((r) => escapeHtml(r.recipient)).join(", ")}</span>
+                      </div>
+                    </article>`;
+                  })
+                  .join("")
+              : `<div class="empty">보낸 요청이 없습니다. 위 프로세스를 눌러 등록하세요.</div>`
+          }
         </div>
-      </div>`
-    }
+      </section>
+    </div>
   `;
 
   $("#addRequest")?.addEventListener("click", () => openRequestModal());
-  el.querySelector("[data-goto-home]")?.addEventListener("click", () => setView("dashboard"));
-  el.querySelectorAll("[data-done-req]").forEach((btn) =>
-    btn.addEventListener("click", () => {
-      completeRequest(btn.dataset.doneReq);
-      saveAndRender("requests");
-    })
-  );
-  el.querySelectorAll("[data-del-group]").forEach((btn) =>
-    btn.addEventListener("click", () => {
-      if (!isAdmin()) return;
-      if (!confirm("이 요청을 모든 대상자에게서 삭제할까요?")) return;
-      const gid = btn.dataset.delGroup;
-      state.requests = state.requests.filter((r) => (r.groupId || r.id) !== gid);
-      saveAndRender("requests");
-      updateRequestPlane();
-    })
-  );
+  el.querySelectorAll("[data-process-new]").forEach((btn) => {
+    btn.addEventListener("click", () => openRequestModal(null, btn.dataset.processNew));
+  });
+  el.querySelectorAll("[data-edit-group]").forEach((card) => {
+    const open = () => openRequestModal(card.dataset.editGroup);
+    card.addEventListener("click", open);
+    card.addEventListener("keydown", (e) => {
+      if (e.key === "Enter" || e.key === " ") {
+        e.preventDefault();
+        open();
+      }
+    });
+  });
 }
 
-function openRequestModal() {
+/** 보고서 작성 관련 기본 요청 프로세스 + AI 초안 */
+const REQUEST_PROCESS_TEMPLATES = [
+  {
+    id: "forms",
+    short: "서식·지침",
+    label: "1. 서식, 지침, 일정 공유",
+    dueOffsetDays: 5,
+    title: "서식·지침·일정 공유 확인",
+    memo: (ctx) =>
+      `${ctx.tfName} 공통 서식·작성 지침·운영 일정을 공유합니다.\n` +
+      `· 공통 표지·목차 서식 위치를 확인하세요.\n` +
+      `· 교육부/교내 작성 지침의 필수 항목을 숙지하세요.\n` +
+      `· 킥오프~최종 제출(${ctx.deadlineLabel}) 일정을 개인 캘린더에 반영하세요.`,
+    checks: ["공통 서식 위치 확인", "작성 지침 필수항목 숙지", "전체 일정 캘린더 반영", "질의 사항 회신"],
+  },
+  {
+    id: "style",
+    short: "스타일",
+    label: "2. 스타일 가이드 공유",
+    dueOffsetDays: 7,
+    title: "보고서 스타일 가이드 확인 후 회신",
+    memo: (ctx) =>
+      `보고서 톤·글꼴·여백·표·그림 규칙을 통일하기 위한 스타일 가이드를 공유합니다.\n` +
+      `· 본문 글꼴·자간·문단 규칙을 확인하세요.\n` +
+      `· 표·그림 캡션 형식을 맞추세요.\n` +
+      `· 확인 후 「확인 완료」로 회신해 주세요. (${ctx.tfName})`,
+    checks: ["글꼴·여백 규칙 확인", "표·그림 캡션 형식 확인", "샘플 페이지 1장 적용", "확인 완료 회신"],
+  },
+  {
+    id: "collect",
+    short: "취합일정",
+    label: "3. 취합일정 공유",
+    dueOffsetDays: 10,
+    title: "취합일정 공유 및 마감 준수 안내",
+    memo: (ctx) =>
+      `차수별 취합 마감을 공유합니다. 최종 제출일은 ${ctx.deadlineLabel}입니다.\n` +
+      `· 1·2·최종 취합 일정을 확인하세요.\n` +
+      `· 담당 파트 초안을 마감 전까지 드라이브에 업로드하세요.\n` +
+      `· 지연이 예상되면 사전에 총괄(${ctx.adminName})에게 공유하세요.`,
+    checks: ["취합 차수·마감일 확인", "담당 파트 업로드 경로 확인", "초안 분량 점검", "지연 시 사전 공유"],
+  },
+  {
+    id: "assign",
+    short: "담당·할당",
+    label: "4. 보고서 담당 영역 및 할당 공유",
+    dueOffsetDays: 7,
+    title: "보고서 담당 영역·페이지 할당 확인",
+    memo: (ctx) =>
+      `${ctx.tfName} 목차별 담당·페이지 할당을 공유합니다.\n` +
+      `· 본인 담당 파트(영역)와 페이지 범위를 확인하세요.\n` +
+      `· 중복·누락이 있으면 즉시 회신하세요.\n` +
+      `· 할당 확정 후 작성 일정에 반영하세요.`,
+    checks: ["담당 파트·페이지 확인", "중복·누락 여부 점검", "작성 일정 반영", "이의·질의 회신"],
+  },
+  {
+    id: "budget",
+    short: "예산",
+    label: "5. 예산 편성 입력요청",
+    dueOffsetDays: 14,
+    title: "예산 편성·산출근거 입력 요청",
+    memo: (ctx) =>
+      `예산 통합 화면에 편성금액·산출근거를 입력해 주세요.\n` +
+      `· 총 사업비 기준(${ctx.budgetLabel})에 맞춰 담당 항목을 입력합니다.\n` +
+      `· 비목·부서·산출내역을 빠짐없이 작성하세요.\n` +
+      `· 입력 후 저장하고, 미입력 항목은 남겨 두지 마세요.`,
+    checks: ["배정 예산 항목 확인", "편성금액 입력", "산출근거 작성", "저장 및 미입력 점검"],
+  },
+  {
+    id: "kpi",
+    short: "성과지표",
+    label: "6. 성과지표 입력요청",
+    dueOffsetDays: 14,
+    title: "성과지표 목표·실적 입력 요청",
+    memo: (ctx) =>
+      `성과지표(핵심·자율)의 목표·실적·산식을 입력·갱신해 주세요.\n` +
+      `· 지표별 기준값·목표·실적을 확인하세요.\n` +
+      `· 달성률이 낮은 지표는 사유·보완계획을 메모하세요.\n` +
+      `· 최종 제출(${ctx.deadlineLabel}) 전까지 수치를 확정하세요.`,
+    checks: ["지표 목록 확인", "목표·실적 수치 입력", "산식·단위 점검", "미달 지표 보완 메모"],
+  },
+];
+
+function requestProcessById(id) {
+  return REQUEST_PROCESS_TEMPLATES.find((t) => t.id === id) || null;
+}
+
+function requestAiContext() {
+  const total = Number(state.budget?.total) || 0;
+  return {
+    tfName: state.meta?.tfName || "TF",
+    adminName: state.meta?.adminName || sessionUser || "관리자",
+    deadlineLabel: "2026년 9월 30일 오후 4시",
+    budgetLabel: total ? `${Math.round(total / 1e8)}억` : "총액 기준",
+    today: today(),
+  };
+}
+
+function buildRequestAiDraft(processId, overrides = {}) {
+  const tpl = requestProcessById(processId) || REQUEST_PROCESS_TEMPLATES[0];
+  const ctx = requestAiContext();
+  const due = addDaysDate(parseIsoDate(ctx.today), tpl.dueOffsetDays || 7);
+  return {
+    processId: tpl.id,
+    title: overrides.title ?? tpl.title,
+    memo: overrides.memo ?? (typeof tpl.memo === "function" ? tpl.memo(ctx) : tpl.memo),
+    checks: overrides.checks ?? [...(tpl.checks || [])],
+    dueDate: overrides.dueDate ?? toIsoDate(due),
+  };
+}
+
+function requestTargetMembers() {
+  return membersForActiveTopic();
+}
+
+function openRequestModal(groupId = null, processId = null) {
   if (!isAdmin()) return;
-  const targets = state.members.filter((m) => m.role === "member" || m.role === "food");
+  ensureRequests();
+  const members = requestTargetMembers();
+  const existing = groupId
+    ? state.requests.filter((r) => (r.groupId || r.id) === groupId)
+    : [];
+  const head = existing[0] || null;
+  const initialProcess =
+    processId || head?.processId || REQUEST_PROCESS_TEMPLATES[0].id;
+  const draft = head
+    ? {
+        processId: initialProcess,
+        title: head.title || "",
+        memo: head.memo || "",
+        checks: Array.isArray(head.checks) && head.checks.length ? [...head.checks] : [],
+        dueDate: head.dueDate || today(),
+      }
+    : buildRequestAiDraft(initialProcess);
+  if (head && !draft.checks.length) {
+    draft.checks = [...(requestProcessById(draft.processId)?.checks || [])];
+  }
+  const selected = new Set(existing.map((r) => r.recipient).filter(Boolean));
+  if (!existing.length) members.forEach((m) => selected.add(m.name));
+  const allOn = members.length > 0 && members.every((m) => selected.has(m.name));
+
   openModal({
-    title: "공통 요청 등록",
+    kicker: head ? "요청 수정" : "요청 등록",
+    title: head ? "주요업무 요청을 수정합니다." : "주요업무 요청을 등록합니다.",
+    submitLabel: head ? "저장" : "요청 발송",
     bodyHtml: `
-      <div class="form-grid">
-        <label class="field">제목
-          <input name="title" required placeholder="예: 1차 취합본 드라이브 업로드" />
+      <div class="wp-form request-modal-form">
+        <div class="wp-field">
+          <span class="wp-label">기본 프로세스</span>
+          <div class="request-process-pick" role="radiogroup" aria-label="기본 프로세스">
+            ${REQUEST_PROCESS_TEMPLATES.map(
+              (t) => `
+              <label class="request-process-option">
+                <input type="radio" name="processId" value="${escapeAttr(t.id)}" ${
+                  draft.processId === t.id ? "checked" : ""
+                } />
+                <span><strong>${escapeHtml(t.short)}</strong><em>${escapeHtml(
+                  t.label.replace(/^\d+\.\s*/, "")
+                )}</em></span>
+              </label>`
+            ).join("")}
+          </div>
+        </div>
+        <div class="request-ai-bar">
+          <p class="muted">AI가 요청사항·점검사항 초안을 채웁니다. 필요한 문구만 수정하세요.</p>
+          <button type="button" class="btn btn-sm" id="requestAiFill">AI 자동완성</button>
+        </div>
+        <label class="wp-field">
+          <span class="wp-label">요청 제목</span>
+          <input name="title" id="requestTitleInput" class="wp-input" required value="${escapeAttr(draft.title)}" />
         </label>
-        <label class="field">마감일
-          <input name="dueDate" type="date" value="${today()}" />
+        <label class="wp-field">
+          <span class="wp-label">마감일</span>
+          <input name="dueDate" id="requestDueInput" type="date" class="wp-input" value="${escapeAttr(draft.dueDate)}" />
         </label>
-        <label class="field">요청 내용
-          <textarea name="memo" rows="3" placeholder="대상자에게 전달할 내용을 적어 주세요"></textarea>
+        <label class="wp-field">
+          <span class="wp-label">주요 요청사항</span>
+          <textarea name="memo" id="requestMemoInput" rows="5" class="wp-input">${escapeHtml(draft.memo)}</textarea>
         </label>
-        <div class="field">
-          <span>대상자 (미선택 시 전체 대상자)</span>
-          <div class="recipient-checks" style="display:flex;flex-wrap:wrap;gap:6px;margin-top:6px">
-            ${targets
+        <label class="wp-field">
+          <span class="wp-label">점검사항 (줄마다 1개 · 추가 가능)</span>
+          <textarea name="checksText" id="requestChecksInput" rows="4" class="wp-input" placeholder="점검사항을 한 줄에 하나씩">${escapeHtml(
+            (draft.checks || []).join("\n")
+          )}</textarea>
+        </label>
+        <fieldset class="wp-field schedule-assignee-field">
+          <legend class="wp-label">대상자</legend>
+          <p class="muted schedule-assignee-hint">ALL 또는 TF 참여자를 복수 선택합니다.</p>
+          <div class="schedule-assignee-grid">
+            <label class="schedule-assignee-chip is-all">
+              <input type="checkbox" id="requestAssigneeAll" ${allOn ? "checked" : ""} />
+              <span>ALL</span>
+            </label>
+            ${members
               .map(
                 (m) => `
-              <label class="badge" style="cursor:pointer;padding:6px 10px">
-                <input type="checkbox" name="recipients" value="${escapeAttr(m.name)}" checked style="margin-right:4px" />
-                ${escapeHtml(m.name)}
+              <label class="schedule-assignee-chip">
+                <input type="checkbox" name="recipients" value="${escapeAttr(m.name)}" ${
+                  selected.has(m.name) ? "checked" : ""
+                } />
+                <span>${escapeHtml(m.name)}</span>
               </label>`
               )
               .join("")}
           </div>
-        </div>
+        </fieldset>
+        ${
+          head
+            ? `<div class="budget-modal-extra">
+                <button type="button" class="btn btn-sm btn-danger" id="requestDeleteGroup">이 요청 삭제</button>
+              </div>`
+            : ""
+        }
       </div>
     `,
     onSubmit: (fd) => {
       const title = fd.get("title").trim();
       const memo = (fd.get("memo") || "").toString().trim();
       const dueDate = fd.get("dueDate") || "";
-      let recipients = fd.getAll("recipients");
-      if (!recipients.length) recipients = targets.map((m) => m.name);
+      const process = normalizeRequestProcess(fd.get("processId"));
+      const checks = String(fd.get("checksText") || "")
+        .split(/\r?\n/)
+        .map((s) => s.trim())
+        .filter(Boolean);
+      let recipients = fd.getAll("recipients").map((v) => String(v).trim()).filter(Boolean);
+      if (!recipients.length) recipients = members.map((m) => m.name);
       if (!title || !recipients.length) {
         alert("제목과 대상자를 확인해 주세요.");
         return false;
       }
-      const groupId = uid("g");
       const stamp = today();
-      recipients.forEach((name) => {
-        state.requests.push({
-          id: uid("req"),
-          groupId,
-          title,
-          memo,
-          requester: sessionUser,
-          recipient: name,
-          dueDate,
-          status: "대기",
-          createdAt: stamp,
+      if (head) {
+        const gid = groupId;
+        const prevByRecipient = new Map(existing.map((r) => [r.recipient, r]));
+        state.requests = state.requests.filter((r) => (r.groupId || r.id) !== gid);
+        recipients.forEach((name) => {
+          const prev = prevByRecipient.get(name);
+          state.requests.push({
+            id: prev?.id || uid("req"),
+            groupId: gid,
+            title,
+            memo,
+            checks,
+            processId: process,
+            requester: prev?.requester || sessionUser,
+            recipient: name,
+            dueDate,
+            status: prev?.status || "대기",
+            createdAt: prev?.createdAt || stamp,
+          });
         });
-      });
+      } else {
+        const newGid = uid("g");
+        recipients.forEach((name) => {
+          state.requests.push({
+            id: uid("req"),
+            groupId: newGid,
+            title,
+            memo,
+            checks,
+            processId: process,
+            requester: sessionUser,
+            recipient: name,
+            dueDate,
+            status: "대기",
+            createdAt: stamp,
+          });
+        });
+      }
       saveAndRender("requests");
       updateRequestPlane();
       return true;
     },
   });
+
+  const fillFromProcess = (pid) => {
+    const built = buildRequestAiDraft(pid);
+    const titleEl = $("#requestTitleInput");
+    const memoEl = $("#requestMemoInput");
+    const checksEl = $("#requestChecksInput");
+    const dueEl = $("#requestDueInput");
+    if (titleEl) titleEl.value = built.title;
+    if (memoEl) memoEl.value = built.memo;
+    if (checksEl) checksEl.value = (built.checks || []).join("\n");
+    if (dueEl) dueEl.value = built.dueDate;
+  };
+
+  $$("[name='processId']", $("#modalBody") || document).forEach((radio) => {
+    radio.addEventListener("change", () => {
+      if (radio.checked) fillFromProcess(radio.value);
+    });
+  });
+  $("#requestAiFill")?.addEventListener("click", (e) => {
+    e.preventDefault();
+    const pid =
+      ($("#modalBody")?.querySelector("[name='processId']:checked") || {}).value ||
+      draft.processId;
+    fillFromProcess(pid);
+  });
+
+  const allBox = $("#requestAssigneeAll");
+  const boxes = () => $$("[name='recipients']", $("#modalBody") || document);
+  const syncAll = () => {
+    if (!allBox) return;
+    const list = boxes();
+    allBox.checked = list.length > 0 && list.every((b) => b.checked);
+  };
+  allBox?.addEventListener("change", () => {
+    const on = Boolean(allBox.checked);
+    boxes().forEach((b) => {
+      b.checked = on;
+    });
+  });
+  boxes().forEach((b) => b.addEventListener("change", syncAll));
+
+  $("#requestDeleteGroup")?.addEventListener("click", (e) => {
+    e.preventDefault();
+    if (!groupId || !confirm("이 요청을 모든 대상자에게서 삭제할까요?")) return;
+    state.requests = state.requests.filter((r) => (r.groupId || r.id) !== groupId);
+    closeModal();
+    saveAndRender("requests");
+    updateRequestPlane();
+  });
+}
+
+function normalizeRequestProcess(id) {
+  return requestProcessById(id)?.id || REQUEST_PROCESS_TEMPLATES[0].id;
 }
 
 /* ---------- 오늘 뭐먹지 ---------- */
@@ -9478,7 +9682,7 @@ async function boot() {
   $("#requestGoTab")?.addEventListener("click", () => {
     cancelRequestPopupAutoClose();
     closeRequestPopup();
-    setView("requests");
+    setView(isAdmin() ? "requests" : "my-work");
   });
   $("#remindBackdrop .remind-card")?.addEventListener(
     "pointerdown",
