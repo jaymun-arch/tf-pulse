@@ -9121,20 +9121,10 @@ function openScheduleModal(id) {
           </label>
         </div>
 
-        <div class="schedule-deadline-row">
-          <label class="wp-field">
-            <span class="wp-label">올해 마감</span>
-            <input name="endDate" type="date" class="wp-input" required value="${escapeAttr(dueThisYear)}" />
-          </label>
-          <label class="schedule-routine-check">
-            <input type="checkbox" name="routine" value="1" ${item?.routine ? "checked" : ""} />
-            <span>루틴</span>
-          </label>
-          <label class="wp-field">
-            <span class="wp-label">작년 완료시기</span>
-            <input name="lastYearDone" type="date" class="wp-input" value="${escapeAttr(item?.lastYearDone || "")}" />
-          </label>
-        </div>
+        <label class="wp-field">
+          <span class="wp-label">올해 마감</span>
+          <input name="endDate" type="date" class="wp-input" required value="${escapeAttr(dueThisYear)}" />
+        </label>
 
         <label class="wp-field">
           <span class="wp-label">관리 목표값</span>
@@ -9221,8 +9211,6 @@ function openScheduleModal(id) {
         division: (fd.get("division") || "").toString().trim(),
         date: endDate,
         endDate,
-        routine: Boolean(fd.get("routine")),
-        lastYearDone: (fd.get("lastYearDone") || "").toString().trim(),
         goal,
         note: goal,
         prep: (fd.get("prep") || "").toString().trim(),
