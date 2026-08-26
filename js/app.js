@@ -4542,6 +4542,136 @@ const SCHEDULE_PROJECT_OPTIONS = [
   "기타",
 ];
 
+/** 관리자 신규 일정 등록용 기본 틀 가이드 (스타일·양식·지침 → 취합) */
+const SCHEDULE_GUIDE_TEMPLATES = [
+  {
+    id: "forms",
+    step: "1",
+    short: "서식·지침",
+    hint: "킥오프에서 공통 서식·지침 공유",
+    workGroup: "forms",
+    type: "meeting",
+    title: "TF 킥오프 · 서식·지침 공유",
+    division: "총괄",
+    goal: "공통 표지·목차 서식과 교육부/교내 작성 지침을 전원에게 공유하고 확인받는다.",
+    prep: "서식·지침·정의서 링크 준비 · 공유 폴더 권한 확인",
+    carePoints: "필수 확인 항목을 체크리스트로 남기고, 질의는 킥오프에서 모은다.",
+    dueOffsetDays: 0,
+    assignAll: true,
+  },
+  {
+    id: "style",
+    step: "2",
+    short: "스타일",
+    hint: "글꼴·여백·표·그림 규칙",
+    workGroup: "forms",
+    type: "submit",
+    title: "보고서 스타일 가이드 공유·확인",
+    division: "공통",
+    goal: "본문 톤·글꼴·여백·표·그림 캡션 규칙을 통일하고 확인 회신을 받는다.",
+    prep: "스타일 가이드 PDF/드라이브 링크 등록",
+    carePoints: "샘플 1페이지 적용 여부를 확인한다.",
+    dueOffsetDays: 3,
+    assignAll: true,
+  },
+  {
+    id: "definition",
+    step: "3",
+    short: "정의서",
+    hint: "용어·지표 정의 공유",
+    workGroup: "forms",
+    type: "submit",
+    title: "용어·지표 정의서 공유",
+    division: "공통",
+    goal: "핵심 용어·성과지표 정의를 공유해 작성 기준을 맞춘다.",
+    prep: "정의서 최신본 업로드",
+    carePoints: "지표 산식·단위 해석이 다르면 즉시 질의한다.",
+    dueOffsetDays: 5,
+    assignAll: true,
+  },
+  {
+    id: "assign",
+    step: "4",
+    short: "담당·할당",
+    hint: "파트·페이지 배정",
+    workGroup: "other",
+    type: "meeting",
+    title: "보고서 담당 영역·페이지 할당 공유",
+    division: "총괄",
+    goal: "목차별 담당·페이지 범위를 확정하고 중복·누락을 점검한다.",
+    prep: "할당표(엑셀) 갱신",
+    carePoints: "이의·조정 요청은 마감 전 회신한다.",
+    dueOffsetDays: 7,
+    assignAll: true,
+  },
+  {
+    id: "collect",
+    step: "5",
+    short: "취합일정",
+    hint: "1·2·최종 취합 마감",
+    workGroup: "collect",
+    type: "deadline",
+    title: "취합일정 공유 및 마감 안내",
+    division: "총괄",
+    goal: "차수별 취합 마감을 공유하고 담당 파트 초안 업로드를 독려한다.",
+    prep: "1·2·최종 취합일·드라이브 경로 안내",
+    carePoints: "지연 예상 시 사전에 총괄에게 공유한다.",
+    dueOffsetDays: 10,
+    assignAll: true,
+  },
+  {
+    id: "review",
+    step: "6",
+    short: "리뷰회의",
+    hint: "중간 검토·윤독",
+    workGroup: "review",
+    type: "meeting",
+    title: "중간 검토·리뷰회의",
+    division: "총괄",
+    goal: "취합본 중복·누락·톤을 점검하고 수정 포인트를 확정한다.",
+    prep: "취합본·체크리스트 준비",
+    carePoints: "파트별 수정 기한을 회의에서 합의한다.",
+    dueOffsetDays: 20,
+    assignAll: true,
+  },
+  {
+    id: "budget",
+    step: "7",
+    short: "예산",
+    hint: "편성·산출근거 입력",
+    workGroup: "budget",
+    type: "deadline",
+    title: "예산 편성·산출근거 입력",
+    division: "예산",
+    goal: "예산 통합 화면에 편성금액·산출근거를 입력·확정한다.",
+    prep: "총액·비목·담당 항목 배정 확인",
+    carePoints: "미입력 항목을 남기지 않는다.",
+    dueOffsetDays: 25,
+    assignAll: false,
+  },
+  {
+    id: "kpi",
+    step: "8",
+    short: "성과지표",
+    hint: "목표·실적·산식",
+    workGroup: "kpi",
+    type: "deadline",
+    title: "성과지표 목표·실적 입력",
+    division: "성과지표",
+    goal: "핵심·자율 지표의 목표·실적·산식을 입력·확정한다.",
+    prep: "지표 목록·세세부 항목 준비",
+    carePoints: "미달 지표는 보완 계획을 메모한다.",
+    dueOffsetDays: 30,
+    assignAll: true,
+  },
+];
+
+function addDaysIso(iso, days) {
+  const d = parseIsoDate(iso) || new Date();
+  d.setDate(d.getDate() + (Number(days) || 0));
+  return toIsoDate(d);
+}
+
 const SCHEDULE_DIVISION_OPTIONS = [
   "총괄",
   "서론",
@@ -9594,13 +9724,36 @@ function openScheduleModal(id) {
     submitLabel: item ? "저장" : "일정 등록",
     bodyHtml: `
       <div class="wp-form schedule-form">
+        ${
+          !item
+            ? `<section class="schedule-guide" aria-label="기본 틀 가이드">
+          <div class="schedule-guide-head">
+            <strong>기본 틀 가이드</strong>
+            <span class="muted">스타일·양식·지침 등록부터 취합 일정까지 · 카드를 누르면 아래 항목이 채워집니다.</span>
+          </div>
+          <ol class="schedule-guide-flow" aria-hidden="true">
+            <li>서식·지침</li><li>스타일</li><li>정의서</li><li>담당·할당</li><li>취합일정</li><li>리뷰</li><li>예산</li><li>성과지표</li>
+          </ol>
+          <div class="schedule-guide-grid">
+            ${SCHEDULE_GUIDE_TEMPLATES.map(
+              (t) => `
+              <button type="button" class="schedule-guide-card" data-sched-guide="${escapeAttr(t.id)}">
+                <em>${escapeHtml(t.step)}</em>
+                <strong>${escapeHtml(t.short)}</strong>
+                <span>${escapeHtml(t.hint)}</span>
+              </button>`
+            ).join("")}
+          </div>
+        </section>`
+            : ""
+        }
         <label class="wp-field">
           <span class="wp-label">업무명</span>
-          <input name="title" class="wp-input" required value="${escapeAttr(item?.title || "")}" placeholder="예: AID 예산 수정 및 담당자 지정" />
+          <input name="title" id="schedTitleInput" class="wp-input" required value="${escapeAttr(item?.title || "")}" placeholder="예: AID 예산 수정 및 담당자 지정" />
         </label>
         <label class="wp-field">
           <span class="wp-label">상위 그룹</span>
-          <select name="workGroup" class="wp-input wp-select" required>
+          <select name="workGroup" id="schedWorkGroup" class="wp-input wp-select" required>
             ${SCHEDULE_GROUP_OPTIONS.map(
               (g) =>
                 `<option value="${escapeAttr(g.id)}" ${currentGroup === g.id ? "selected" : ""}>${escapeHtml(g.label)}</option>`
@@ -9651,7 +9804,7 @@ function openScheduleModal(id) {
         <div class="wp-grid-2">
           <label class="wp-field">
             <span class="wp-label">업무구분</span>
-            <select name="type" class="wp-input wp-select" required>
+            <select name="type" id="schedTypeSelect" class="wp-input wp-select" required>
               ${SCHEDULE_TYPE_OPTIONS.map(
                 (t) =>
                   `<option value="${t.value}" ${currentType === t.value ? "selected" : ""}>${escapeHtml(t.label)}</option>`
@@ -9660,26 +9813,26 @@ function openScheduleModal(id) {
           </label>
           <label class="wp-field">
             <span class="wp-label">업무분장</span>
-            <input name="division" list="schedDivision_${dl}" class="wp-input" value="${escapeAttr(item?.division || "")}" placeholder="담당 영역" />
+            <input name="division" id="schedDivisionInput" list="schedDivision_${dl}" class="wp-input" value="${escapeAttr(item?.division || "")}" placeholder="담당 영역" />
           </label>
         </div>
 
         <label class="wp-field">
           <span class="wp-label">올해 마감</span>
-          <input name="endDate" type="date" class="wp-input" required value="${escapeAttr(dueThisYear)}" />
+          <input name="endDate" id="schedEndDate" type="date" class="wp-input" required value="${escapeAttr(dueThisYear)}" />
         </label>
 
         <label class="wp-field">
           <span class="wp-label">관리 목표값</span>
-          <textarea name="goal" rows="2" class="wp-input" placeholder="관리 목표값">${escapeHtml(item?.goal || item?.note || "")}</textarea>
+          <textarea name="goal" id="schedGoalInput" rows="2" class="wp-input" placeholder="관리 목표값">${escapeHtml(item?.goal || item?.note || "")}</textarea>
         </label>
         <label class="wp-field">
           <span class="wp-label">준비사항 · 검토사항</span>
-          <input name="prep" class="wp-input" value="${escapeAttr(item?.prep || "")}" placeholder="준비·검토 항목" />
+          <input name="prep" id="schedPrepInput" class="wp-input" value="${escapeAttr(item?.prep || "")}" placeholder="준비·검토 항목" />
         </label>
         <label class="wp-field">
           <span class="wp-label">서로 챙길 점</span>
-          <textarea name="carePoints" rows="2" class="wp-input" placeholder="서로 챙길 점">${escapeHtml(item?.carePoints || "")}</textarea>
+          <textarea name="carePoints" id="schedCareInput" rows="2" class="wp-input" placeholder="서로 챙길 점">${escapeHtml(item?.carePoints || "")}</textarea>
         </label>
 
         <fieldset class="wp-field schedule-collab-field">
@@ -9811,6 +9964,42 @@ function openScheduleModal(id) {
     syncCollabInputs();
   });
   syncCollabInputs();
+
+  const applyScheduleGuide = (guideId) => {
+    const tpl = SCHEDULE_GUIDE_TEMPLATES.find((t) => t.id === guideId);
+    if (!tpl) return;
+    const setVal = (sel, val) => {
+      const el = $(sel);
+      if (el) el.value = val ?? "";
+    };
+    setVal("#schedTitleInput", tpl.title);
+    setVal("#schedWorkGroup", tpl.workGroup);
+    setVal("#schedTypeSelect", tpl.type);
+    setVal("#schedDivisionInput", tpl.division);
+    setVal("#schedEndDate", addDaysIso(today(), tpl.dueOffsetDays));
+    setVal("#schedGoalInput", tpl.goal);
+    setVal("#schedPrepInput", tpl.prep);
+    setVal("#schedCareInput", tpl.carePoints);
+
+    $$(".schedule-guide-card").forEach((c) => c.classList.toggle("is-on", c.dataset.schedGuide === guideId));
+
+    const pills = $$("#scheduleCollabPills [data-collab]");
+    const noneBtn = pills.find((p) => p.dataset.collab === "none");
+    const allBtn = pills.find((p) => p.dataset.collab === "all");
+    const personBtns = pills.filter((p) => p.dataset.collab !== "none" && p.dataset.collab !== "all");
+    if (tpl.assignAll) {
+      noneBtn?.classList.remove("is-on");
+      allBtn?.classList.add("is-on");
+      personBtns.forEach((p) => p.classList.add("is-on"));
+    } else {
+      pills.forEach((p) => p.classList.toggle("is-on", p === noneBtn));
+    }
+    syncCollabInputs();
+  };
+
+  $$("[data-sched-guide]").forEach((btn) => {
+    btn.addEventListener("click", () => applyScheduleGuide(btn.dataset.schedGuide));
+  });
 
   $("#scheduleModalDelete")?.addEventListener("click", () => {
     if (!item || !confirm("삭제하시겠습니까?")) return;
