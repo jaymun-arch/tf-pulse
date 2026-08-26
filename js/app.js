@@ -8335,12 +8335,27 @@ function kpiCatalogById(id) {
   return KPI_CATALOG.find((c) => c.id === id) || null;
 }
 
+function normalizeKpiPart(raw = {}, index = 0) {
+  const name = String(raw.name || "").trim() || `항목 ${index + 1}`;
+  const key = String(raw.key || `p${index + 1}`).replace(/[^a-zA-Z0-9_]/g, "") || `p${index + 1}`;
+  return {
+    id: raw.id || uid("kp"),
+    key,
+    name,
+    value: Number(raw.value) || 0,
+  };
+}
+
 function normalizeKpi(raw = {}) {
   const catalogId = raw.catalogId || "";
   const fromCat = catalogId ? kpiCatalogById(catalogId) : null;
   let scope = raw.scope === "autonomy" || raw.scope === "core" ? raw.scope : "";
   if (!scope && fromCat) scope = fromCat.scope;
   if (!scope) scope = "core";
+  const parts = (Array.isArray(raw.parts) ? raw.parts : []).map((p, i) => normalizeKpiPart(p, i));
+  const formulaTokens = Array.isArray(raw.formulaTokens)
+    ? raw.formulaTokens.map((t) => String(t)).filter(Boolean)
+    : [];
   return {
     id: raw.id || uid("kpi"),
     name: (raw.name || fromCat?.name || "").trim() || "성과지표",
@@ -8349,6 +8364,8 @@ function normalizeKpi(raw = {}) {
     baseline: Number(raw.baseline) || 0,
     baselineNote: String(raw.baselineNote || "").trim(),
     formula: String(raw.formula || "actual / target * 100").trim(),
+    formulaTokens,
+    parts,
     target: Number(raw.target) || 0,
     actual: Number(raw.actual) || 0,
     unit: String(raw.unit || fromCat?.unit || "%").trim() || "%",
@@ -8387,16 +8404,24 @@ function ensureKpis() {
   }
 }
 
-/** 허용 산식: actual, target, baseline 변수와 + - * / ( ) */
-function evalKpiFormula(formula, vars) {
+/** 허용 산식: actual/target/baseline/세세부(pN) + 사칙연산 */
+function evalKpiFormula(formula, vars = {}) {
   const src = String(formula || "actual / target * 100").trim();
-  if (!/^[\d\s.+\-*/()actualtargetbaseline]+$/i.test(src.replace(/\s+/g, " "))) {
-    return { ok: false, error: "산식에는 actual, target, baseline과 사칙연산만 쓸 수 있습니다." };
+  if (!src) return { ok: false, error: "산식이 비어 있습니다." };
+  const keys = Object.keys(vars)
+    .filter((k) => /^[a-z_][a-z0-9_]*$/i.test(k))
+    .sort((a, b) => b.length - a.length);
+  let probe = src;
+  keys.forEach((k) => {
+    probe = probe.replace(new RegExp(`\\b${k}\\b`, "gi"), "1");
+  });
+  if (!/^[\d\s.+\-*/()]+$/.test(probe)) {
+    return { ok: false, error: "산식에는 세세부 항목·actual·target·baseline과 사칙연산만 쓸 수 있습니다." };
   }
-  const expr = src
-    .replace(/\bactual\b/gi, String(vars.actual ?? 0))
-    .replace(/\btarget\b/gi, String(vars.target ?? 0))
-    .replace(/\bbaseline\b/gi, String(vars.baseline ?? 0));
+  let expr = src;
+  keys.forEach((k) => {
+    expr = expr.replace(new RegExp(`\\b${k}\\b`, "gi"), String(Number(vars[k]) || 0));
+  });
   try {
     // eslint-disable-next-line no-new-func
     const value = Function(`"use strict"; return (${expr});`)();
@@ -8407,16 +8432,74 @@ function evalKpiFormula(formula, vars) {
   }
 }
 
-function kpiSimRow(k) {
-  const sim = evalKpiFormula(k.formula, {
-    actual: Number(k.actual) || 0,
-    target: Number(k.target) || 0,
-    baseline: Number(k.baseline) || 0,
+function kpiFormulaVars(k, overrides = {}) {
+  const vars = {
+    actual: Number(overrides.actual ?? k.actual) || 0,
+    target: Number(overrides.target ?? k.target) || 0,
+    baseline: Number(overrides.baseline ?? k.baseline) || 0,
+  };
+  (k.parts || []).forEach((p, i) => {
+    const key = p.key || `p${i + 1}`;
+    vars[key] = Number(p.value) || 0;
   });
+  return vars;
+}
+
+function kpiSimRow(k) {
+  const sim = evalKpiFormula(k.formula, kpiFormulaVars(k));
   const rate =
     Number(k.target) > 0 ? ((Number(k.actual) || 0) / Number(k.target)) * 100 : null;
   return { ...k, sim, rate };
 }
+
+function tokenizeKpiFormula(formula) {
+  const src = String(formula || "").trim();
+  if (!src) return [];
+  const tokens = src.match(/[a-z_][a-z0-9_]*|\d+(?:\.\d+)?|[+\-*/()]/gi);
+  return tokens || [];
+}
+
+function kpiPartsFromForm() {
+  const rows = $$("#kpiPartsList .kpi-part-row");
+  return rows.map((row, i) =>
+    normalizeKpiPart(
+      {
+        id: row.dataset.partId,
+        name: row.querySelector('[name="partName"]')?.value,
+        value: row.querySelector('[name="partValue"]')?.value,
+        key: `p${i + 1}`,
+      },
+      i
+    )
+  );
+}
+
+function kpiPartRowHtml(part, index) {
+  const p = normalizeKpiPart(part, index);
+  return `
+    <div class="kpi-part-row" data-part-id="${escapeAttr(p.id)}" draggable="false">
+      <span class="kpi-part-key" title="산식 변수">${escapeHtml(p.key || `p${index + 1}`)}</span>
+      <input name="partName" class="wp-input" value="${escapeAttr(p.name)}" placeholder="세세부 항목명" />
+      <input name="partValue" class="wp-input" type="number" step="any" value="${escapeAttr(String(p.value ?? 0))}" placeholder="값" />
+      <button type="button" class="btn btn-sm btn-danger" data-del-part title="삭제">삭제</button>
+    </div>`;
+}
+
+const KPI_FORMULA_OPS = [
+  { token: "+", label: "+" },
+  { token: "-", label: "−" },
+  { token: "*", label: "×" },
+  { token: "/", label: "÷" },
+  { token: "(", label: "(" },
+  { token: ")", label: ")" },
+  { token: "100", label: "100" },
+];
+
+const KPI_FORMULA_SYS = [
+  { token: "actual", label: "실적(actual)" },
+  { token: "target", label: "목표(target)" },
+  { token: "baseline", label: "기준(baseline)" },
+];
 
 function renderKpi() {
   const el = $("#view-kpi");
@@ -8466,6 +8549,16 @@ function renderKpi() {
                   <div><dt>실적(입력)</dt><dd>${escapeHtml(String(k.actual))} ${escapeHtml(k.unit || "")}</dd></div>
                 </dl>
                 <p class="kpi-note muted">${escapeHtml(k.baselineNote || "근거 없음")}</p>
+                ${
+                  (k.parts || []).length
+                    ? `<ul class="kpi-parts-preview">${(k.parts || [])
+                        .map(
+                          (p) =>
+                            `<li><em>${escapeHtml(p.key)}</em> ${escapeHtml(p.name)} <strong>${escapeHtml(String(p.value))}</strong></li>`
+                        )
+                        .join("")}</ul>`
+                    : ""
+                }
                 <p class="kpi-formula"><code>${escapeHtml(k.formula || "")}</code></p>
                 <div class="kpi-sim">
                   <div class="kpi-sim-bar"><i style="width:${bar}%"></i></div>
@@ -8524,6 +8617,13 @@ function openKpiModal(id = null) {
   const row = id ? state.kpis.find((k) => k.id === id) : null;
   const scope0 = row?.scope || "core";
   const catalog0 = row?.catalogId || (scope0 === "core" ? "emp-rate" : "custom");
+  const parts0 =
+    row?.parts?.length
+      ? row.parts.map((p, i) => normalizeKpiPart(p, i))
+      : [normalizeKpiPart({ name: "분자(예: 취업자 수)", value: 0 }, 0), normalizeKpiPart({ name: "분모(예: 졸업생 수)", value: 0 }, 1)];
+  let formulaTokens = row?.formulaTokens?.length
+    ? [...row.formulaTokens]
+    : tokenizeKpiFormula(row?.formula || "actual / target * 100");
 
   const catalogOptionsHtml = (scope) =>
     KPI_CATALOG.filter((c) => c.scope === scope || c.custom)
@@ -8564,7 +8664,7 @@ function openKpiModal(id = null) {
         <div class="wp-grid-2">
           <label class="wp-field">
             <span class="wp-label">기준값</span>
-            <input name="baseline" class="wp-input" type="number" step="any" required value="${escapeAttr(String(row?.baseline ?? 0))}" />
+            <input name="baseline" id="kpiBaselineInput" class="wp-input" type="number" step="any" required value="${escapeAttr(String(row?.baseline ?? 0))}" />
           </label>
           <label class="wp-field">
             <span class="wp-label">단위</span>
@@ -8573,27 +8673,65 @@ function openKpiModal(id = null) {
         </div>
         <label class="wp-field">
           <span class="wp-label">기준값 근거</span>
-          <textarea name="baselineNote" id="kpiNoteInput" class="wp-input" rows="3" placeholder="전년도 공시·조사 근거">${escapeHtml(row?.baselineNote || "")}</textarea>
+          <textarea name="baselineNote" id="kpiNoteInput" class="wp-input" rows="2" placeholder="전년도 공시·조사 근거">${escapeHtml(row?.baselineNote || "")}</textarea>
         </label>
         <div class="wp-grid-2">
           <label class="wp-field">
             <span class="wp-label">목표값</span>
-            <input name="target" class="wp-input" type="number" step="any" required value="${escapeAttr(String(row?.target ?? 0))}" />
+            <input name="target" id="kpiTargetInput" class="wp-input" type="number" step="any" required value="${escapeAttr(String(row?.target ?? 0))}" />
           </label>
           <label class="wp-field">
             <span class="wp-label">현재 실적</span>
-            <input name="actual" class="wp-input" type="number" step="any" value="${escapeAttr(String(row?.actual ?? 0))}" />
+            <input name="actual" id="kpiActualInput" class="wp-input" type="number" step="any" value="${escapeAttr(String(row?.actual ?? 0))}" />
           </label>
         </div>
-        <label class="wp-field">
-          <span class="wp-label">산식</span>
-          <input name="formula" id="kpiFormulaInput" class="wp-input" required value="${escapeAttr(row?.formula || "actual / target * 100")}" />
-          <span class="muted" style="font-size:0.72rem">actual, target, baseline 사용 · 예: actual / target * 100</span>
-        </label>
+
+        <section class="kpi-parts-block" aria-label="세세부 항목">
+          <div class="kpi-parts-head">
+            <span class="wp-label">세세부 항목</span>
+            <button type="button" class="btn btn-sm" id="kpiPartAdd">항목 추가</button>
+          </div>
+          <p class="muted kpi-builder-hint">지표를 구성하는 세부 수치를 입력하세요. 아래에서 드래그해 산식에 넣습니다.</p>
+          <div id="kpiPartsList">${parts0.map((p, i) => kpiPartRowHtml(p, i)).join("")}</div>
+        </section>
+
+        <section class="kpi-formula-builder" aria-label="산식 빌더">
+          <span class="wp-label">산식 만들기</span>
+          <p class="muted kpi-builder-hint">세세부·변수 칩을 드래그(또는 클릭)하고, 연산 버튼을 눌러 산식을 만듭니다.</p>
+          <div class="kpi-formula-palette" id="kpiFormulaPalette"></div>
+          <div class="kpi-formula-ops" id="kpiFormulaOps" role="group" aria-label="연산">
+            ${KPI_FORMULA_OPS.map(
+              (op) =>
+                `<button type="button" class="kpi-op-chip" data-formula-token="${escapeAttr(op.token)}">${escapeHtml(op.label)}</button>`
+            ).join("")}
+            <button type="button" class="btn btn-sm" id="kpiFormulaClear">비우기</button>
+            <button type="button" class="btn btn-sm" id="kpiFormulaUndo">되돌리기</button>
+          </div>
+          <div class="kpi-formula-drop" id="kpiFormulaDrop" tabindex="0" aria-label="산식 드롭 영역"></div>
+          <input type="hidden" name="formula" id="kpiFormulaInput" value="${escapeAttr(formulaTokens.join(" "))}" required />
+          <input type="hidden" name="formulaTokens" id="kpiFormulaTokensInput" value="${escapeAttr(JSON.stringify(formulaTokens))}" />
+          <div class="kpi-formula-check-row">
+            <code id="kpiFormulaPreview">${escapeHtml(formulaTokens.join(" ") || "—")}</code>
+            <button type="button" class="btn btn-primary btn-sm" id="kpiFormulaCheck">산식 확인</button>
+            <span id="kpiFormulaCheckResult" class="kpi-formula-check-result"></span>
+          </div>
+        </section>
       </div>
     `,
     onSubmit: (fd) => {
-      const payload = normalizeKpi({
+      const parts = kpiPartsFromForm();
+      let tokens = [];
+      try {
+        tokens = JSON.parse(fd.get("formulaTokens") || "[]");
+      } catch {
+        tokens = tokenizeKpiFormula(fd.get("formula"));
+      }
+      if (!Array.isArray(tokens) || !tokens.length) {
+        alert("산식을 만들어 주세요. 세세부 항목·변수를 드래그하고 연산을 선택하세요.");
+        return false;
+      }
+      const formula = tokens.join(" ");
+      const draft = {
         name: fd.get("name"),
         scope: fd.get("scope"),
         catalogId: fd.get("catalogId"),
@@ -8602,8 +8740,16 @@ function openKpiModal(id = null) {
         target: fd.get("target"),
         actual: fd.get("actual"),
         unit: fd.get("unit"),
-        formula: fd.get("formula"),
-      });
+        formula,
+        formulaTokens: tokens,
+        parts,
+      };
+      const check = evalKpiFormula(formula, kpiFormulaVars(draft));
+      if (!check.ok) {
+        alert(check.error || "산식을 확인해 주세요.");
+        return false;
+      }
+      const payload = normalizeKpi(draft);
       if (row) Object.assign(row, payload, { id: row.id });
       else state.kpis.push(payload);
       persist();
@@ -8618,7 +8764,65 @@ function openKpiModal(id = null) {
   const unitInput = $("#kpiUnitInput");
   const noteInput = $("#kpiNoteInput");
   const formulaInput = $("#kpiFormulaInput");
+  const tokensInput = $("#kpiFormulaTokensInput");
   const hint = $("#kpiScopeHint");
+  const partsList = $("#kpiPartsList");
+  const palette = $("#kpiFormulaPalette");
+  const drop = $("#kpiFormulaDrop");
+  const preview = $("#kpiFormulaPreview");
+  const checkResult = $("#kpiFormulaCheckResult");
+
+  const syncPartKeys = () => {
+    $$("#kpiPartsList .kpi-part-row").forEach((rowEl, i) => {
+      const keyEl = rowEl.querySelector(".kpi-part-key");
+      if (keyEl) keyEl.textContent = `p${i + 1}`;
+    });
+  };
+
+  const syncFormulaUi = () => {
+    const formula = formulaTokens.join(" ");
+    if (formulaInput) formulaInput.value = formula;
+    if (tokensInput) tokensInput.value = JSON.stringify(formulaTokens);
+    if (preview) preview.textContent = formula || "—";
+    if (drop) {
+      drop.innerHTML = formulaTokens.length
+        ? formulaTokens
+            .map(
+              (t, i) => `
+            <span class="kpi-formula-token" draggable="true" data-token-index="${i}" data-token="${escapeAttr(t)}">
+              ${escapeHtml(t)}
+              <button type="button" class="kpi-token-x" data-remove-token="${i}" aria-label="제거">×</button>
+            </span>`
+            )
+            .join("")
+        : `<span class="kpi-formula-drop-empty">여기에 세세부·변수·연산을 놓으세요</span>`;
+    }
+    if (checkResult) checkResult.textContent = "";
+  };
+
+  const renderPalette = () => {
+    if (!palette) return;
+    const parts = kpiPartsFromForm();
+    const partChips = parts
+      .map(
+        (p, i) =>
+          `<button type="button" class="kpi-palette-chip is-part" draggable="true" data-formula-token="${escapeAttr(p.key || `p${i + 1}`)}" title="${escapeAttr(p.name)}">
+            <em>${escapeHtml(p.key || `p${i + 1}`)}</em>${escapeHtml(p.name)}
+          </button>`
+      )
+      .join("");
+    const sysChips = KPI_FORMULA_SYS.map(
+      (s) =>
+        `<button type="button" class="kpi-palette-chip is-sys" draggable="true" data-formula-token="${escapeAttr(s.token)}">${escapeHtml(s.label)}</button>`
+    ).join("");
+    palette.innerHTML = `${partChips}${sysChips}`;
+  };
+
+  const pushToken = (token) => {
+    if (!token) return;
+    formulaTokens.push(token);
+    syncFormulaUi();
+  };
 
   const refillCatalog = (scope, preferId) => {
     if (!catalogSel) return;
@@ -8642,7 +8846,10 @@ function openKpiModal(id = null) {
       }
     }
     if (unitInput && cat.unit) unitInput.value = cat.unit;
-    if (formulaInput && cat.formula) formulaInput.value = cat.formula;
+    if (cat.formula && !row) {
+      formulaTokens = tokenizeKpiFormula(cat.formula);
+      syncFormulaUi();
+    }
     if (noteInput && cat.baselineNote && (!row || !noteInput.value.trim())) {
       noteInput.value = cat.baselineNote;
     }
@@ -8663,6 +8870,124 @@ function openKpiModal(id = null) {
     applyCatalog(catalogSel.value, { fillName: true });
   });
 
+  $("#kpiPartAdd")?.addEventListener("click", () => {
+    const i = $$("#kpiPartsList .kpi-part-row").length;
+    partsList?.insertAdjacentHTML("beforeend", kpiPartRowHtml({ name: "", value: 0 }, i));
+    syncPartKeys();
+    renderPalette();
+  });
+
+  partsList?.addEventListener("click", (e) => {
+    const btn = e.target.closest("[data-del-part]");
+    if (!btn) return;
+    btn.closest(".kpi-part-row")?.remove();
+    syncPartKeys();
+    renderPalette();
+  });
+
+  partsList?.addEventListener("input", (e) => {
+    if (e.target.matches('[name="partName"], [name="partValue"]')) renderPalette();
+  });
+
+  $("#kpiFormulaOps")?.addEventListener("click", (e) => {
+    const btn = e.target.closest("[data-formula-token]");
+    if (btn) {
+      btn.classList.add("is-on");
+      window.setTimeout(() => btn.classList.remove("is-on"), 180);
+      pushToken(btn.dataset.formulaToken);
+    }
+  });
+
+  $("#kpiFormulaClear")?.addEventListener("click", () => {
+    formulaTokens = [];
+    syncFormulaUi();
+  });
+  $("#kpiFormulaUndo")?.addEventListener("click", () => {
+    formulaTokens.pop();
+    syncFormulaUi();
+  });
+
+  palette?.addEventListener("click", (e) => {
+    const chip = e.target.closest("[data-formula-token]");
+    if (chip) pushToken(chip.dataset.formulaToken);
+  });
+
+  let dragToken = "";
+  let dragFromIndex = -1;
+
+  const onDragStart = (e, token, fromIndex = -1) => {
+    dragToken = token;
+    dragFromIndex = fromIndex;
+    e.dataTransfer?.setData("text/plain", token);
+    e.dataTransfer.effectAllowed = "copyMove";
+  };
+
+  palette?.addEventListener("dragstart", (e) => {
+    const chip = e.target.closest("[data-formula-token]");
+    if (!chip) return;
+    onDragStart(e, chip.dataset.formulaToken, -1);
+  });
+
+  drop?.addEventListener("dragstart", (e) => {
+    const tok = e.target.closest(".kpi-formula-token");
+    if (!tok) return;
+    onDragStart(e, tok.dataset.token, Number(tok.dataset.tokenIndex));
+  });
+
+  drop?.addEventListener("dragover", (e) => {
+    e.preventDefault();
+    drop.classList.add("is-dragover");
+  });
+  drop?.addEventListener("dragleave", () => drop.classList.remove("is-dragover"));
+  drop?.addEventListener("drop", (e) => {
+    e.preventDefault();
+    drop.classList.remove("is-dragover");
+    const token = dragToken || e.dataTransfer?.getData("text/plain");
+    if (!token) return;
+    const over = e.target.closest(".kpi-formula-token");
+    const insertAt = over ? Number(over.dataset.tokenIndex) : formulaTokens.length;
+    if (dragFromIndex >= 0) {
+      formulaTokens.splice(dragFromIndex, 1);
+      const at = dragFromIndex < insertAt ? insertAt - 1 : insertAt;
+      formulaTokens.splice(Math.max(0, at), 0, token);
+    } else {
+      formulaTokens.splice(insertAt, 0, token);
+    }
+    dragToken = "";
+    dragFromIndex = -1;
+    syncFormulaUi();
+  });
+
+  drop?.addEventListener("click", (e) => {
+    const rm = e.target.closest("[data-remove-token]");
+    if (!rm) return;
+    const idx = Number(rm.dataset.removeToken);
+    if (!Number.isFinite(idx)) return;
+    formulaTokens.splice(idx, 1);
+    syncFormulaUi();
+  });
+
+  $("#kpiFormulaCheck")?.addEventListener("click", () => {
+    const formula = formulaTokens.join(" ");
+    const draft = {
+      baseline: Number($("#kpiBaselineInput")?.value) || 0,
+      target: Number($("#kpiTargetInput")?.value) || 0,
+      actual: Number($("#kpiActualInput")?.value) || 0,
+      parts: kpiPartsFromForm(),
+    };
+    const result = evalKpiFormula(formula, kpiFormulaVars(draft));
+    if (!checkResult) return;
+    if (result.ok) {
+      checkResult.textContent = `확인됨 · 결과 ${Number(result.value).toFixed(2)}`;
+      checkResult.className = "kpi-formula-check-result is-ok";
+    } else {
+      checkResult.textContent = result.error || "오류";
+      checkResult.className = "kpi-formula-check-result is-bad";
+    }
+  });
+
+  syncFormulaUi();
+  renderPalette();
   if (!row) applyCatalog(catalogSel?.value || catalog0, { fillName: true });
 }
 
