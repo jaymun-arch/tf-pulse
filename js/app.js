@@ -239,6 +239,11 @@ function latestCollection() {
   return state.collections.find((c) => c.round === maxRound) || state.collections[0];
 }
 
+/** 취합 차수: 최신(라운드 큰 순)이 앞 */
+function collectionsNewestFirst() {
+  return [...(state.collections || [])].sort((a, b) => (Number(b.round) || 0) - (Number(a.round) || 0));
+}
+
 /** 홈·할 일용: 내 미완 작업 */
 function buildMyActionItems() {
   const items = [];
@@ -2880,7 +2885,10 @@ function openCheckRequestModal(partId, editable = true) {
 
 function renderCollections() {
   const el = $("#view-collections");
-  if (!state.collections.find((c) => c.round === activeRound)) activeRound = state.collections[0]?.round || 1;
+  if (!state.collections.find((c) => c.round === activeRound)) {
+    activeRound = latestCollection()?.round || state.collections[0]?.round || 1;
+  }
+  const rounds = collectionsNewestFirst();
   const col = state.collections.find((c) => c.round === activeRound);
   const summary = collectionSummary(activeRound);
   const target = allocatedTotal() || state.meta.totalTargetPages || 1;
@@ -2901,7 +2909,7 @@ function renderCollections() {
     </div>
 
     <div class="round-tabs">
-      ${state.collections
+      ${rounds
         .map((c) => {
           const s = collectionSummary(c.round);
           return `<button class="round-tab ${c.round === activeRound ? "active" : ""}" data-round="${c.round}">
@@ -6316,7 +6324,7 @@ function renderAiBriefCard(item) {
 function renderAiBriefSectionHtml(defaultRound) {
   if (!isAdmin()) return "";
   ensureAiBriefs();
-  const rounds = state.collections || [];
+  const rounds = collectionsNewestFirst();
   const parts = state.parts || [];
   const briefs = [...state.aiBriefs].sort((a, b) => String(b.createdAt || "").localeCompare(String(a.createdAt || "")));
   const roundDefault = defaultRound || activeRound;
