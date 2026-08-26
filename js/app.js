@@ -8604,21 +8604,11 @@ async function boot() {
   await initState();
   startReportDeadlineClock();
 
-  const saved = localStorage.getItem(USER_KEY);
-  if (saved && memberByName(saved)) {
-    sessionUser = saved;
-    $("#loginGate").hidden = true;
-    $("#appShell").hidden = false;
-    applyRoleUi();
-    renderAll();
-    setView("dashboard");
-    window.setTimeout(() => {
-      openRemindPopup(false);
-      openRequestPopup(false);
-    }, 280);
-  } else {
-    showLoginGate();
-  }
+  // 링크 접속 시마다 권한(이름) 선택 화면부터 시작
+  sessionUser = null;
+  localStorage.removeItem(USER_KEY);
+  $("#appShell").hidden = true;
+  showLoginGate();
 
   openFoodPollFromLocation();
 
