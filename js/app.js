@@ -4224,6 +4224,36 @@ const SCHEDULE_TYPE_OPTIONS = [
   { value: "other", label: "기타" },
 ];
 
+const SCHEDULE_PROJECT_OPTIONS = [
+  "2026 교육혁신 성과보고서",
+  "운영계획",
+  "결과보고",
+  "예산",
+  "성과지표",
+  "기타",
+];
+
+const SCHEDULE_DIVISION_OPTIONS = [
+  "총괄",
+  "서론",
+  "현황분석",
+  "추진실적",
+  "성과분석",
+  "향후계획",
+  "예산",
+  "성과지표",
+  "공통",
+];
+
+function scheduleDeptOptions() {
+  const set = new Set([...(BUDGET_CATALOG.depts || []), ...(BUDGET_CATALOG.workDepts || [])]);
+  return [...set];
+}
+
+function scheduleOwnerOptions() {
+  return membersForActiveTopic();
+}
+
 function normalizeScheduleType(type) {
   if (type === "milestone") return "deadline";
   if (SCHEDULE_TYPE_OPTIONS.some((t) => t.value === type)) return type;
@@ -8857,27 +8887,81 @@ function openScheduleModal(id) {
     return;
   }
   const canDelete = Boolean(item) && canEditScheduleItem(item);
-  const members = membersForActiveTopic();
+  const members = scheduleOwnerOptions();
   const selectedAssignees = new Set(scheduleAssigneesOf(item));
-  const allSelected = members.length > 0 && members.every((m) => selectedAssignees.has(m.name));
+  const noneSelected = selectedAssignees.size === 0;
+  const allSelected = !noneSelected && members.length > 0 && members.every((m) => selectedAssignees.has(m.name));
   const currentType = normalizeScheduleType(item?.type || "meeting");
+  const ownerName = item?.owner || item?.createdBy || currentUserName();
+  const deptOpts = scheduleDeptOptions();
+  const projectOpts = [
+    ...new Set([state.meta?.tfName, state.meta?.reportTitle, ...SCHEDULE_PROJECT_OPTIONS].filter(Boolean)),
+  ];
+  const divisionOpts = [
+    ...new Set([
+      ...SCHEDULE_DIVISION_OPTIONS,
+      ...(state.parts || []).map((p) => p.title).filter(Boolean),
+      ...(state.members || []).map((m) => m.part).filter(Boolean),
+    ]),
+  ];
+  const statusNow = item?.status || "준비";
+  const dueThisYear = item?.endDate || item?.date || today();
+  const dl = uid("sdl");
+
   openModal({
     kicker: item ? "업무 수정" : "새 일정",
     title: item ? "주요 업무를 수정합니다." : "업무일정을 입력합니다.",
     submitLabel: item ? "저장" : "일정 등록",
     bodyHtml: `
-      <div class="wp-form">
+      <div class="wp-form schedule-form">
         <label class="wp-field">
           <span class="wp-label">업무명</span>
           <input name="title" class="wp-input" required value="${escapeAttr(item?.title || "")}" placeholder="예: AID 예산 수정 및 담당자 지정" />
         </label>
+
         <div class="wp-grid-2">
           <label class="wp-field">
             <span class="wp-label">담당</span>
-            <input name="createdBy" class="wp-input" value="${escapeAttr(item?.createdBy || currentUserName())}" />
+            <select name="owner" class="wp-input wp-select">
+              ${members
+                .map(
+                  (m) =>
+                    `<option value="${escapeAttr(m.name)}" ${ownerName === m.name ? "selected" : ""}>${escapeHtml(m.name)}</option>`
+                )
+                .join("")}
+              ${
+                ownerName && !members.some((m) => m.name === ownerName)
+                  ? `<option value="${escapeAttr(ownerName)}" selected>${escapeHtml(ownerName)}</option>`
+                  : ""
+              }
+            </select>
           </label>
           <label class="wp-field">
-            <span class="wp-label">유형</span>
+            <span class="wp-label">부서</span>
+            <input name="dept" list="schedDept_${dl}" class="wp-input" value="${escapeAttr(item?.dept || "")}" placeholder="선택 또는 입력" />
+          </label>
+        </div>
+
+        <div class="wp-grid-2">
+          <label class="wp-field">
+            <span class="wp-label">관련 사업</span>
+            <input name="project" list="schedProject_${dl}" class="wp-input" value="${escapeAttr(
+              item?.project || state.meta?.reportTitle || SCHEDULE_PROJECT_OPTIONS[0]
+            )}" placeholder="관련 사업" />
+          </label>
+          <label class="wp-field">
+            <span class="wp-label">상태</span>
+            <select name="status" class="wp-input wp-select ${statusNow === "준비" ? "is-status-wait" : ""}">
+              ${["준비", "진행", "완료"]
+                .map((st) => `<option value="${st}" ${statusNow === st ? "selected" : ""}>${st}</option>`)
+                .join("")}
+            </select>
+          </label>
+        </div>
+
+        <div class="wp-grid-2">
+          <label class="wp-field">
+            <span class="wp-label">업무구분</span>
             <select name="type" class="wp-input wp-select" required>
               ${SCHEDULE_TYPE_OPTIONS.map(
                 (t) =>
@@ -8885,55 +8969,82 @@ function openScheduleModal(id) {
               ).join("")}
             </select>
           </label>
-        </div>
-        <div class="wp-grid-2">
           <label class="wp-field">
-            <span class="wp-label">시작일</span>
-            <input name="date" type="date" class="wp-input" required value="${escapeAttr(item?.date || today())}" />
-          </label>
-          <label class="wp-field">
-            <span class="wp-label">마감일</span>
-            <input name="endDate" type="date" class="wp-input" value="${escapeAttr(item?.endDate || item?.date || today())}" />
+            <span class="wp-label">업무분장</span>
+            <input name="division" list="schedDivision_${dl}" class="wp-input" value="${escapeAttr(item?.division || "")}" placeholder="담당 영역" />
           </label>
         </div>
+
+        <div class="schedule-deadline-row">
+          <label class="wp-field">
+            <span class="wp-label">올해 마감</span>
+            <input name="endDate" type="date" class="wp-input" required value="${escapeAttr(dueThisYear)}" />
+          </label>
+          <label class="schedule-routine-check">
+            <input type="checkbox" name="routine" value="1" ${item?.routine ? "checked" : ""} />
+            <span>루틴</span>
+          </label>
+          <label class="wp-field">
+            <span class="wp-label">작년 완료시기</span>
+            <input name="lastYearDone" type="date" class="wp-input" value="${escapeAttr(item?.lastYearDone || "")}" />
+          </label>
+        </div>
+
         <label class="wp-field">
-          <span class="wp-label">상태</span>
-          <select name="status" class="wp-input wp-select ${
-            (item?.status || "준비") === "준비" ? "is-status-wait" : ""
-          }">
-            ${["준비", "진행", "완료"]
-              .map(
-                (st) =>
-                  `<option value="${st}" ${(item?.status || "준비") === st ? "selected" : ""}>${st}</option>`
-              )
-              .join("")}
-          </select>
+          <span class="wp-label">관리 목표값</span>
+          <textarea name="goal" rows="2" class="wp-input" placeholder="관리 목표값">${escapeHtml(item?.goal || item?.note || "")}</textarea>
         </label>
         <label class="wp-field">
-          <span class="wp-label">관리 목표·메모</span>
-          <textarea name="note" rows="3" class="wp-input" placeholder="목표값·협업 메모">${escapeHtml(item?.note || "")}</textarea>
+          <span class="wp-label">준비사항 · 검토사항</span>
+          <input name="prep" class="wp-input" value="${escapeAttr(item?.prep || "")}" placeholder="준비·검토 항목" />
         </label>
-        <fieldset class="wp-field schedule-assignee-field">
-          <legend class="wp-label">함께 업무할 대상자</legend>
-          <p class="muted schedule-assignee-hint">ALL 또는 TF 참여자를 복수 선택할 수 있습니다.</p>
-          <div class="schedule-assignee-grid">
-            <label class="schedule-assignee-chip is-all">
-              <input type="checkbox" id="scheduleAssigneeAll" ${allSelected ? "checked" : ""} />
-              <span>ALL</span>
-            </label>
+        <label class="wp-field">
+          <span class="wp-label">서로 챙길 점</span>
+          <textarea name="carePoints" rows="2" class="wp-input" placeholder="서로 챙길 점">${escapeHtml(item?.carePoints || "")}</textarea>
+        </label>
+
+        <fieldset class="wp-field schedule-collab-field">
+          <legend class="wp-label">협업 대상</legend>
+          <div class="schedule-collab-pills" id="scheduleCollabPills">
+            <button type="button" class="schedule-collab-pill ${noneSelected ? "is-on" : ""}" data-collab="none">미지정</button>
+            <button type="button" class="schedule-collab-pill ${allSelected ? "is-on" : ""}" data-collab="all">ALL</button>
             ${members
               .map(
                 (m) => `
-              <label class="schedule-assignee-chip">
-                <input type="checkbox" name="assignees" value="${escapeAttr(m.name)}" ${
-                  selectedAssignees.has(m.name) || allSelected ? "checked" : ""
-                } />
-                <span>${escapeHtml(m.name)}${m.role === "admin" ? " · 관리자" : ""}</span>
-              </label>`
+              <button type="button" class="schedule-collab-pill ${
+                !noneSelected && selectedAssignees.has(m.name) ? "is-on" : ""
+              }" data-collab="${escapeAttr(m.name)}">${escapeHtml(m.name)}</button>`
+              )
+              .join("")}
+          </div>
+          <div id="scheduleCollabInputs" hidden>
+            ${members
+              .map(
+                (m) =>
+                  `<input type="checkbox" name="assignees" value="${escapeAttr(m.name)}" ${
+                    !noneSelected && (selectedAssignees.has(m.name) || allSelected) ? "checked" : ""
+                  } />`
               )
               .join("")}
           </div>
         </fieldset>
+
+        <label class="wp-field">
+          <span class="wp-label">연관 스프레드시트</span>
+          <div class="schedule-url-wrap">
+            <span class="schedule-url-prefix">https://</span>
+            <input name="sheetUrl" class="wp-input" value="${escapeAttr((item?.sheetUrl || "").replace(/^https?:\/\//i, ""))}" placeholder="docs.google.com/spreadsheets/..." />
+          </div>
+        </label>
+        <label class="wp-field">
+          <span class="wp-label">구글드라이브 링크</span>
+          <input name="driveUrl" class="wp-input" type="url" value="${escapeAttr(item?.driveUrl || "")}" placeholder="https://drive.google.com/..." />
+        </label>
+
+        ${datalistOptions(`schedDept_${dl}`, deptOpts)}
+        ${datalistOptions(`schedProject_${dl}`, projectOpts)}
+        ${datalistOptions(`schedDivision_${dl}`, divisionOpts)}
+
         ${
           canDelete
             ? `<button type="button" class="btn btn-danger btn-sm" id="scheduleModalDelete">이 일정 삭제</button>`
@@ -8943,15 +9054,35 @@ function openScheduleModal(id) {
     `,
     onSubmit: (fd) => {
       const assignees = [...new Set(fd.getAll("assignees").map((v) => String(v).trim()).filter(Boolean))];
+      const endDate = fd.get("endDate") || today();
+      const sheetRaw = (fd.get("sheetUrl") || "").toString().trim();
+      const sheetUrl = sheetRaw
+        ? /^https?:\/\//i.test(sheetRaw)
+          ? sheetRaw
+          : `https://${sheetRaw}`
+        : "";
+      const owner = (fd.get("owner") || "").toString().trim() || currentUserName();
+      const goal = (fd.get("goal") || "").toString().trim();
       const data = {
         title: fd.get("title").trim(),
-        date: fd.get("date"),
-        endDate: fd.get("endDate") || fd.get("date"),
-        type: normalizeScheduleType(fd.get("type")),
-        createdBy: fd.get("createdBy").trim(),
-        note: fd.get("note").trim(),
+        owner,
+        createdBy: owner,
+        dept: (fd.get("dept") || "").toString().trim(),
+        project: (fd.get("project") || "").toString().trim(),
         status: fd.get("status") || "준비",
+        type: normalizeScheduleType(fd.get("type")),
+        division: (fd.get("division") || "").toString().trim(),
+        date: endDate,
+        endDate,
+        routine: Boolean(fd.get("routine")),
+        lastYearDone: (fd.get("lastYearDone") || "").toString().trim(),
+        goal,
+        note: goal,
+        prep: (fd.get("prep") || "").toString().trim(),
+        carePoints: (fd.get("carePoints") || "").toString().trim(),
         assignees,
+        sheetUrl,
+        driveUrl: (fd.get("driveUrl") || "").toString().trim(),
       };
       if (item) Object.assign(item, data);
       else state.schedule.push({ id: uid("s"), ...data });
@@ -8960,20 +9091,49 @@ function openScheduleModal(id) {
       return true;
     },
   });
-  const allBox = $("#scheduleAssigneeAll");
-  const boxes = () => $$("[name='assignees']", $("#modalBody") || document);
-  const syncAllState = () => {
-    const list = boxes();
-    if (!allBox || !list.length) return;
-    allBox.checked = list.every((b) => b.checked);
-  };
-  allBox?.addEventListener("change", () => {
-    const on = Boolean(allBox.checked);
-    boxes().forEach((b) => {
-      b.checked = on;
+
+  const syncCollabInputs = () => {
+    const pills = $$("#scheduleCollabPills [data-collab]");
+    const noneOn = pills.find((p) => p.dataset.collab === "none")?.classList.contains("is-on");
+    const allOn = pills.find((p) => p.dataset.collab === "all")?.classList.contains("is-on");
+    const selected = new Set(
+      pills.filter((p) => p.dataset.collab !== "none" && p.dataset.collab !== "all" && p.classList.contains("is-on")).map((p) => p.dataset.collab)
+    );
+    $$("[name='assignees']", $("#modalBody") || document).forEach((box) => {
+      box.checked = !noneOn && (allOn || selected.has(box.value));
     });
+  };
+
+  $("#scheduleCollabPills")?.addEventListener("click", (e) => {
+    const btn = e.target.closest("[data-collab]");
+    if (!btn) return;
+    e.preventDefault();
+    const key = btn.dataset.collab;
+    const pills = $$("#scheduleCollabPills [data-collab]");
+    const noneBtn = pills.find((p) => p.dataset.collab === "none");
+    const allBtn = pills.find((p) => p.dataset.collab === "all");
+    const personBtns = pills.filter((p) => p.dataset.collab !== "none" && p.dataset.collab !== "all");
+
+    if (key === "none") {
+      pills.forEach((p) => p.classList.toggle("is-on", p === noneBtn));
+    } else if (key === "all") {
+      const turnOn = !allBtn.classList.contains("is-on");
+      noneBtn?.classList.remove("is-on");
+      allBtn?.classList.toggle("is-on", turnOn);
+      personBtns.forEach((p) => p.classList.toggle("is-on", turnOn));
+      if (!turnOn) noneBtn?.classList.add("is-on");
+    } else {
+      noneBtn?.classList.remove("is-on");
+      allBtn?.classList.remove("is-on");
+      btn.classList.toggle("is-on");
+      const any = personBtns.some((p) => p.classList.contains("is-on"));
+      if (!any) noneBtn?.classList.add("is-on");
+      else if (personBtns.every((p) => p.classList.contains("is-on"))) allBtn?.classList.add("is-on");
+    }
+    syncCollabInputs();
   });
-  boxes().forEach((b) => b.addEventListener("change", syncAllState));
+  syncCollabInputs();
+
   $("#scheduleModalDelete")?.addEventListener("click", () => {
     if (!item || !confirm("이 일정을 삭제할까요?")) return;
     state.schedule = state.schedule.filter((s) => s.id !== item.id);
