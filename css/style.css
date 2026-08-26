@@ -8658,3 +8658,39 @@ body.view-home .page-hero {
 }
 
 .yeonu-hero-mark{width:72px;height:72px}
+
+/* Login deadline block */
+.login-deadline {
+  margin: 0 0 10px;
+  padding: 10px 12px;
+  border-radius: 12px;
+  border: 1px solid rgba(198, 40, 40, 0.18);
+  background: linear-gradient(180deg, #fff7f7 0%, #fff 100%);
+  text-align: center;
+}
+.login-deadline-label {
+  margin: 0;
+  font-size: 0.72rem;
+  font-weight: 700;
+  color: var(--ink-soft);
+}
+.login-deadline-when {
+  margin: 2px 0 4px;
+  font-size: 0.95rem;
+  font-weight: 800;
+  color: var(--ink);
+  letter-spacing: -0.02em;
+}
+.login-deadline-remain {
+  margin: 0;
+  font-size: 0.82rem;
+  color: #a11f1f;
+  font-weight: 650;
+}
+.login-deadline-remain strong {
+  font-weight: 800;
+  margin-left: 4px;
+}
+.login-deadline-remain.is-over {
+  color: #8a1c1c;
+}

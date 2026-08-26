@@ -64,7 +64,7 @@ function formatMileDate(iso) {
 export const DEFAULT_TF_TOPICS = [
   {
     id: "yeonu-2026",
-    name: "연어회 · 2026 교육혁신 성과보고서",
+    name: "2026 교육혁신 성과보고서",
     desc: "연차평가·성과보고서 TF",
   },
 ];

@@ -738,14 +738,19 @@ function ensureTfTopics() {
       memberIds: (state.members || []).map((m) => m.id),
     }));
   }
-  state.tfTopics = state.tfTopics.map((t) => ({
-    id: t.id || uid("tf"),
-    name: t.name || "TF",
-    desc: t.desc || "",
-    memberIds: Array.isArray(t.memberIds) && t.memberIds.length
-      ? t.memberIds
-      : (state.members || []).map((m) => m.id),
-  }));
+  state.tfTopics = state.tfTopics.map((t) => {
+    let name = String(t.name || "TF").trim();
+    name = name.replace(/^연어회\s*·\s*/, "");
+    if (t.id === "yeonu-2026") name = "2026 교육혁신 성과보고서";
+    return {
+      id: t.id || uid("tf"),
+      name: name || "TF",
+      desc: t.desc || "",
+      memberIds: Array.isArray(t.memberIds) && t.memberIds.length
+        ? t.memberIds
+        : (state.members || []).map((m) => m.id),
+    };
+  });
   if (!state.activeTfTopicId || !state.tfTopics.some((t) => t.id === state.activeTfTopicId)) {
     state.activeTfTopicId = state.tfTopics[0]?.id || "";
   }
@@ -1137,6 +1142,10 @@ function showLoginGate() {
     topicDesc.hidden = !desc;
   }
   renderLoginMembers();
+  updateReportDeadline();
+  if (!deadlineTimer) {
+    deadlineTimer = window.setInterval(updateReportDeadline, 30000);
+  }
 }
 
 function renderLoginMembers() {
@@ -10363,8 +10372,13 @@ function updateReportDeadline() {
     homeStrong.textContent = text;
     homeStrong.closest(".deadline-remain")?.classList.remove("is-over");
   }
+  const loginStrong = document.querySelector("#loginDeadlineRemain");
+  if (loginStrong) {
+    loginStrong.textContent = text;
+    loginStrong.closest(".deadline-remain")?.classList.remove("is-over");
+  }
   lines.forEach((line) => {
-    if (line.querySelector("#homeDeadlineRemain")) return;
+    if (line.querySelector("#homeDeadlineRemain") || line.querySelector("#loginDeadlineRemain")) return;
     line.classList.remove("is-over");
     let strong = line.querySelector("strong");
     if (!strong) {
