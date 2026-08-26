@@ -97,7 +97,7 @@ const VIEW_META = {
   guide: { title: "사용방법", desc: "메뉴별 안내" },
 };
 
-/** PDF 요청: TF요약 · 내업무 · TF모두보기 · 사용방법 (+ Setting) */
+/** PDF 요청: TF요약 · 내업무 · TF모두보기 (+ Setting) */
 const NAV_GROUPS = {
   home: {
     label: "TF 요약",
@@ -125,11 +125,6 @@ const NAV_GROUPS = {
       kpi: "성과지표",
     },
     defaultView: "collections",
-  },
-  guide: {
-    label: "사용방법",
-    views: ["guide"],
-    defaultView: "guide",
   },
   setup: {
     label: "Setting",
@@ -893,6 +888,7 @@ function resolveViewName(name) {
   if (name === "schedule") return "my-work";
   if (name === "review") return "collections";
   if (name === "resources") return "collections";
+  if (name === "guide") return "dashboard";
   // 그룹 id로 들어오면 기본(또는 마지막) 뷰로
   if (NAV_GROUPS[name]) {
     const g = NAV_GROUPS[name];
@@ -2588,7 +2584,7 @@ function renderParts() {
       <div class="panel-head" style="margin-bottom:0">
         <div>
           <h2 class="panel-title">팀 기준 원본 · 목차·할당</h2>
-          <p class="muted" style="margin:4px 0 0">이 표가 취합·홈 진도의 기준입니다. 수정 후 상단 <strong>JSON 내보내기</strong>로 팀에 공유하고, 다른 사람은 <strong>가져오기</strong>로 맞추세요.</p>
+          <p class="muted" style="margin:4px 0 0">이 표가 취합·홈 진도의 기준입니다. 수정 내용은 이 기기 브라우저에 자동 저장됩니다.</p>
         </div>
         <div class="row">
           <button class="btn btn-sm" id="editMeta">기본정보</button>
