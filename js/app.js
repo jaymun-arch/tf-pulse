@@ -3151,13 +3151,6 @@ function renderSchedule() {
     detailTitle = `${formatKorDate(selected)} 일정`;
   }
 
-  const byMonth = {};
-  (bandFilter ? dayItems : items).forEach((s) => {
-    const key = (s.date || "").slice(0, 7);
-    if (!byMonth[key]) byMonth[key] = [];
-    byMonth[key].push(s);
-  });
-
   const peakIso = nearest ? nearest.endDate || nearest.date : "";
 
   el.innerHTML = `
@@ -3227,30 +3220,7 @@ function renderSchedule() {
 
       ${buildScheduleRiskChartHtml(items)}
 
-      <section class="panel work-feed-panel">
-        <div class="panel-head">
-          <div>
-            <h2 class="panel-title">${escapeHtml(who)}님에게 보이는 일정입니다.</h2>
-            <p class="muted" style="margin:4px 0 0">주요 업무를 등록·수정·삭제합니다.</p>
-          </div>
-          ${admin ? `<button type="button" class="work-fab" id="addSchedule" title="주요 업무 추가" aria-label="주요 업무 추가">✎</button>` : `<button type="button" class="btn btn-primary" id="addSchedule">일정 추가</button>`}
-        </div>
-        ${
-          Object.keys(byMonth).length
-            ? Object.keys(byMonth)
-                .sort()
-                .map((ym) => {
-                  const [y, m] = ym.split("-");
-                  return `
-                  <div class="work-month-block">
-                    <h3 class="work-month-title">${Number(y)}년 ${Number(m)}월</h3>
-                    <div class="work-feed">${byMonth[ym].map((s) => workFeedRowHtml(s, admin)).join("")}</div>
-                  </div>`;
-                })
-                .join("")
-            : `<div class="empty">등록된 일정이 없습니다. ${admin ? "연필 버튼으로 주요 업무를 추가하세요." : ""}</div>`
-        }
-      </section>
+      ${scheduleFeedPanelHtml(who, admin, bandFilter ? dayItems : items)}
     </div>
   `;
 
@@ -3312,32 +3282,90 @@ function renderSchedule() {
     btn.querySelector(".risk-chart-toggle").textContent = open ? "⌃" : "⌄";
   });
 
-  $("#addSchedule")?.addEventListener("click", () => openScheduleModal());
-  el.querySelectorAll("[data-edit]").forEach((btn) =>
+  bindScheduleFeedActions(el, () => {
+    renderSchedule();
+    updateRemindBell();
+  });
+}
+
+function scheduleByMonth(items) {
+  const byMonth = {};
+  items.forEach((s) => {
+    const key = (s.date || "").slice(0, 7);
+    if (!key) return;
+    if (!byMonth[key]) byMonth[key] = [];
+    byMonth[key].push(s);
+  });
+  return byMonth;
+}
+
+function scheduleFeedPanelHtml(who, admin, items) {
+  const byMonth = scheduleByMonth(items);
+  return `
+    <section class="panel work-feed-panel mywork-schedule-panel">
+      <div class="panel-head">
+        <div>
+          <h2 class="panel-title">${escapeHtml(who)}님에게 보이는 일정입니다.</h2>
+          <p class="muted" style="margin:4px 0 0">주요 업무를 등록·수정·삭제합니다.</p>
+        </div>
+        ${
+          admin
+            ? `<button type="button" class="work-fab" id="addSchedule" title="주요 업무 추가" aria-label="주요 업무 추가">✎</button>`
+            : `<button type="button" class="btn btn-primary" id="addSchedule">일정 추가</button>`
+        }
+      </div>
+      ${
+        Object.keys(byMonth).length
+          ? Object.keys(byMonth)
+              .sort()
+              .map((ym) => {
+                const [y, m] = ym.split("-");
+                return `
+                <div class="work-month-block">
+                  <h3 class="work-month-title">${Number(y)}년 ${Number(m)}월</h3>
+                  <div class="work-feed">${byMonth[ym].map((s) => workFeedRowHtml(s, admin)).join("")}</div>
+                </div>`;
+              })
+              .join("")
+          : `<div class="empty">등록된 일정이 없습니다. ${admin ? "연필 버튼으로 주요 업무를 추가하세요." : ""}</div>`
+      }
+    </section>`;
+}
+
+function bindScheduleFeedActions(root, onRefresh) {
+  root.querySelector("#addSchedule")?.addEventListener("click", () => openScheduleModal());
+  root.querySelectorAll("[data-edit]").forEach((btn) =>
     btn.addEventListener("click", (e) => {
       e.stopPropagation();
       openScheduleModal(btn.dataset.edit);
     })
   );
-  el.querySelectorAll("[data-del]").forEach((btn) =>
+  root.querySelectorAll("[data-del]").forEach((btn) =>
     btn.addEventListener("click", (e) => {
       e.stopPropagation();
       if (!confirm("이 일정을 삭제할까요?")) return;
       state.schedule = state.schedule.filter((s) => s.id !== btn.dataset.del);
-      saveAndRender("schedule");
-      updateRemindBell();
+      persist();
+      onRefresh?.();
     })
   );
-  el.querySelectorAll("[data-status]").forEach((sel) => {
+  root.querySelectorAll("[data-status]").forEach((sel) => {
     sel.addEventListener("change", () => {
       const item = state.schedule.find((s) => s.id === sel.dataset.status);
       if (!item) return;
       item.status = sel.value;
       persist();
-      renderSchedule();
-      updateRemindBell();
+      onRefresh?.();
     });
   });
+}
+
+function refreshActiveScheduleSurface() {
+  updateRemindBell();
+  if (activeViewName === "my-work") renderMyWork();
+  else if (activeViewName === "schedule") renderSchedule();
+  else if (activeViewName === "dashboard") renderDashboard();
+  else renderView(activeViewName || "my-work");
 }
 
 function workFeedRowHtml(s, admin) {
@@ -8097,17 +8125,21 @@ function renderMyWork() {
   const el = $("#view-my-work");
   if (!el) return;
   const who = sessionUser || "작성자";
+  const admin = isAdmin();
+  const items = [...(state.schedule || [])].sort((a, b) => a.date.localeCompare(b.date));
   const list = buildMyWorkChecklist();
   const open = list.filter((i) => !i.done);
   const overdue = open.filter((i) => i.overdue);
 
   el.innerHTML = `
     <div class="mywork-page">
+      ${scheduleFeedPanelHtml(who, admin, items)}
+
       <section class="panel mywork-hero ${overdue.length ? "is-overdue-glow" : ""}">
         <div class="panel-head" style="margin-bottom:0">
           <div>
-            <h2 class="panel-title">${escapeHtml(who)}님의 할 일</h2>
-            <p class="muted" style="margin:4px 0 0">목차 할당·요청·예산·성과지표가 여기 모입니다. 작성·제출·피드백을 바로 이어가세요.</p>
+            <h2 class="panel-title">${escapeHtml(who)}님의 작성 할 일</h2>
+            <p class="muted" style="margin:4px 0 0">목차 할당·요청·예산·성과지표 작성 항목입니다.</p>
           </div>
           <span class="badge ${overdue.length ? "danger" : "warn"}">${open.length}건 남음</span>
         </div>
@@ -8151,6 +8183,7 @@ function renderMyWork() {
     </div>
   `;
 
+  bindScheduleFeedActions(el, refreshActiveScheduleSurface);
   el.querySelectorAll("[data-goto]").forEach((btn) => {
     btn.addEventListener("click", () => setView(btn.dataset.goto));
   });
@@ -8563,8 +8596,8 @@ function openScheduleModal(id) {
       };
       if (item) Object.assign(item, data);
       else state.schedule.push({ id: uid("s"), ...data });
-      saveAndRender("schedule");
-      updateRemindBell();
+      persist();
+      refreshActiveScheduleSurface();
       return true;
     },
   });
@@ -8572,8 +8605,8 @@ function openScheduleModal(id) {
     if (!item || !confirm("이 일정을 삭제할까요?")) return;
     state.schedule = state.schedule.filter((s) => s.id !== item.id);
     closeModal();
-    saveAndRender("schedule");
-    updateRemindBell();
+    persist();
+    refreshActiveScheduleSurface();
   });
 }
 
