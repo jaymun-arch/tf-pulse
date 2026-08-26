@@ -3289,7 +3289,17 @@ function denySchedulePermission(message = "권한이 없습니다. 요청 업무
 }
 
 function openScheduleUploadForItem(s) {
-  // 취합·마감·원고 관련이면 보고서 업로드(취합)로, 그 외에도 내 원고 제출 화면으로
+  if (!s) return;
+  const group = scheduleGroupOf(s);
+  if (group === "kpi") {
+    setView("kpi");
+    return;
+  }
+  if (group === "budget") {
+    setView("budget");
+    return;
+  }
+  // 보고서 취합(및 그 외 기본): 취합 업로드 화면
   setView("collections");
 }
 
@@ -4452,11 +4462,12 @@ function scheduleGroupOf(s) {
   if (SCHEDULE_GROUP_OPTIONS.some((g) => g.id === raw)) return raw;
   const blob = `${s?.title || ""} ${s?.project || ""} ${s?.division || ""} ${s?.type || ""} ${s?.note || ""} ${s?.goal || ""}`.toLowerCase();
   if (/서식|지침|스타일|가이드/.test(blob)) return "forms";
-  if (/취합|원고|제출|업로드/.test(blob) || s?.type === "submit" || s?.type === "deadline") return "collect";
-  if (/리뷰|윤독|회의/.test(blob) || s?.type === "meeting") return "review";
   if (/성과|지표|kpi/.test(blob)) return "kpi";
   if (/예산|편성|비목/.test(blob)) return "budget";
+  if (/취합|원고|제출|업로드/.test(blob) || s?.type === "submit") return "collect";
+  if (/리뷰|윤독|회의/.test(blob) || s?.type === "meeting") return "review";
   if (/위원회|위원/.test(blob)) return "committee";
+  if (s?.type === "deadline") return "collect";
   return "other";
 }
 
