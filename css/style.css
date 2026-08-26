@@ -8694,3 +8694,59 @@ body.view-home .page-hero {
 .login-deadline-remain.is-over {
   color: #8a1c1c;
 }
+
+/* Kickoff shared materials modal */
+.shared-materials {
+  display: flex;
+  flex-direction: column;
+  gap: 12px;
+  max-height: min(58vh, 420px);
+  overflow: auto;
+}
+.shared-mat-block {
+  border: 1px solid var(--line);
+  border-radius: 12px;
+  padding: 10px 12px;
+  background: #fafbfc;
+}
+.shared-mat-cat {
+  margin: 0 0 8px;
+  font-size: 0.82rem;
+  font-weight: 800;
+  color: var(--accent);
+}
+.shared-mat-list {
+  list-style: none;
+  margin: 0;
+  padding: 0;
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+}
+.shared-mat-item {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 10px;
+  padding: 8px 10px;
+  border-radius: 10px;
+  background: #fff;
+  border: 1px solid rgba(0,0,0,.06);
+}
+.shared-mat-copy {
+  min-width: 0;
+  display: flex;
+  flex-direction: column;
+  gap: 2px;
+}
+.shared-mat-copy strong {
+  font-size: 0.88rem;
+  font-weight: 750;
+}
+.shared-mat-copy .muted {
+  font-size: 0.72rem;
+}
+.shared-mat-empty {
+  margin: 0;
+  font-size: 0.8rem;
+}

@@ -367,6 +367,15 @@
       "fileName": "페이지할당표.xlsx",
       "uploadedAt": "2026-07-12",
       "note": "앱 데이터와 동기화용"
+    },
+    {
+      "id": "r5",
+      "title": "용어·지표 정의서",
+      "category": "정의서",
+      "url": "https://drive.google.com/file/d/example-glossary",
+      "fileName": "용어_지표_정의서.pdf",
+      "uploadedAt": "2026-07-10",
+      "note": "핵심 용어·성과지표 정의"
     }
   ],
   "budget": {

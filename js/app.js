@@ -3315,6 +3315,10 @@ function denySchedulePermission(message = "권한이 없습니다. 요청 업무
 function openScheduleUploadForItem(s) {
   if (!s) return;
   const group = scheduleGroupOf(s);
+  if (group === "forms" || /킥오프|kickoff/i.test(`${s.title || ""} ${s.note || ""}`)) {
+    openSharedMaterialsModal(s);
+    return;
+  }
   if (group === "kpi") {
     setView("kpi");
     return;
@@ -3325,6 +3329,84 @@ function openScheduleUploadForItem(s) {
   }
   // 보고서 취합(및 그 외 기본): 취합 업로드 화면
   setView("collections");
+}
+
+const SHARED_MATERIAL_CATS = ["지침", "서식", "정의서", "스타일"];
+
+function ensureSharedResources() {
+  if (!Array.isArray(state.resources)) state.resources = [];
+  const hasDef = state.resources.some((r) => r.category === "정의서" || /정의서/.test(r.title || ""));
+  if (!hasDef) {
+    state.resources.push({
+      id: uid("r"),
+      title: "용어·지표 정의서",
+      category: "정의서",
+      url: "https://drive.google.com/file/d/example-glossary",
+      fileName: "용어_지표_정의서.pdf",
+      uploadedAt: today(),
+      note: "핵심 용어·성과지표 정의",
+    });
+  }
+}
+
+function sharedSetupResources() {
+  ensureSharedResources();
+  const order = Object.fromEntries(SHARED_MATERIAL_CATS.map((c, i) => [c, i]));
+  return [...state.resources]
+    .filter((r) => {
+      const c = String(r.category || "");
+      if (SHARED_MATERIAL_CATS.includes(c)) return true;
+      return /지침|가이드|서식|정의|스타일/i.test(`${r.title || ""} ${r.note || ""} ${c}`);
+    })
+    .sort((a, b) => (order[a.category] ?? 99) - (order[b.category] ?? 99) || String(a.title).localeCompare(String(b.title), "ko"));
+}
+
+function openSharedMaterialsModal(scheduleItem) {
+  const items = sharedSetupResources();
+  const byCat = {};
+  SHARED_MATERIAL_CATS.forEach((c) => {
+    byCat[c] = [];
+  });
+  items.forEach((r) => {
+    const c = SHARED_MATERIAL_CATS.includes(r.category) ? r.category : "서식";
+    if (!byCat[c]) byCat[c] = [];
+    byCat[c].push(r);
+  });
+
+  openModal({
+    kicker: "킥오프 공유 자료",
+    title: scheduleItem?.title || "서식 · 지침 · 정의서 · 스타일",
+    hideFooter: true,
+    bodyHtml: `
+      <p class="schedule-comment-lead">관리자가 공유한 지침·서식·정의서·스타일 가이드입니다. 바로 열어 확인하세요.</p>
+      <div class="shared-materials">
+        ${SHARED_MATERIAL_CATS.map((cat) => {
+          const rows = byCat[cat] || [];
+          return `
+            <section class="shared-mat-block">
+              <h3 class="shared-mat-cat">${escapeHtml(cat)}</h3>
+              ${
+                rows.length
+                  ? `<ul class="shared-mat-list">${rows
+                      .map(
+                        (r) => `
+                    <li class="shared-mat-item">
+                      <div class="shared-mat-copy">
+                        <strong>${escapeHtml(r.title)}</strong>
+                        <span class="muted">${escapeHtml(r.fileName || "")}${r.note ? ` · ${escapeHtml(r.note)}` : ""}</span>
+                      </div>
+                      <a class="btn btn-sm btn-primary" href="${escapeAttr(r.url)}" target="_blank" rel="noopener noreferrer">열기</a>
+                    </li>`
+                      )
+                      .join("")}</ul>`
+                  : `<p class="shared-mat-empty muted">등록된 ${escapeHtml(cat)} 자료가 없습니다.</p>`
+              }
+            </section>`;
+        }).join("")}
+      </div>
+    `,
+    onSubmit: null,
+  });
 }
 
 function scheduleCommentsOf(s) {
@@ -9779,7 +9861,7 @@ function openResourceModal(id) {
         </label>
         <label class="field">분류
           <select name="category">
-            ${["지침", "스타일", "서식", "기타"]
+            ${["지침", "서식", "정의서", "스타일", "기타"]
               .map(
                 (c) =>
                   `<option value="${c}" ${item?.category === c ? "selected" : ""}>${c}</option>`
