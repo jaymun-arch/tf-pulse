@@ -7343,12 +7343,59 @@ function renderReview() {
   });
 }
 
+const KPI_SCOPES = [
+  { id: "core", label: "핵심", hint: "필수·공통 성과지표" },
+  { id: "autonomy", label: "자율", hint: "대학 자율 설정 지표" },
+];
+
+/** 성과지표 선택 목록 (핵심 / 자율) */
+const KPI_CATALOG = [
+  { id: "emp-rate", scope: "core", name: "재학생 취업률", unit: "%", formula: "actual / target * 100", baselineNote: "전년도 공시 취업률" },
+  { id: "fill-rate", scope: "core", name: "신입생 충원율", unit: "%", formula: "actual / target * 100", baselineNote: "전년도 충원율" },
+  { id: "retain-rate", scope: "core", name: "재학생 충원율", unit: "%", formula: "actual / target * 100", baselineNote: "전년도 재학생 충원율" },
+  { id: "edu-sat", scope: "core", name: "교육만족도", unit: "점", formula: "actual / target * 100", baselineNote: "전년도 만족도 조사" },
+  { id: "extra-curr", scope: "autonomy", name: "비교과 프로그램 이수자 수", unit: "명", formula: "actual", baselineNote: "전년도 이수 실적" },
+  { id: "industry", scope: "autonomy", name: "산학협력 참여 기업 수", unit: "개", formula: "actual", baselineNote: "전년도 협력기업 수" },
+  { id: "global", scope: "autonomy", name: "글로벌 프로그램 참여 학생 수", unit: "명", formula: "actual", baselineNote: "전년도 참여 실적" },
+  { id: "counsel", scope: "autonomy", name: "진로·상담 이용 학생 수", unit: "명", formula: "actual", baselineNote: "전년도 이용 실적" },
+  { id: "custom", scope: "autonomy", name: "직접 입력", unit: "%", formula: "actual / target * 100", baselineNote: "", custom: true },
+];
+
+function kpiScopeMeta(scope) {
+  return KPI_SCOPES.find((s) => s.id === scope) || KPI_SCOPES[0];
+}
+
+function kpiCatalogById(id) {
+  return KPI_CATALOG.find((c) => c.id === id) || null;
+}
+
+function normalizeKpi(raw = {}) {
+  const catalogId = raw.catalogId || "";
+  const fromCat = catalogId ? kpiCatalogById(catalogId) : null;
+  let scope = raw.scope === "autonomy" || raw.scope === "core" ? raw.scope : "";
+  if (!scope && fromCat) scope = fromCat.scope;
+  if (!scope) scope = "core";
+  return {
+    id: raw.id || uid("kpi"),
+    name: (raw.name || fromCat?.name || "").trim() || "성과지표",
+    scope,
+    catalogId: catalogId || (fromCat && !fromCat.custom ? fromCat.id : catalogId || ""),
+    baseline: Number(raw.baseline) || 0,
+    baselineNote: String(raw.baselineNote || "").trim(),
+    formula: String(raw.formula || "actual / target * 100").trim(),
+    target: Number(raw.target) || 0,
+    actual: Number(raw.actual) || 0,
+    unit: String(raw.unit || fromCat?.unit || "%").trim() || "%",
+  };
+}
+
 function ensureKpis() {
   if (!Array.isArray(state.kpis)) state.kpis = [];
   if (!state.kpis.length) {
     state.kpis = [
-      {
-        id: uid("kpi"),
+      normalizeKpi({
+        catalogId: "emp-rate",
+        scope: "core",
         name: "재학생 취업률",
         baseline: 62,
         baselineNote: "전년도 공시 취업률",
@@ -7356,9 +7403,10 @@ function ensureKpis() {
         target: 70,
         actual: 0,
         unit: "%",
-      },
-      {
-        id: uid("kpi"),
+      }),
+      normalizeKpi({
+        catalogId: "extra-curr",
+        scope: "autonomy",
         name: "비교과 프로그램 이수자 수",
         baseline: 1200,
         baselineNote: "전년도 이수 실적",
@@ -7366,8 +7414,10 @@ function ensureKpis() {
         target: 1500,
         actual: 0,
         unit: "명",
-      },
+      }),
     ];
+  } else {
+    state.kpis = state.kpis.map((k) => normalizeKpi(k));
   }
 }
 
@@ -7406,16 +7456,26 @@ function renderKpi() {
   const el = $("#view-kpi");
   ensureKpis();
   const admin = isAdmin();
-  const rows = state.kpis.map(kpiSimRow);
+  const filter = ["all", "core", "autonomy"].includes(state._kpiFilter) ? state._kpiFilter : "all";
+  state._kpiFilter = filter;
+  const allRows = state.kpis.map(kpiSimRow);
+  const rows = filter === "all" ? allRows : allRows.filter((k) => k.scope === filter);
+  const coreCount = allRows.filter((k) => k.scope === "core").length;
+  const autoCount = allRows.filter((k) => k.scope === "autonomy").length;
 
   el.innerHTML = `
     <div class="panel">
       <div class="panel-head">
         <div>
           <h2 class="panel-title">성과지표 시뮬레이션</h2>
-          <p class="muted" style="margin:4px 0 0">지표명 · 기준값 · 근거 · 산식(actual / target / baseline)으로 달성도를 미리 봅니다.</p>
+          <p class="muted" style="margin:4px 0 0">핵심·자율 지표를 구분해 기준값·산식으로 달성도를 미리 봅니다.</p>
         </div>
         ${admin ? `<button type="button" class="btn btn-primary" id="addKpi">지표 추가</button>` : ""}
+      </div>
+      <div class="kpi-scope-tabs" role="tablist" aria-label="지표 구분">
+        <button type="button" class="kpi-scope-tab ${filter === "all" ? "is-on" : ""}" data-kpi-filter="all">전체 <em>${allRows.length}</em></button>
+        <button type="button" class="kpi-scope-tab ${filter === "core" ? "is-on" : ""}" data-kpi-filter="core">핵심 <em>${coreCount}</em></button>
+        <button type="button" class="kpi-scope-tab ${filter === "autonomy" ? "is-on" : ""}" data-kpi-filter="autonomy">자율 <em>${autoCount}</em></button>
       </div>
       <div class="kpi-grid">
         ${
@@ -7424,10 +7484,14 @@ function renderKpi() {
                 .map((k) => {
                   const pct = k.sim.ok ? k.sim.value : null;
                   const bar = k.rate != null ? Math.max(0, Math.min(120, k.rate)) : 0;
+                  const scope = kpiScopeMeta(k.scope);
                   return `
-              <article class="kpi-card" data-kpi="${escapeAttr(k.id)}">
+              <article class="kpi-card scope-${escapeAttr(k.scope)}" data-kpi="${escapeAttr(k.id)}">
                 <header class="kpi-card-head">
-                  <h3>${escapeHtml(k.name)}</h3>
+                  <div class="kpi-card-title">
+                    <span class="kpi-scope-badge is-${escapeAttr(k.scope)}">${escapeHtml(scope.label)}</span>
+                    <h3>${escapeHtml(k.name)}</h3>
+                  </div>
                   ${admin ? `<button type="button" class="btn btn-sm" data-edit-kpi="${escapeAttr(k.id)}">수정</button>` : ""}
                 </header>
                 <dl class="kpi-meta">
@@ -7441,7 +7505,7 @@ function renderKpi() {
                   <div class="kpi-sim-bar"><i style="width:${bar}%"></i></div>
                   <strong>${
                     k.sim.ok
-                      ? `시뮬 ${Number(pct).toFixed(1)}${String(k.formula).includes("100") || k.unit === "%" ? "" : ""} · 달성률 ${k.rate != null ? k.rate.toFixed(1) + "%" : "—"}`
+                      ? `시뮬 ${Number(pct).toFixed(1)} · 달성률 ${k.rate != null ? k.rate.toFixed(1) + "%" : "—"}`
                       : escapeHtml(k.sim.error || "오류")
                   }</strong>
                 </div>
@@ -7452,12 +7516,18 @@ function renderKpi() {
               </article>`;
                 })
                 .join("")
-            : `<div class="empty">등록된 성과지표가 없습니다.</div>`
+            : `<div class="empty">${filter === "all" ? "등록된 성과지표가 없습니다." : "해당 구분의 지표가 없습니다."}</div>`
         }
       </div>
     </div>
   `;
 
+  el.querySelectorAll("[data-kpi-filter]").forEach((btn) => {
+    btn.addEventListener("click", () => {
+      state._kpiFilter = btn.dataset.kpiFilter;
+      renderKpi();
+    });
+  });
   el.querySelectorAll("[data-kpi-actual]").forEach((input) => {
     input.addEventListener("change", () => {
       const row = state.kpis.find((k) => k.id === input.dataset.kpiActual);
@@ -7486,40 +7556,148 @@ function openKpiModal(id = null) {
   if (!isAdmin()) return;
   ensureKpis();
   const row = id ? state.kpis.find((k) => k.id === id) : null;
+  const scope0 = row?.scope || "core";
+  const catalog0 = row?.catalogId || (scope0 === "core" ? "emp-rate" : "custom");
+
+  const catalogOptionsHtml = (scope) =>
+    KPI_CATALOG.filter((c) => c.scope === scope || c.custom)
+      .map((c) => {
+        const selected =
+          c.id === catalog0 || (catalog0 === "custom" && c.custom) || (!row && c.id === (scope === "core" ? "emp-rate" : "custom"));
+        return `<option value="${escapeAttr(c.id)}" ${selected ? "selected" : ""}>${escapeHtml(c.name)}</option>`;
+      })
+      .join("");
+
   openModal({
-    title: row ? "성과지표 수정" : "성과지표 추가",
-    kicker: "성과지표",
+    kicker: row ? "성과지표 수정" : "성과지표 추가",
+    title: row ? "지표 내용을 수정합니다." : "핵심·자율 지표를 등록합니다.",
+    submitLabel: row ? "저장" : "지표 등록",
     bodyHtml: `
-      <label>성과지표명<input name="name" required value="${escapeAttr(row?.name || "")}" /></label>
-      <div class="grid grid-2">
-        <label>기준값<input name="baseline" type="number" step="any" required value="${escapeAttr(String(row?.baseline ?? 0))}" /></label>
-        <label>단위<input name="unit" value="${escapeAttr(row?.unit || "%")}" /></label>
+      <div class="wp-form" id="kpiModalForm">
+        <div class="wp-field">
+          <span class="wp-label">구분</span>
+          <input type="hidden" name="scope" id="kpiScopeInput" value="${escapeAttr(scope0)}" />
+          <div class="wp-chips" role="group" aria-label="핵심·자율 구분">
+            ${KPI_SCOPES.map(
+              (s) => `
+              <button type="button" class="wp-chip ${s.id === scope0 ? "is-on" : ""}" data-kpi-scope="${escapeAttr(s.id)}" title="${escapeAttr(s.hint)}">${escapeHtml(s.label)}</button>`
+            ).join("")}
+          </div>
+          <p class="muted" style="margin:4px 0 0;font-size:0.72rem" id="kpiScopeHint">${escapeHtml(kpiScopeMeta(scope0).hint)}</p>
+        </div>
+        <label class="wp-field">
+          <span class="wp-label">지표 선택</span>
+          <select name="catalogId" id="kpiCatalogSelect" class="wp-input wp-select">
+            ${catalogOptionsHtml(scope0)}
+          </select>
+        </label>
+        <label class="wp-field">
+          <span class="wp-label">성과지표명</span>
+          <input name="name" id="kpiNameInput" class="wp-input" required value="${escapeAttr(row?.name || "")}" placeholder="예: 재학생 취업률" />
+        </label>
+        <div class="wp-grid-2">
+          <label class="wp-field">
+            <span class="wp-label">기준값</span>
+            <input name="baseline" class="wp-input" type="number" step="any" required value="${escapeAttr(String(row?.baseline ?? 0))}" />
+          </label>
+          <label class="wp-field">
+            <span class="wp-label">단위</span>
+            <input name="unit" id="kpiUnitInput" class="wp-input" value="${escapeAttr(row?.unit || "%")}" />
+          </label>
+        </div>
+        <label class="wp-field">
+          <span class="wp-label">기준값 근거</span>
+          <textarea name="baselineNote" id="kpiNoteInput" class="wp-input" rows="3" placeholder="전년도 공시·조사 근거">${escapeHtml(row?.baselineNote || "")}</textarea>
+        </label>
+        <div class="wp-grid-2">
+          <label class="wp-field">
+            <span class="wp-label">목표값</span>
+            <input name="target" class="wp-input" type="number" step="any" required value="${escapeAttr(String(row?.target ?? 0))}" />
+          </label>
+          <label class="wp-field">
+            <span class="wp-label">현재 실적</span>
+            <input name="actual" class="wp-input" type="number" step="any" value="${escapeAttr(String(row?.actual ?? 0))}" />
+          </label>
+        </div>
+        <label class="wp-field">
+          <span class="wp-label">산식</span>
+          <input name="formula" id="kpiFormulaInput" class="wp-input" required value="${escapeAttr(row?.formula || "actual / target * 100")}" />
+          <span class="muted" style="font-size:0.72rem">actual, target, baseline 사용 · 예: actual / target * 100</span>
+        </label>
       </div>
-      <label>기준값 근거<textarea name="baselineNote" rows="2">${escapeHtml(row?.baselineNote || "")}</textarea></label>
-      <div class="grid grid-2">
-        <label>목표값<input name="target" type="number" step="any" required value="${escapeAttr(String(row?.target ?? 0))}" /></label>
-        <label>현재 실적<input name="actual" type="number" step="any" value="${escapeAttr(String(row?.actual ?? 0))}" /></label>
-      </div>
-      <label>산식<small class="muted"> actual, target, baseline 사용 · 예: actual / target * 100</small>
-        <input name="formula" required value="${escapeAttr(row?.formula || "actual / target * 100")}" />
-      </label>
     `,
     onSubmit: (fd) => {
-      const payload = {
-        name: fd.get("name").trim(),
-        baseline: Number(fd.get("baseline")) || 0,
-        baselineNote: String(fd.get("baselineNote") || "").trim(),
-        target: Number(fd.get("target")) || 0,
-        actual: Number(fd.get("actual")) || 0,
-        unit: String(fd.get("unit") || "").trim(),
-        formula: String(fd.get("formula") || "actual / target * 100").trim(),
-      };
-      if (row) Object.assign(row, payload);
-      else state.kpis.push({ id: uid("kpi"), ...payload });
+      const payload = normalizeKpi({
+        name: fd.get("name"),
+        scope: fd.get("scope"),
+        catalogId: fd.get("catalogId"),
+        baseline: fd.get("baseline"),
+        baselineNote: fd.get("baselineNote"),
+        target: fd.get("target"),
+        actual: fd.get("actual"),
+        unit: fd.get("unit"),
+        formula: fd.get("formula"),
+      });
+      if (row) Object.assign(row, payload, { id: row.id });
+      else state.kpis.push(payload);
       persist();
       renderKpi();
+      return true;
     },
   });
+
+  const scopeInput = $("#kpiScopeInput");
+  const catalogSel = $("#kpiCatalogSelect");
+  const nameInput = $("#kpiNameInput");
+  const unitInput = $("#kpiUnitInput");
+  const noteInput = $("#kpiNoteInput");
+  const formulaInput = $("#kpiFormulaInput");
+  const hint = $("#kpiScopeHint");
+
+  const refillCatalog = (scope, preferId) => {
+    if (!catalogSel) return;
+    const list = KPI_CATALOG.filter((c) => c.scope === scope || c.custom);
+    const prefer = preferId && list.some((c) => c.id === preferId) ? preferId : list[0]?.id;
+    catalogSel.innerHTML = list
+      .map((c) => `<option value="${escapeAttr(c.id)}" ${c.id === prefer ? "selected" : ""}>${escapeHtml(c.name)}</option>`)
+      .join("");
+  };
+
+  const applyCatalog = (catId, { fillName = true } = {}) => {
+    const cat = kpiCatalogById(catId);
+    if (!cat) return;
+    if (fillName && nameInput) {
+      if (cat.custom) {
+        if (!nameInput.value.trim()) nameInput.value = "";
+        nameInput.placeholder = "직접 입력할 지표명";
+      } else {
+        nameInput.value = cat.name;
+        nameInput.placeholder = "예: 재학생 취업률";
+      }
+    }
+    if (unitInput && cat.unit) unitInput.value = cat.unit;
+    if (formulaInput && cat.formula) formulaInput.value = cat.formula;
+    if (noteInput && cat.baselineNote && (!row || !noteInput.value.trim())) {
+      noteInput.value = cat.baselineNote;
+    }
+  };
+
+  $$("[data-kpi-scope]").forEach((chip) => {
+    chip.addEventListener("click", () => {
+      const scope = chip.dataset.kpiScope;
+      if (scopeInput) scopeInput.value = scope;
+      $$("[data-kpi-scope]").forEach((c) => c.classList.toggle("is-on", c.dataset.kpiScope === scope));
+      if (hint) hint.textContent = kpiScopeMeta(scope).hint;
+      refillCatalog(scope, catalogSel?.value);
+      applyCatalog(catalogSel?.value, { fillName: !row });
+    });
+  });
+
+  catalogSel?.addEventListener("change", () => {
+    applyCatalog(catalogSel.value, { fillName: true });
+  });
+
+  if (!row) applyCatalog(catalogSel?.value || catalog0, { fillName: true });
 }
 
 function renderView(name) {
