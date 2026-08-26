@@ -3373,7 +3373,7 @@ function bindScheduleFeedActions(root, onRefresh) {
         denySchedulePermission();
         return;
       }
-      if (!confirm("이 일정을 삭제할까요?")) return;
+      if (!confirm("삭제하시겠습니까?")) return;
       state.schedule = state.schedule.filter((s) => s.id !== btn.dataset.del);
       persist();
       onRefresh?.();
@@ -3405,14 +3405,16 @@ function bindScheduleSwipeRow(row, onRefresh) {
   let dx = 0;
   let dragging = false;
   let locked = null; // 'h' | 'v'
-  const THRESH = 72;
-  const MAX = 110;
+  const THRESH = 78;
+  const MAX = 128;
 
   const setOffset = (x) => {
     dx = Math.max(-MAX, Math.min(MAX, x));
     front.style.transform = `translateX(${dx}px)`;
-    row.classList.toggle("is-swiping-edit", dx > 12);
-    row.classList.toggle("is-swiping-delete", dx < -12);
+    row.classList.toggle("is-swiping-edit", dx > 10);
+    row.classList.toggle("is-swiping-delete", dx < -10);
+    row.classList.toggle("is-armed-edit", dx >= THRESH);
+    row.classList.toggle("is-armed-delete", dx <= -THRESH);
   };
   const reset = () => {
     front.style.transition = "transform 180ms ease";
@@ -3420,7 +3422,27 @@ function bindScheduleSwipeRow(row, onRefresh) {
     window.setTimeout(() => {
       front.style.transition = "";
     }, 200);
-    row.classList.remove("is-swiping-edit", "is-swiping-delete");
+    row.classList.remove("is-swiping-edit", "is-swiping-delete", "is-armed-edit", "is-armed-delete");
+  };
+
+  const openEdit = () => {
+    const item = state.schedule.find((s) => s.id === id);
+    if (!canEditScheduleItem(item)) {
+      denySchedulePermission();
+      return;
+    }
+    openScheduleModal(id);
+  };
+  const openDelete = () => {
+    const item = state.schedule.find((s) => s.id === id);
+    if (!canEditScheduleItem(item)) {
+      denySchedulePermission();
+      return;
+    }
+    if (!confirm("삭제하시겠습니까?")) return;
+    state.schedule = state.schedule.filter((s) => s.id !== id);
+    persist();
+    onRefresh?.();
   };
 
   const onPointerDown = (e) => {
@@ -3466,23 +3488,12 @@ function bindScheduleSwipeRow(row, onRefresh) {
 
     if (dx >= THRESH) {
       reset();
-      if (!canEditScheduleItem(item)) {
-        denySchedulePermission();
-        return;
-      }
-      openScheduleModal(id);
+      openEdit();
       return;
     }
     if (dx <= -THRESH) {
       reset();
-      if (!canEditScheduleItem(item)) {
-        denySchedulePermission();
-        return;
-      }
-      if (!confirm("이 일정을 삭제할까요?")) return;
-      state.schedule = state.schedule.filter((s) => s.id !== id);
-      persist();
-      onRefresh?.();
+      openDelete();
       return;
     }
 
@@ -3546,10 +3557,16 @@ function workFeedRowHtml(s, admin) {
 
   return `
     <div class="swipe-row has-edit-handle has-delete-handle ${canManage ? "can-manage" : "no-manage"}" data-schedule-id="${escapeAttr(s.id)}">
+      <div class="swipe-action swipe-action-edit" aria-hidden="true">
+        <span class="swipe-action-main">수정하기</span>
+      </div>
+      <div class="swipe-action swipe-action-delete" aria-hidden="true">
+        <span class="swipe-action-main"><span aria-hidden="true">🗑</span> 삭제</span>
+      </div>
       <div class="swipe-front">
-        <button type="button" class="swipe-handle swipe-handle-edit" data-edit="${s.id}" title="오른쪽으로 밀어 수정" aria-label="수정">
-          <span class="swipe-handle-arrow" aria-hidden="true">›</span>
-          <span class="swipe-handle-label">수정</span>
+        <button type="button" class="swipe-edge swipe-edge-edit" data-edit="${s.id}" title="오른쪽으로 밀어 수정" aria-label="수정">
+          <span class="swipe-edge-arrow" aria-hidden="true">›</span>
+          <span class="swipe-edge-label">수정</span>
         </button>
         <article class="task-row tone-${statusTone}" data-open-upload="${escapeAttr(s.id)}" role="button" tabindex="0">
           <span class="origin-stack">
@@ -3560,7 +3577,8 @@ function workFeedRowHtml(s, admin) {
             <p class="task-title">
               ${escapeHtml(s.title)}
               <span class="kind-tag dept-tag">${escapeHtml(typeLabel(s.type))}</span>
-              ${s.createdBy ? `<span class="kind-tag owner-tag">${escapeHtml(s.createdBy)}</span>` : ""}
+              ${s.dept ? `<span class="kind-tag dept-tag">${escapeHtml(s.dept)}</span>` : ""}
+              ${s.createdBy || s.owner ? `<span class="kind-tag owner-tag">${escapeHtml(s.owner || s.createdBy)}</span>` : ""}
               <span class="kind-tag work-kind">${escapeHtml(scheduleStatusLabel(s.status))}</span>
               ${
                 urgency === "check"
@@ -3588,9 +3606,9 @@ function workFeedRowHtml(s, admin) {
               .join("")}
           </select>
         </article>
-        <button type="button" class="swipe-handle swipe-handle-delete" data-del="${s.id}" title="왼쪽으로 밀어 삭제" aria-label="삭제">
-          <span class="swipe-handle-arrow" aria-hidden="true">‹</span>
-          <span class="swipe-handle-label">삭제</span>
+        <button type="button" class="swipe-edge swipe-edge-delete" data-del="${s.id}" title="왼쪽으로 밀어 삭제" aria-label="삭제">
+          <span class="swipe-edge-arrow" aria-hidden="true">‹</span>
+          <span class="swipe-edge-label">삭제</span>
         </button>
       </div>
     </div>`;
@@ -9135,7 +9153,7 @@ function openScheduleModal(id) {
   syncCollabInputs();
 
   $("#scheduleModalDelete")?.addEventListener("click", () => {
-    if (!item || !confirm("이 일정을 삭제할까요?")) return;
+    if (!item || !confirm("삭제하시겠습니까?")) return;
     state.schedule = state.schedule.filter((s) => s.id !== item.id);
     closeModal();
     persist();
