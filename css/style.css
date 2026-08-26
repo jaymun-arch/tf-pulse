@@ -8400,3 +8400,102 @@ body.view-home .page-hero {
     grid-column: 1 / -1;
   }
 }
+
+.budget-card-list {
+  display: flex;
+  flex-direction: column;
+  gap: 4px;
+  margin-top: 4px;
+}
+.budget-item-card {
+  display: grid;
+  grid-template-columns: auto minmax(0, 1fr) auto auto auto;
+  align-items: center;
+  gap: 8px 10px;
+  border: 1px solid var(--line);
+  border-radius: 10px;
+  background: #fff;
+  padding: 8px 10px;
+  min-height: 0;
+}
+.budget-item-card.is-clickable {
+  cursor: pointer;
+  transition: border-color 0.15s ease, background 0.15s ease;
+}
+.budget-item-card.is-clickable:hover {
+  border-color: rgba(10, 126, 164, 0.35);
+  background: #f7fbfd;
+}
+.budget-item-card.is-clickable:focus-visible {
+  outline: 2px solid rgba(10, 126, 164, 0.45);
+  outline-offset: 1px;
+}
+.budget-item-card.is-todo {
+  border-color: rgba(255, 149, 0, 0.3);
+  background: #fffaf3;
+}
+.budget-item-card.is-done {
+  background: #fff;
+}
+.budget-item-kicker {
+  font-size: 0.72rem;
+  font-weight: 700;
+  color: var(--accent);
+  white-space: nowrap;
+}
+.budget-item-main {
+  min-width: 0;
+  display: flex;
+  flex-direction: column;
+  gap: 1px;
+}
+.budget-item-title {
+  margin: 0;
+  font-size: 0.88rem;
+  font-weight: 750;
+  letter-spacing: -0.015em;
+  line-height: 1.25;
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+.budget-item-meta {
+  margin: 0;
+  font-size: 0.68rem;
+  line-height: 1.25;
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+.budget-item-amount {
+  font-size: 0.82rem;
+  font-weight: 800;
+  white-space: nowrap;
+  letter-spacing: -0.02em;
+}
+.budget-item-who {
+  font-size: 0.72rem;
+  white-space: nowrap;
+}
+.budget-item-card .badge {
+  font-size: 0.65rem;
+  padding: 2px 7px;
+}
+.budget-item-grid,
+.budget-item-calc,
+.budget-item-top {
+  display: none;
+}
+@media (max-width: 720px) {
+  .budget-item-card {
+    grid-template-columns: auto minmax(0, 1fr) auto;
+    grid-template-areas:
+      "kicker main badge"
+      "kicker amount who";
+  }
+  .budget-item-kicker { grid-area: kicker; align-self: start; }
+  .budget-item-main { grid-area: main; }
+  .budget-item-amount { grid-area: amount; justify-self: start; }
+  .budget-item-who { grid-area: who; justify-self: end; }
+  .budget-item-card .badge { grid-area: badge; }
+}

@@ -4286,29 +4286,16 @@ function renderBudget() {
                     const filled = Boolean(calcPreview);
                     return `
                     <article class="budget-item-card ${filled ? "is-done" : "is-todo"} ${canEdit || manage ? "is-clickable" : ""}" data-budget-open="${escapeAttr(item.id)}" role="button" tabindex="0">
-                      <div class="budget-item-top">
-                        <div>
-                          <span class="budget-item-kicker">${escapeHtml(item.no ? `${item.no} · ` : "")}${escapeHtml(item.expenseType || "비목 미정")}</span>
-                          <h3 class="budget-item-title">${escapeHtml(item.activity || item.title || "항목")}</h3>
-                          <p class="budget-item-meta muted">${escapeHtml(item.area || "-")} · ${escapeHtml(item.content || "세부내용 없음")}</p>
-                        </div>
-                        <span class="badge ${filled ? "ok" : "pending"}">${filled ? "완료" : "미입력"}</span>
+                      <span class="budget-item-kicker">${escapeHtml(item.no ? `${item.no}. ` : "")}${escapeHtml(item.expenseType || "비목")}</span>
+                      <div class="budget-item-main">
+                        <strong class="budget-item-title">${escapeHtml(item.activity || item.title || "항목")}</strong>
+                        <span class="budget-item-meta muted">${escapeHtml(item.area || "-")}${
+                          calcPreview ? ` · ${escapeHtml(String(calcPreview).slice(0, 42))}` : ""
+                        }</span>
                       </div>
-                      <div class="budget-item-grid">
-                        <div><span class="muted">금액</span><strong>${formatWon(amount)}</strong></div>
-                        <div><span class="muted">담당</span><strong>${escapeHtml(assignee?.name || "미지정")}</strong></div>
-                        <div><span class="muted">부서</span><strong>${escapeHtml(item.workDept || item.dept || "-")}</strong></div>
-                        ${
-                          mode === "result"
-                            ? `<div><span class="muted">편성(참고)</span><strong class="muted">${formatWon(item.planned)}</strong></div>`
-                            : ""
-                        }
-                      </div>
-                      ${
-                        filled
-                          ? `<p class="budget-item-calc">${escapeHtml(calcPreview)}</p>`
-                          : `<p class="budget-item-calc muted">산출내역을 입력해 주세요.</p>`
-                      }
+                      <span class="budget-item-amount">${formatWon(amount)}</span>
+                      <span class="budget-item-who muted">${escapeHtml(assignee?.name || "미지정")}</span>
+                      <span class="badge ${filled ? "ok" : "pending"}">${filled ? "완료" : "미입력"}</span>
                     </article>`;
                   })
                   .join("")
