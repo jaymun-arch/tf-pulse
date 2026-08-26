@@ -3,13 +3,63 @@
  */
 
 export const TF_MILESTONES = [
-  { id: "kickoff", label: "TF 킥오프", short: "킥오프" },
-  { id: "round1", label: "1차 원고수합", short: "1차" },
-  { id: "round2", label: "2차 원고취합", short: "2차" },
-  { id: "budget", label: "예산확정", short: "예산" },
-  { id: "kpi", label: "성과지표 확정", short: "성과" },
-  { id: "final", label: "최종 통합", short: "최종" },
+  {
+    id: "kickoff",
+    label: "TF 킥오프",
+    short: "킥오프",
+    date: "2026-07-15",
+    tip: "역할·일정·서식 공유. TF 운영 시작점입니다.",
+  },
+  {
+    id: "round1",
+    label: "1차 원고수합",
+    short: "1차",
+    date: "2026-08-20",
+    tip: "초안 목차·분량 확정. 파트별 1차 원고를 취합합니다.",
+  },
+  {
+    id: "round2",
+    label: "2차 원고취합",
+    short: "2차",
+    date: "2026-09-05",
+    tip: "본문 초안 취합. 중복·누락을 정리합니다.",
+  },
+  {
+    id: "budget",
+    label: "예산확정",
+    short: "예산",
+    date: "2026-09-12",
+    tip: "총 50억 편성안을 확정하고 산출근거를 마감합니다.",
+  },
+  {
+    id: "kpi",
+    label: "성과지표 확정",
+    short: "성과",
+    date: "2026-09-20",
+    tip: "핵심·자율 지표의 목표·실적 수치를 확정합니다.",
+  },
+  {
+    id: "final",
+    label: "최종 제출",
+    short: "최종",
+    date: "2026-09-30",
+    tip: "최종 통합본 제출. 보고서 제출일 오후 4시 기준입니다.",
+  },
 ];
+
+function isoToPct(iso, startIso, endIso) {
+  const t = Date.parse(`${iso}T12:00:00+09:00`);
+  const a = Date.parse(`${startIso}T12:00:00+09:00`);
+  const b = Date.parse(`${endIso}T12:00:00+09:00`);
+  if (!Number.isFinite(t) || !Number.isFinite(a) || !Number.isFinite(b) || b <= a) return 0;
+  return Math.max(0, Math.min(100, ((t - a) / (b - a)) * 100));
+}
+
+function formatMileDate(iso) {
+  if (!iso || iso.length < 10) return "";
+  const [, m, d] = iso.split("-");
+  return `${Number(m)}/${Number(d)}`;
+}
 
 export const DEFAULT_TF_TOPICS = [
   {
@@ -89,6 +139,7 @@ export function computeMilestoneProgress(ctx) {
     budgetDone = false,
     kpiDone = false,
     finalDone = false,
+    summaries = {},
   } = ctx || {};
   const flags = [hasKickoff, round1Done, round2Done, budgetDone, kpiDone, finalDone];
   let done = 0;
@@ -96,38 +147,92 @@ export function computeMilestoneProgress(ctx) {
     if (f) done += 1;
     else break;
   }
+  const startDate = TF_MILESTONES[0].date;
+  const endDate = TF_MILESTONES[TF_MILESTONES.length - 1].date;
+  const points = TF_MILESTONES.map((m, i) => {
+    const state = i < done ? "done" : i === done ? "now" : "todo";
+    return {
+      ...m,
+      index: i,
+      state,
+      left: isoToPct(m.date, startDate, endDate),
+      summary: summaries[m.id] || m.tip || "",
+    };
+  });
+  const nowIso = ctx?.todayIso || new Date().toISOString().slice(0, 10);
+  const timePct = isoToPct(nowIso, startDate, endDate);
+  const stagePct = Math.round((done / TF_MILESTONES.length) * 100);
+  const barPct = Math.max(stagePct, Math.round(timePct * 0.35 + stagePct * 0.65));
+  const runnerLeft =
+    done >= TF_MILESTONES.length
+      ? 100
+      : Math.min(98, Math.max(4, points[Math.min(done, points.length - 1)]?.left ?? barPct));
   return {
     doneCount: done,
     total: TF_MILESTONES.length,
-    pct: Math.round((done / TF_MILESTONES.length) * 100),
+    pct: stagePct,
+    barPct: Math.min(100, barPct),
     currentIndex: Math.min(done, TF_MILESTONES.length - 1),
+    startDate,
+    endDate,
+    points,
+    runnerLeft,
   };
 }
 
 export function marathonTrackHtml(progress, escapeHtml) {
-  const { doneCount, pct, currentIndex } = progress;
-  const runnerLeft = Math.min(96, Math.max(2, (doneCount / TF_MILESTONES.length) * 100));
+  const { doneCount, pct, currentIndex, barPct, points, runnerLeft, startDate, endDate } = progress;
+  const current = points?.[Math.min(currentIndex, (points?.length || 1) - 1)] || TF_MILESTONES[0];
+  const flags = points?.length ? points : TF_MILESTONES.map((m, i) => ({ ...m, state: i < doneCount ? "done" : i === doneCount ? "now" : "todo", left: (i / (TF_MILESTONES.length - 1)) * 100, summary: m.tip }));
   return `
     <section class="marathon-panel" aria-label="TF 일정 진도">
       <div class="marathon-head">
-        <strong>TF 일정 진도</strong>
-        <span>${pct}% · ${escapeHtml(TF_MILESTONES[Math.min(currentIndex, TF_MILESTONES.length - 1)]?.label || "")}</span>
+        <div>
+          <strong>TF 일정 진도</strong>
+          <p class="marathon-span muted">${escapeHtml(formatMileDate(startDate))} → ${escapeHtml(formatMileDate(endDate))} · 전체 일정 대비 위치</p>
+        </div>
+        <span class="marathon-pct">${pct}% · ${escapeHtml(current?.label || "")}</span>
       </div>
       <div class="marathon-track" role="img" aria-label="마라톤 진도 ${pct}%">
-        <div class="marathon-bar"><i style="width:${pct}%"></i></div>
-        <div class="marathon-runner" style="left:${runnerLeft}%">🏃</div>
-        <ol class="marathon-flags">
-          ${TF_MILESTONES.map(
-            (m, i) => `
-            <li class="${i < doneCount ? "is-done" : i === doneCount ? "is-now" : ""}">
-              <span class="marathon-peg"></span>
+        <div class="marathon-rail">
+          <div class="marathon-bar"><i style="width:${Math.min(100, barPct ?? pct)}%"></i></div>
+          <div class="marathon-runner" style="left:${runnerLeft ?? pct}%" title="현재 진도" aria-hidden="true">🏃</div>
+          ${flags
+            .map(
+              (m) => `
+            <button type="button" class="marathon-flag is-${escapeHtml(m.state || "todo")}" style="left:${Number(m.left) || 0}%" data-mile="${escapeAttrSafe(m.id)}" aria-label="${escapeHtml(m.label)} ${escapeHtml(formatMileDate(m.date))}">
+              <span class="marathon-peg" aria-hidden="true"></span>
+              <span class="marathon-flag-date">${escapeHtml(formatMileDate(m.date))}</span>
+              <span class="marathon-flag-short">${escapeHtml(m.short)}</span>
+              <span class="marathon-tip" role="tooltip">
+                <strong>${escapeHtml(m.label)}</strong>
+                <em>${escapeHtml(formatMileDate(m.date))} · ${m.state === "done" ? "완료" : m.state === "now" ? "진행중" : "예정"}</em>
+                <span>${escapeHtml(m.summary || m.tip || "")}</span>
+              </span>
+            </button>`
+            )
+            .join("")}
+        </div>
+        <ol class="marathon-legend">
+          ${flags
+            .map(
+              (m) => `
+            <li class="is-${escapeHtml(m.state || "todo")}">
               <em>${escapeHtml(m.short)}</em>
               <strong>${escapeHtml(m.label)}</strong>
             </li>`
-          ).join("")}
+            )
+            .join("")}
         </ol>
       </div>
     </section>`;
+}
+
+function escapeAttrSafe(str = "") {
+  return String(str)
+    .replaceAll("&", "&amp;")
+    .replaceAll('"', "&quot;")
+    .replaceAll("<", "&lt;");
 }
 
 export function flaticonSearchHtml() {

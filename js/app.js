@@ -20,7 +20,7 @@ import {
   downloadLegoDraftPpt,
 } from "./tf-redesign.js";
 
-const STORAGE_KEY = "tf-ops-data-v14";
+const STORAGE_KEY = "tf-ops-data-v15";
 const USER_KEY = "tf-ops-user-v1";
 const REMIND_KEY = "tf-ops-schedule-remind-v1";
 const TF_TOPIC_KEY = "tf-ops-topic-v1";
@@ -772,15 +772,25 @@ function milestoneProgressFromState() {
     if (!col?.submissions?.length) return false;
     return col.submissions.every((s) => submissionBoardStatus(s).id === "done");
   };
+  const roundSummary = (col, emptyLabel) => {
+    if (!col?.submissions?.length) return emptyLabel;
+    const done = col.submissions.filter((s) => submissionBoardStatus(s).id === "done").length;
+    const wip = col.submissions.filter((s) => submissionBoardStatus(s).id === "wip").length;
+    return `${col.name || "취합"} · 제출 ${done}/${col.submissions.length}${wip ? ` · 작성중 ${wip}` : ""}`;
+  };
   const mode = getBudgetInputMode();
   const budItems = state.budget?.items || [];
   const budgetDone =
     budItems.length > 0 && budItems.every((i) => !!budgetCalcOf(i, mode));
+  const budgetFilled = budItems.filter((i) => !!budgetCalcOf(i, mode)).length;
+  const totalBudget = Number(state.budget?.total) || 0;
   const kpis = state.kpis || [];
   const kpiDone =
     kpis.length > 0 &&
     kpis.every((k) => Number(k.target) > 0 && Number(k.actual) >= Number(k.target) * 0.8);
+  const kpiHit = kpis.filter((k) => Number(k.target) > 0 && Number(k.actual) >= Number(k.target) * 0.8).length;
   const finalDone = roundDone(cols.find((c) => c.round >= 3)) || false;
+  const todayIso = typeof today === "function" ? today() : new Date().toISOString().slice(0, 10);
   return computeMilestoneProgress({
     hasKickoff: true,
     round1Done: roundDone(r1),
@@ -788,6 +798,15 @@ function milestoneProgressFromState() {
     budgetDone,
     kpiDone,
     finalDone,
+    todayIso,
+    summaries: {
+      kickoff: "역할·일정·서식 공유 완료",
+      round1: roundSummary(r1, "1차 취합 대기"),
+      round2: roundSummary(r2, "2차 취합 대기"),
+      budget: `총 ${totalBudget ? `${Math.round(totalBudget / 1e8)}억` : "—"} · 산출근거 ${budgetFilled}/${budItems.length}`,
+      kpi: `지표 ${kpiHit}/${kpis.length} 목표 80% 이상`,
+      final: finalDone ? "최종 통합 제출 완료" : "최종 제출일 9/30 오후 4시",
+    },
   });
 }
 
@@ -2430,7 +2449,6 @@ function renderDashboard() {
   const dayItems = selected
     ? eventsOnDate(selected).filter((s) => (s.status || "") !== "완료")
     : [];
-  const progress = buildHomeProgressItems();
   const mile = milestoneProgressFromState();
 
   el.innerHTML = `
@@ -2441,7 +2459,7 @@ function renderDashboard() {
       </div>
       <aside class="yeonu-hero-aside report-deadline" aria-live="polite">
         <p class="deadline-label">보고서 제출일시</p>
-        <p class="deadline-when">2026년 8월 3일 오후 4시</p>
+        <p class="deadline-when">2026년 9월 30일 오후 4시</p>
         <p class="deadline-remain">
           잔여
           <strong id="homeDeadlineRemain">—</strong>
@@ -2449,7 +2467,7 @@ function renderDashboard() {
       </aside>
     </section>
 
-    ${homeStatusStripHtml(progress)}
+    ${marathonTrackHtml(mile, escapeHtml)}
 
     <div class="urgency-strip home-urgency" aria-label="마감 요약">
       <button type="button" class="urgency-pill critical" data-goto="my-work"><strong>${counts.urgent}</strong><span>긴급</span></button>
@@ -2493,8 +2511,6 @@ function renderDashboard() {
       </div>
       ${buildHeatCalendarHtml(cursor, { mode, selectedIso: selected, bandFilter: null })}
     </section>
-
-    ${marathonTrackHtml(mile, escapeHtml)}
 
     ${
       dayItems.length
@@ -9318,7 +9334,7 @@ async function resetSample() {
 
 /* ---------- Boot ---------- */
 
-const REPORT_DEADLINE = new Date("2026-08-03T16:00:00+09:00");
+const REPORT_DEADLINE = new Date("2026-09-30T16:00:00+09:00");
 let deadlineTimer = null;
 
 function formatDeadlineRemain(ms) {

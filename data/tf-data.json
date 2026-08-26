@@ -4,7 +4,8 @@
     "reportTitle": "2026학년도 교육혁신 성과보고서",
     "totalTargetPages": 80,
     "adminName": "권도희",
-    "updatedAt": "2026-07-13T09:00:00"
+    "reportDeadline": "2026-09-30T16:00:00+09:00",
+    "updatedAt": "2026-08-26T15:00:00"
   },
   "members": [
     {
@@ -17,15 +18,15 @@
     {
       "id": "m2",
       "name": "문정환",
-      "role": "admin",
-      "part": "총괄",
+      "role": "member",
+      "part": "현황·향후",
       "contact": ""
     },
     {
       "id": "m3",
       "name": "최겨레",
       "role": "member",
-      "part": "",
+      "part": "추진실적",
       "contact": ""
     },
     {
@@ -92,37 +93,37 @@
       "submissions": [
         {
           "partId": "p1",
-          "pageCount": 6,
+          "pageCount": 8,
           "status": "submitted",
           "submittedAt": "2026-08-18",
-          "memo": ""
+          "memo": "서론 초안 완료"
         },
         {
           "partId": "p2",
-          "pageCount": 10,
+          "pageCount": 12,
           "status": "submitted",
           "submittedAt": "2026-08-19",
           "memo": ""
         },
         {
           "partId": "p3",
-          "pageCount": 0,
-          "status": "pending",
-          "submittedAt": "",
-          "memo": ""
+          "pageCount": 18,
+          "status": "submitted",
+          "submittedAt": "2026-08-20",
+          "memo": "표 일부 보완 예정"
         },
         {
           "partId": "p4",
-          "pageCount": 8,
+          "pageCount": 14,
           "status": "submitted",
           "submittedAt": "2026-08-18",
-          "memo": "도표 보완 예정"
+          "memo": ""
         },
         {
           "partId": "p5",
-          "pageCount": 0,
-          "status": "pending",
-          "submittedAt": "",
+          "pageCount": 8,
+          "status": "submitted",
+          "submittedAt": "2026-08-20",
           "memo": ""
         }
       ]
@@ -130,33 +131,33 @@
     {
       "round": 2,
       "name": "2차 취합",
-      "dueDate": "2026-09-15",
+      "dueDate": "2026-09-05",
       "description": "본문 초안 취합",
       "submissions": [
         {
           "partId": "p1",
-          "pageCount": 0,
-          "status": "pending",
-          "submittedAt": "",
+          "pageCount": 8,
+          "status": "submitted",
+          "submittedAt": "2026-09-01",
           "memo": ""
         },
         {
           "partId": "p2",
-          "pageCount": 0,
-          "status": "pending",
+          "pageCount": 14,
+          "status": "draft",
           "submittedAt": "",
-          "memo": ""
+          "memo": "작성중"
         },
         {
           "partId": "p3",
-          "pageCount": 0,
-          "status": "pending",
+          "pageCount": 20,
+          "status": "draft",
           "submittedAt": "",
-          "memo": ""
+          "memo": "실적 수치 보강중"
         },
         {
           "partId": "p4",
-          "pageCount": 0,
+          "pageCount": 10,
           "status": "pending",
           "submittedAt": "",
           "memo": ""
@@ -172,9 +173,9 @@
     },
     {
       "round": 3,
-      "name": "3차 취합",
-      "dueDate": "2026-10-10",
-      "description": "최종 교정본 취합",
+      "name": "최종 취합",
+      "dueDate": "2026-09-30",
+      "description": "최종 통합본 · 보고서 제출",
       "submissions": [
         {
           "partId": "p1",
@@ -221,7 +222,8 @@
       "date": "2026-07-15",
       "endDate": "2026-07-15",
       "type": "meeting",
-      "createdBy": "문정환",
+      "status": "완료",
+      "createdBy": "권도희",
       "note": "역할·일정·서식 공유"
     },
     {
@@ -230,44 +232,59 @@
       "date": "2026-08-20",
       "endDate": "2026-08-20",
       "type": "deadline",
-      "createdBy": "문정환",
-      "note": "초안 분량 확정"
+      "status": "완료",
+      "createdBy": "권도희",
+      "note": "초안 분량 확정 · 전원 제출"
     },
     {
       "id": "s3",
       "title": "중간 검토회의",
-      "date": "2026-09-01",
-      "endDate": "2026-09-01",
+      "date": "2026-08-27",
+      "endDate": "2026-08-27",
       "type": "meeting",
-      "createdBy": "문정환",
+      "status": "완료",
+      "createdBy": "권도희",
       "note": "중복·누락 점검"
     },
     {
       "id": "s4",
       "title": "2차 취합 마감",
-      "date": "2026-09-15",
-      "endDate": "2026-09-15",
+      "date": "2026-09-05",
+      "endDate": "2026-09-05",
       "type": "deadline",
-      "createdBy": "문정환",
-      "note": ""
+      "status": "진행",
+      "createdBy": "권도희",
+      "note": "본문 초안 취합"
     },
     {
       "id": "s5",
-      "title": "3차 취합 마감",
-      "date": "2026-10-10",
-      "endDate": "2026-10-10",
-      "type": "deadline",
-      "createdBy": "문정환",
-      "note": ""
+      "title": "예산안 확정 회의",
+      "date": "2026-09-12",
+      "endDate": "2026-09-12",
+      "type": "meeting",
+      "status": "준비",
+      "createdBy": "권도희",
+      "note": "총 50억 편성 확정"
     },
     {
       "id": "s6",
-      "title": "최종 제출",
-      "date": "2026-10-31",
-      "endDate": "2026-10-31",
+      "title": "성과지표 확정",
+      "date": "2026-09-20",
+      "endDate": "2026-09-20",
+      "type": "deadline",
+      "status": "준비",
+      "createdBy": "권도희",
+      "note": "핵심·자율 지표 수치 확정"
+    },
+    {
+      "id": "s7",
+      "title": "최종 통합·보고서 제출",
+      "date": "2026-09-30",
+      "endDate": "2026-09-30",
       "type": "milestone",
-      "createdBy": "문정환",
-      "note": "교육청/교육부 제출"
+      "status": "준비",
+      "createdBy": "권도희",
+      "note": "최종 제출일 오후 4시"
     }
   ],
   "driveLinks": [
@@ -290,7 +307,7 @@
       "title": "취합본·버전 이력",
       "url": "https://drive.google.com/drive/folders/example-versions",
       "category": "취합본",
-      "note": "1·2·3차 취합본"
+      "note": "1·2·최종 취합본"
     }
   ],
   "resources": [
@@ -332,119 +349,214 @@
     }
   ],
   "budget": {
-    "total": 0,
-    "note": "",
+    "total": 5000000000,
+    "note": "총 사업비 50억 (테스트 편성)",
     "yearLabel": "1차년도 ('25.3 ~ '26.2)",
+    "inputMode": "plan",
     "expensePlan": [
+      { "name": "인건비", "planned": 800000000 },
+      { "name": "장학금", "planned": 600000000 },
+      { "name": "교육·연구 프로그램 개발·운영비", "planned": 1500000000 },
+      { "name": "교육·연구환경개선비", "planned": 700000000 },
+      { "name": "실험·실습장비 및 기자재 구입·운영비", "planned": 500000000 },
+      { "name": "그 밖의 사업운영경비", "planned": 500000000 },
+      { "name": "간접비", "planned": 400000000 }
+    ],
+    "items": [
       {
-        "name": "인건비",
-        "planned": 0
+        "id": "b1",
+        "no": "1",
+        "area": "1. 전략",
+        "content": "가. 교육혁신전략",
+        "activity": "TF 운영·기획 총괄",
+        "expenseType": "인건비",
+        "dept": "기획처",
+        "workDept": "기획처",
+        "assigneeId": "m4",
+        "planned": 800000000,
+        "spent": 320000000,
+        "calcText": "인건비 8억 (TF·기획 인력)"
       },
       {
-        "name": "장학금",
-        "planned": 0
+        "id": "b2",
+        "no": "2",
+        "area": "2. 고등직업교육",
+        "content": "가. 핵심역량 기반 교육과정 체계혁신",
+        "activity": "교과·비교과 프로그램 운영",
+        "expenseType": "교육·연구 프로그램 개발·운영비",
+        "dept": "교무처",
+        "workDept": "교무처",
+        "assigneeId": "m3",
+        "planned": 1500000000,
+        "spent": 450000000,
+        "calcText": "프로그램 운영비 15억"
       },
       {
-        "name": "교육·연구 프로그램 개발·운영비",
-        "planned": 0
+        "id": "b3",
+        "no": "3",
+        "area": "2. 고등직업교육",
+        "content": "라. 학생상담·진로로드",
+        "activity": "장학금·학습지원",
+        "expenseType": "장학금",
+        "dept": "학생취업처",
+        "workDept": "학생취업처",
+        "assigneeId": "m4",
+        "planned": 600000000,
+        "spent": 210000000,
+        "calcText": "장학금 6억"
       },
       {
-        "name": "교육·연구환경개선비",
-        "planned": 0
+        "id": "b4",
+        "no": "4",
+        "area": "3. 산학지역",
+        "content": "나. 산학공동 직무특화 교육 혁신",
+        "activity": "실습환경·기자재",
+        "expenseType": "실험·실습장비 및 기자재 구입·운영비",
+        "dept": "산학협력처",
+        "workDept": "산학협력처",
+        "assigneeId": "m2",
+        "planned": 500000000,
+        "spent": 0,
+        "calcText": "기자재 5억"
       },
       {
-        "name": "실험·실습장비 및 기자재 구입·운영비",
-        "planned": 0
+        "id": "b5",
+        "no": "5",
+        "area": "4. 자율",
+        "content": "다. 미래역량 기반 교수학습 혁신",
+        "activity": "학습환경 개선",
+        "expenseType": "교육·연구환경개선비",
+        "dept": "교무처",
+        "workDept": "교무처",
+        "assigneeId": "m1",
+        "planned": 700000000,
+        "spent": 180000000,
+        "calcText": "환경개선 7억"
       },
       {
-        "name": "그 밖의 사업운영경비",
-        "planned": 0
+        "id": "b6",
+        "no": "6",
+        "area": "5. 사업관리 및 운영",
+        "content": "다. 재정관리",
+        "activity": "운영경비·간접비",
+        "expenseType": "그 밖의 사업운영경비",
+        "dept": "기획처",
+        "workDept": "기획처",
+        "assigneeId": "m4",
+        "planned": 500000000,
+        "spent": 90000000,
+        "calcText": "운영경비 5억"
       },
       {
-        "name": "간접비",
-        "planned": 0
+        "id": "b7",
+        "no": "7",
+        "area": "5. 사업관리 및 운영",
+        "content": "가. 성과관리",
+        "activity": "간접비",
+        "expenseType": "간접비",
+        "dept": "기획처",
+        "workDept": "기획처",
+        "assigneeId": "m4",
+        "planned": 400000000,
+        "spent": 80000000,
+        "calcText": "간접비 4억"
       }
     ],
-    "items": [],
     "details": []
   },
+  "kpis": [
+    {
+      "id": "k1",
+      "catalogId": "emp-rate",
+      "scope": "core",
+      "name": "재학생 취업률",
+      "baseline": 62,
+      "baselineNote": "전년도 공시 취업률",
+      "formula": "actual / target * 100",
+      "target": 70,
+      "actual": 66.5,
+      "unit": "%"
+    },
+    {
+      "id": "k2",
+      "catalogId": "extra-curr",
+      "scope": "autonomy",
+      "name": "비교과 프로그램 이수자 수",
+      "baseline": 1200,
+      "baselineNote": "전년도 이수 실적",
+      "formula": "actual",
+      "target": 1500,
+      "actual": 980,
+      "unit": "명"
+    },
+    {
+      "id": "k3",
+      "catalogId": "",
+      "scope": "core",
+      "name": "교육만족도",
+      "baseline": 4.1,
+      "baselineNote": "5점 만점",
+      "formula": "actual / target * 100",
+      "target": 4.3,
+      "actual": 4.22,
+      "unit": "점"
+    }
+  ],
   "requests": [
     {
       "id": "req_seed_1",
       "groupId": "g_seed_1",
-      "title": "1차 취합본 드라이브 업로드",
-      "memo": "담당 파트 초안을 공유폴더에 올려 주세요.",
-      "requester": "문정환",
-      "recipient": "권도희",
-      "dueDate": "2026-08-20",
-      "status": "대기",
-      "createdAt": "2026-07-13"
+      "title": "2차 취합본 드라이브 업로드",
+      "memo": "담당 파트 본문 초안을 공유폴더에 올려 주세요.",
+      "requester": "권도희",
+      "recipient": "문정환",
+      "dueDate": "2026-09-05",
+      "status": "진행",
+      "createdAt": "2026-08-21"
     },
     {
       "id": "req_seed_2",
       "groupId": "g_seed_1",
-      "title": "1차 취합본 드라이브 업로드",
-      "memo": "담당 파트 초안을 공유폴더에 올려 주세요.",
-      "requester": "문정환",
-      "recipient": "권도희",
-      "dueDate": "2026-08-20",
-      "status": "대기",
-      "createdAt": "2026-07-13"
+      "title": "2차 취합본 드라이브 업로드",
+      "memo": "담당 파트 본문 초안을 공유폴더에 올려 주세요.",
+      "requester": "권도희",
+      "recipient": "최겨레",
+      "dueDate": "2026-09-05",
+      "status": "진행",
+      "createdAt": "2026-08-21"
     },
     {
       "id": "req_seed_3",
       "groupId": "g_seed_1",
-      "title": "1차 취합본 드라이브 업로드",
-      "memo": "담당 파트 초안을 공유폴더에 올려 주세요.",
-      "requester": "문정환",
-      "recipient": "권도희",
-      "dueDate": "2026-08-20",
+      "title": "2차 취합본 드라이브 업로드",
+      "memo": "담당 파트 본문 초안을 공유폴더에 올려 주세요.",
+      "requester": "권도희",
+      "recipient": "박종진",
+      "dueDate": "2026-09-05",
       "status": "대기",
-      "createdAt": "2026-07-13"
+      "createdAt": "2026-08-21"
     },
     {
       "id": "req_seed_4",
-      "groupId": "g_seed_1",
-      "title": "1차 취합본 드라이브 업로드",
-      "memo": "담당 파트 초안을 공유폴더에 올려 주세요.",
-      "requester": "문정환",
-      "recipient": "권도희",
-      "dueDate": "2026-08-20",
+      "groupId": "g_seed_2",
+      "title": "예산 항목 산출근거 보완",
+      "memo": "50억 편성안 중 미입력 산출근거를 채워 주세요.",
+      "requester": "권도희",
+      "recipient": "박종진",
+      "dueDate": "2026-09-12",
       "status": "대기",
-      "createdAt": "2026-07-13"
+      "createdAt": "2026-08-22"
     },
     {
       "id": "req_seed_5",
-      "groupId": "g_seed_1",
-      "title": "1차 취합본 드라이브 업로드",
-      "memo": "담당 파트 초안을 공유폴더에 올려 주세요.",
-      "requester": "문정환",
-      "recipient": "박종진",
-      "dueDate": "2026-08-20",
+      "groupId": "g_seed_3",
+      "title": "성과지표 실적 수치 입력",
+      "memo": "핵심·자율 지표의 실적값을 업데이트해 주세요.",
+      "requester": "권도희",
+      "recipient": "문정환",
+      "dueDate": "2026-09-20",
       "status": "대기",
-      "createdAt": "2026-07-13"
-    },
-    {
-      "id": "req_seed_6",
-      "groupId": "g_seed_2",
-      "title": "스타일 가이드 확인 후 회신",
-      "memo": "공통 서식 탭의 스타일 가이드를 읽고 확인 완료로 표시해 주세요.",
-      "requester": "문정환",
-      "recipient": "권도희",
-      "dueDate": "2026-07-20",
-      "status": "대기",
-      "createdAt": "2026-07-13"
-    },
-    {
-      "id": "req_seed_7",
-      "groupId": "g_seed_2",
-      "title": "스타일 가이드 확인 후 회신",
-      "memo": "공통 서식 탭의 스타일 가이드를 읽고 확인 완료로 표시해 주세요.",
-      "requester": "문정환",
-      "recipient": "권도희",
-      "dueDate": "2026-07-20",
-      "status": "대기",
-      "createdAt": "2026-07-13"
+      "createdAt": "2026-08-22"
     }
   ]
 }
