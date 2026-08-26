@@ -7358,13 +7358,36 @@ body.view-home .page-hero {
 .marathon-runner {
   position: absolute;
   top: 4px;
+  left: var(--run-from, 2%);
   transform: translateX(-50%);
   font-size: 2.15rem;
   line-height: 1;
   filter: drop-shadow(0 2px 3px rgba(0,0,0,.18));
-  transition: left 0.45s ease;
   z-index: 3;
   pointer-events: none;
+  will-change: left, transform;
+}
+.marathon-runner.is-running {
+  animation:
+    marathon-run-leg var(--run-duration, 4.8s) cubic-bezier(0.4, 0.05, 0.2, 1) infinite,
+    marathon-bob 0.42s ease-in-out infinite;
+}
+@keyframes marathon-run-leg {
+  0% { left: var(--run-from, 2%); }
+  78% { left: var(--run-to, 40%); }
+  90% { left: var(--run-to, 40%); }
+  91% { left: var(--run-from, 2%); }
+  100% { left: var(--run-from, 2%); }
+}
+@keyframes marathon-bob {
+  0%, 100% { transform: translateX(-50%) translateY(0); }
+  50% { transform: translateX(-50%) translateY(-3px); }
+}
+@media (prefers-reduced-motion: reduce) {
+  .marathon-runner.is-running {
+    animation: none;
+    left: var(--run-to, 40%);
+  }
 }
 .marathon-flag {
   position: absolute;

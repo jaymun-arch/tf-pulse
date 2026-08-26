@@ -163,10 +163,9 @@ export function computeMilestoneProgress(ctx) {
   const timePct = isoToPct(nowIso, startDate, endDate);
   const stagePct = Math.round((done / TF_MILESTONES.length) * 100);
   const barPct = Math.max(stagePct, Math.round(timePct * 0.35 + stagePct * 0.65));
-  const runnerLeft =
-    done >= TF_MILESTONES.length
-      ? 100
-      : Math.min(98, Math.max(4, points[Math.min(done, points.length - 1)]?.left ?? barPct));
+  // 오늘 날짜 위치(출발~최종 대비). 애니메이션은 출발→오늘 구간을 반복.
+  const todayPct = Math.min(96, Math.max(4, timePct || 4));
+  const runnerLeft = todayPct;
   return {
     doneCount: done,
     total: TF_MILESTONES.length,
@@ -177,13 +176,23 @@ export function computeMilestoneProgress(ctx) {
     endDate,
     points,
     runnerLeft,
+    todayPct,
   };
 }
 
 export function marathonTrackHtml(progress, escapeHtml) {
-  const { doneCount, pct, currentIndex, barPct, points, runnerLeft, startDate, endDate } = progress;
+  const { doneCount, pct, currentIndex, barPct, points, todayPct, startDate, endDate } = progress;
   const current = points?.[Math.min(currentIndex, (points?.length || 1) - 1)] || TF_MILESTONES[0];
-  const flags = points?.length ? points : TF_MILESTONES.map((m, i) => ({ ...m, state: i < doneCount ? "done" : i === doneCount ? "now" : "todo", left: (i / (TF_MILESTONES.length - 1)) * 100, summary: m.tip }));
+  const flags = points?.length
+    ? points
+    : TF_MILESTONES.map((m, i) => ({
+        ...m,
+        state: i < doneCount ? "done" : i === doneCount ? "now" : "todo",
+        left: (i / (TF_MILESTONES.length - 1)) * 100,
+        summary: m.tip,
+      }));
+  const runTo = Number(todayPct ?? progress.runnerLeft ?? pct) || 4;
+  const durationSec = Math.max(3.2, Math.min(7.5, 2.4 + runTo / 18));
   return `
     <section class="marathon-panel" aria-label="TF 일정 진도">
       <div class="marathon-head">
@@ -193,10 +202,15 @@ export function marathonTrackHtml(progress, escapeHtml) {
         </div>
         <span class="marathon-pct">${pct}% · ${escapeHtml(current?.label || "")}</span>
       </div>
-      <div class="marathon-track" role="img" aria-label="마라톤 진도 ${pct}%">
+      <div class="marathon-track" role="img" aria-label="마라톤 진도 ${pct}% · 오늘 위치까지 반복 질주">
         <div class="marathon-rail">
           <div class="marathon-bar"><i style="width:${Math.min(100, barPct ?? pct)}%"></i></div>
-          <div class="marathon-runner" style="left:${runnerLeft ?? pct}%" title="현재 진도" aria-hidden="true">🏃</div>
+          <div
+            class="marathon-runner is-running"
+            style="--run-from:2%;--run-to:${runTo}%;--run-duration:${durationSec}s"
+            title="출발 → 오늘 위치 반복"
+            aria-hidden="true"
+          >🏃</div>
           ${flags
             .map(
               (m) => `
