@@ -7654,6 +7654,45 @@ body.view-home .page-hero {
 }
 
 .mywork-page { display: grid; gap: 12px; }
+.work-filter-block {
+  display: grid;
+  gap: 6px;
+  margin: 10px 0 8px;
+}
+.work-filter-label {
+  font-size: 0.72rem;
+  font-weight: 750;
+  color: var(--ink-soft);
+}
+.work-filter-chips {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 6px;
+}
+.work-filter-chip {
+  border: 1px solid var(--line);
+  background: #fff;
+  color: var(--ink);
+  border-radius: 999px;
+  padding: 6px 11px;
+  font-size: 0.72rem;
+  font-weight: 650;
+  cursor: pointer;
+}
+.work-filter-chip.is-on {
+  background: #1f6feb;
+  border-color: transparent;
+  color: #fff;
+}
+.work-group-block { margin-top: 12px; }
+.origin-tag.offered {
+  background: rgba(88, 86, 214, 0.12);
+  color: #5856d6;
+}
+.origin-tag.requested {
+  background: rgba(0, 113, 227, 0.12);
+  color: #0071e3;
+}
 .request-admin-page { display: grid; gap: 12px; }
 .request-process-grid {
   display: grid;

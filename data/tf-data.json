@@ -222,8 +222,11 @@
       "date": "2026-07-15",
       "endDate": "2026-07-15",
       "type": "meeting",
+      "workGroup": "forms",
       "status": "완료",
       "createdBy": "권도희",
+      "owner": "권도희",
+      "assignees": ["문정환", "최겨레", "박종진"],
       "note": "역할·일정·서식 공유"
     },
     {
@@ -232,8 +235,11 @@
       "date": "2026-08-20",
       "endDate": "2026-08-20",
       "type": "deadline",
+      "workGroup": "collect",
       "status": "완료",
       "createdBy": "권도희",
+      "owner": "권도희",
+      "assignees": ["문정환", "최겨레", "박종진"],
       "note": "초안 분량 확정 · 전원 제출"
     },
     {
@@ -242,8 +248,11 @@
       "date": "2026-08-27",
       "endDate": "2026-08-27",
       "type": "meeting",
+      "workGroup": "review",
       "status": "완료",
       "createdBy": "권도희",
+      "owner": "권도희",
+      "assignees": ["문정환", "최겨레"],
       "note": "중복·누락 점검"
     },
     {
@@ -252,8 +261,11 @@
       "date": "2026-09-05",
       "endDate": "2026-09-05",
       "type": "deadline",
+      "workGroup": "collect",
       "status": "진행",
       "createdBy": "권도희",
+      "owner": "권도희",
+      "assignees": ["문정환", "최겨레", "박종진"],
       "note": "본문 초안 취합"
     },
     {
@@ -262,8 +274,11 @@
       "date": "2026-09-12",
       "endDate": "2026-09-12",
       "type": "meeting",
+      "workGroup": "budget",
       "status": "준비",
       "createdBy": "권도희",
+      "owner": "권도희",
+      "assignees": ["박종진", "문정환"],
       "note": "총 50억 편성 확정"
     },
     {
@@ -272,8 +287,11 @@
       "date": "2026-09-20",
       "endDate": "2026-09-20",
       "type": "deadline",
+      "workGroup": "kpi",
       "status": "준비",
       "createdBy": "권도희",
+      "owner": "권도희",
+      "assignees": ["문정환", "최겨레"],
       "note": "핵심·자율 지표 수치 확정"
     },
     {
@@ -282,8 +300,11 @@
       "date": "2026-09-30",
       "endDate": "2026-09-30",
       "type": "milestone",
+      "workGroup": "collect",
       "status": "준비",
       "createdBy": "권도희",
+      "owner": "권도희",
+      "assignees": ["문정환", "최겨레", "박종진"],
       "note": "최종 제출일 오후 4시"
     }
   ],

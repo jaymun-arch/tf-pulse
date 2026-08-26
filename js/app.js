@@ -20,7 +20,7 @@ import {
   downloadLegoDraftPpt,
 } from "./tf-redesign.js";
 
-const STORAGE_KEY = "tf-ops-data-v15";
+const STORAGE_KEY = "tf-ops-data-v16";
 const USER_KEY = "tf-ops-user-v1";
 const REMIND_KEY = "tf-ops-schedule-remind-v1";
 const TF_TOPIC_KEY = "tf-ops-topic-v1";
@@ -3312,14 +3312,55 @@ function scheduleByMonth(items) {
   return byMonth;
 }
 
+function scheduleByGroup(items) {
+  const map = {};
+  SCHEDULE_GROUP_OPTIONS.forEach((g) => {
+    map[g.id] = [];
+  });
+  items.forEach((s) => {
+    const gid = scheduleGroupOf(s);
+    if (!map[gid]) map[gid] = [];
+    map[gid].push(s);
+  });
+  return map;
+}
+
 function scheduleFeedPanelHtml(who, admin, items) {
-  const byMonth = scheduleByMonth(items);
+  const groupFilter = state._myWorkGroup || "all";
+  const collabFilter = state._myWorkCollab || "all";
+  const withOrigin = items.map((s) => ({ s, origin: scheduleOriginOf(s, who) }));
+  const afterCollab =
+    collabFilter === "sent"
+      ? withOrigin.filter((x) => x.origin.kind === "sent")
+      : collabFilter === "received"
+        ? withOrigin.filter((x) => x.origin.kind === "received")
+        : withOrigin;
+  const filteredItems = afterCollab
+    .map((x) => x.s)
+    .filter((s) => (groupFilter === "all" ? true : scheduleGroupOf(s) === groupFilter));
+
+  const groupCounts = { all: items.length };
+  SCHEDULE_GROUP_OPTIONS.forEach((g) => {
+    groupCounts[g.id] = items.filter((s) => scheduleGroupOf(s) === g.id).length;
+  });
+  const collabCounts = {
+    all: items.length,
+    sent: items.filter((s) => scheduleOriginOf(s, who).kind === "sent").length,
+    received: items.filter((s) => scheduleOriginOf(s, who).kind === "received").length,
+  };
+
+  const byGroup = scheduleByGroup(filteredItems);
+  const sections =
+    groupFilter === "all"
+      ? SCHEDULE_GROUP_OPTIONS.filter((g) => (byGroup[g.id] || []).length)
+      : SCHEDULE_GROUP_OPTIONS.filter((g) => g.id === groupFilter);
+
   return `
     <section class="panel work-feed-panel mywork-schedule-panel">
       <div class="panel-head">
         <div>
           <h2 class="panel-title">${escapeHtml(who)}님에게 보이는 일정입니다.</h2>
-          <p class="muted" style="margin:4px 0 0">일정을 누르면 보고서 업로드로 이동합니다. 수정·삭제는 관리자(또는 본인 등록분)만 가능합니다.</p>
+          <p class="muted" style="margin:4px 0 0">내가 요청·요청받은 업무만 모입니다. 수정·삭제는 관리자(또는 본인 등록분)만 가능합니다.</p>
         </div>
         ${
           admin
@@ -3327,20 +3368,44 @@ function scheduleFeedPanelHtml(who, admin, items) {
             : ""
         }
       </div>
+
+      <div class="work-filter-block" aria-label="상위 그룹">
+        <div class="work-filter-chips">
+          <button type="button" class="work-filter-chip ${groupFilter === "all" ? "is-on" : ""}" data-work-group="all">전체 ${groupCounts.all}</button>
+          ${SCHEDULE_GROUP_OPTIONS.map(
+            (g) =>
+              `<button type="button" class="work-filter-chip ${groupFilter === g.id ? "is-on" : ""}" data-work-group="${escapeAttr(g.id)}">${escapeHtml(g.label)} ${groupCounts[g.id] || 0}</button>`
+          ).join("")}
+        </div>
+      </div>
+
+      <div class="work-filter-block" aria-label="협업 구분">
+        <span class="work-filter-label">협업구분</span>
+        <div class="work-filter-chips">
+          <button type="button" class="work-filter-chip ${collabFilter === "all" ? "is-on" : ""}" data-work-collab="all">전체 ${collabCounts.all}</button>
+          <button type="button" class="work-filter-chip ${collabFilter === "sent" ? "is-on" : ""}" data-work-collab="sent">내가 요청 ${collabCounts.sent}</button>
+          <button type="button" class="work-filter-chip ${collabFilter === "received" ? "is-on" : ""}" data-work-collab="received">요청받음 ${collabCounts.received}</button>
+        </div>
+      </div>
+
       ${
-        Object.keys(byMonth).length
-          ? Object.keys(byMonth)
-              .sort()
-              .map((ym) => {
-                const [y, m] = ym.split("-");
+        filteredItems.length
+          ? sections
+              .map((g) => {
+                const rows = byGroup[g.id] || [];
+                if (!rows.length && groupFilter === "all") return "";
                 return `
-                <div class="work-month-block">
-                  <h3 class="work-month-title">${Number(y)}년 ${Number(m)}월</h3>
-                  <div class="work-feed">${byMonth[ym].map((s) => workFeedRowHtml(s, admin)).join("")}</div>
+                <div class="work-group-block">
+                  <h3 class="work-month-title">${escapeHtml(g.label)} <span class="muted">${rows.length}</span></h3>
+                  <div class="work-feed">${
+                    rows.length
+                      ? rows.map((s) => workFeedRowHtml(s, admin)).join("")
+                      : `<div class="empty">해당 그룹 일정이 없습니다.</div>`
+                  }</div>
                 </div>`;
               })
               .join("")
-          : `<div class="empty">등록된 일정이 없습니다. ${admin ? "연필 버튼으로 주요 업무를 추가하세요." : ""}</div>`
+          : `<div class="empty">표시할 일정이 없습니다. ${admin ? "연필 버튼으로 주요 업무를 추가하세요." : ""}</div>`
       }
     </section>`;
 }
@@ -3352,6 +3417,19 @@ function bindScheduleFeedActions(root, onRefresh) {
       return;
     }
     openScheduleModal();
+  });
+
+  root.querySelectorAll("[data-work-group]").forEach((btn) => {
+    btn.addEventListener("click", () => {
+      state._myWorkGroup = btn.dataset.workGroup || "all";
+      onRefresh?.();
+    });
+  });
+  root.querySelectorAll("[data-work-collab]").forEach((btn) => {
+    btn.addEventListener("click", () => {
+      state._myWorkCollab = btn.dataset.workCollab || "all";
+      onRefresh?.();
+    });
   });
 
   root.querySelectorAll("[data-edit]").forEach((btn) =>
@@ -3537,14 +3615,7 @@ function workFeedRowHtml(s, admin) {
           : bucket === "month"
             ? "이번달까지"
             : "";
-  const origin =
-    s.createdBy === sessionUser
-      ? { tag: scheduleAssigneesOf(s).length ? "요청함" : "나혼자", tone: scheduleAssigneesOf(s).length ? "offered" : "solo", from: "" }
-      : scheduleAssigneesOf(s).includes(sessionUser)
-        ? { tag: "요청받음", tone: "requested", from: s.createdBy ? `${s.createdBy}으로부터` : "" }
-        : s.createdBy
-          ? { tag: "요청받음", tone: "requested", from: `${s.createdBy}으로부터` }
-          : { tag: "나혼자", tone: "solo", from: "" };
+  const origin = scheduleOriginOf(s, sessionUser);
   const people = scheduleAssigneesOf(s);
   const metaBits = [
     glowLabel || dueWindow || "일정",
@@ -3576,6 +3647,7 @@ function workFeedRowHtml(s, admin) {
           <div class="task-row-main">
             <p class="task-title">
               ${escapeHtml(s.title)}
+              <span class="kind-tag dept-tag">${escapeHtml(scheduleGroupLabel(scheduleGroupOf(s)))}</span>
               <span class="kind-tag dept-tag">${escapeHtml(typeLabel(s.type))}</span>
               ${s.dept ? `<span class="kind-tag dept-tag">${escapeHtml(s.dept)}</span>` : ""}
               ${s.createdBy || s.owner ? `<span class="kind-tag owner-tag">${escapeHtml(s.owner || s.createdBy)}</span>` : ""}
@@ -4242,6 +4314,17 @@ const SCHEDULE_TYPE_OPTIONS = [
   { value: "other", label: "기타" },
 ];
 
+/** 내업무 상위 그룹 */
+const SCHEDULE_GROUP_OPTIONS = [
+  { id: "forms", label: "서식 및 지침확인" },
+  { id: "collect", label: "보고서 취합" },
+  { id: "review", label: "리뷰회의" },
+  { id: "kpi", label: "성과지표관리" },
+  { id: "budget", label: "예산관리" },
+  { id: "committee", label: "위원회" },
+  { id: "other", label: "기타" },
+];
+
 const SCHEDULE_PROJECT_OPTIONS = [
   "2026 교육혁신 성과보고서",
   "운영계획",
@@ -4262,6 +4345,41 @@ const SCHEDULE_DIVISION_OPTIONS = [
   "성과지표",
   "공통",
 ];
+
+function scheduleGroupMeta(id) {
+  return SCHEDULE_GROUP_OPTIONS.find((g) => g.id === id) || SCHEDULE_GROUP_OPTIONS[SCHEDULE_GROUP_OPTIONS.length - 1];
+}
+
+function scheduleGroupOf(s) {
+  const raw = String(s?.workGroup || s?.group || "").trim();
+  if (SCHEDULE_GROUP_OPTIONS.some((g) => g.id === raw)) return raw;
+  const blob = `${s?.title || ""} ${s?.project || ""} ${s?.division || ""} ${s?.type || ""} ${s?.note || ""} ${s?.goal || ""}`.toLowerCase();
+  if (/서식|지침|스타일|가이드/.test(blob)) return "forms";
+  if (/취합|원고|제출|업로드/.test(blob) || s?.type === "submit" || s?.type === "deadline") return "collect";
+  if (/리뷰|윤독|회의/.test(blob) || s?.type === "meeting") return "review";
+  if (/성과|지표|kpi/.test(blob)) return "kpi";
+  if (/예산|편성|비목/.test(blob)) return "budget";
+  if (/위원회|위원/.test(blob)) return "committee";
+  return "other";
+}
+
+function scheduleGroupLabel(id) {
+  return scheduleGroupMeta(id).label;
+}
+
+/** 협업 구분: 내가 요청 | 요청받음 만 */
+function scheduleOriginOf(s, who = sessionUser) {
+  const owner = s?.owner || s?.createdBy || "";
+  if (owner && owner === who) {
+    return { tag: "내가 요청", tone: "offered", kind: "sent", from: "" };
+  }
+  return {
+    tag: "요청받음",
+    tone: "requested",
+    kind: "received",
+    from: owner ? `${owner}으로부터` : "",
+  };
+}
 
 function scheduleDeptOptions() {
   const set = new Set([...(BUDGET_CATALOG.depts || []), ...(BUDGET_CATALOG.workDepts || [])]);
@@ -8910,6 +9028,7 @@ function openScheduleModal(id) {
   const noneSelected = selectedAssignees.size === 0;
   const allSelected = !noneSelected && members.length > 0 && members.every((m) => selectedAssignees.has(m.name));
   const currentType = normalizeScheduleType(item?.type || "meeting");
+  const currentGroup = scheduleGroupOf(item || { type: currentType });
   const ownerName = item?.owner || item?.createdBy || currentUserName();
   const deptOpts = scheduleDeptOptions();
   const projectOpts = [
@@ -8935,6 +9054,15 @@ function openScheduleModal(id) {
         <label class="wp-field">
           <span class="wp-label">업무명</span>
           <input name="title" class="wp-input" required value="${escapeAttr(item?.title || "")}" placeholder="예: AID 예산 수정 및 담당자 지정" />
+        </label>
+        <label class="wp-field">
+          <span class="wp-label">상위 그룹</span>
+          <select name="workGroup" class="wp-input wp-select" required>
+            ${SCHEDULE_GROUP_OPTIONS.map(
+              (g) =>
+                `<option value="${escapeAttr(g.id)}" ${currentGroup === g.id ? "selected" : ""}>${escapeHtml(g.label)}</option>`
+            ).join("")}
+          </select>
         </label>
 
         <div class="wp-grid-2">
@@ -9085,6 +9213,7 @@ function openScheduleModal(id) {
         title: fd.get("title").trim(),
         owner,
         createdBy: owner,
+        workGroup: scheduleGroupOf({ workGroup: fd.get("workGroup"), title: fd.get("title"), type: fd.get("type") }),
         dept: (fd.get("dept") || "").toString().trim(),
         project: (fd.get("project") || "").toString().trim(),
         status: fd.get("status") || "준비",
