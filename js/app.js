@@ -2440,19 +2440,13 @@ function renderDashboard() {
     ? eventsOnDate(selected).filter((s) => (s.status || "") !== "완료")
     : [];
   const progress = buildHomeProgressItems();
-  const tfLabel = state.meta?.reportTitle || state.meta?.tfName || "2026 교육혁신 성과보고서 TF";
-  const topic = activeTfTopic();
   const mile = milestoneProgressFromState();
 
   el.innerHTML = `
-    <section class="yeonu-hero yeonu-hero-unified" aria-label="TF 요약">
-      <div class="yeonu-hero-visual">
-        <img src="assets/yeonuhue-hero.png" alt="연어회 일러스트" width="1280" height="720" />
-      </div>
-      <div class="yeonu-hero-copy">
-        <p class="yeonu-kicker">${escapeHtml(topic?.name || tfLabel)}</p>
-        <h1 class="yeonu-title">연어회<span class="yeonu-hanja">(硏語會)</span></h1>
-        <p class="yeonu-story">연<span>(硏)</span>성의 말<span>(語)</span>이 모이면<span>(會)</span> 못 이룰것이 없다.</p>
+    <section class="yeonu-hero yeonu-hero-simple" aria-label="TF 요약">
+      <div class="yeonu-hero-brand">
+        <img class="yeonu-hero-mark" src="assets/yeonuhue-login.png" alt="연어회" width="48" height="48" />
+        <p class="yeonu-tagline">연어회(硏語會) · 연(硏)성의 말(語)이 모이면(會) 못 이룰것이 없다.</p>
       </div>
       <aside class="yeonu-hero-aside report-deadline" aria-live="polite">
         <p class="deadline-label">보고서 제출일시</p>
