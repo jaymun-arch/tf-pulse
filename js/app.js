@@ -968,6 +968,33 @@ async function applyLoginWeather() {
   }
 }
 
+function downloadSrsDocument() {
+  const fileName = `TF-Pulse_SRS_v1.0_${today()}.md`;
+  const tryUrls = ["docs/SRS-TF-Pulse.md", "SRS-TF-Pulse.md"];
+  const saveBlob = (text) => {
+    const blob = new Blob(["\uFEFF" + text], { type: "text/markdown;charset=utf-8" });
+    const a = document.createElement("a");
+    a.href = URL.createObjectURL(blob);
+    a.download = fileName;
+    a.click();
+    URL.revokeObjectURL(a.href);
+  };
+  const fetchNext = (i) => {
+    if (i >= tryUrls.length) {
+      alert("SRS 문서를 불러오지 못했습니다. 잠시 후 다시 시도해 주세요.");
+      return;
+    }
+    fetch(tryUrls[i], { cache: "no-store" })
+      .then((r) => {
+        if (!r.ok) throw new Error("missing");
+        return r.text();
+      })
+      .then((text) => saveBlob(text))
+      .catch(() => fetchNext(i + 1));
+  };
+  fetchNext(0);
+}
+
 function showLoginGate() {
   $("#loginGate").hidden = false;
   $("#appShell").hidden = true;
@@ -984,6 +1011,11 @@ function showLoginGate() {
     .join("");
   list.querySelectorAll("[data-login]").forEach((btn) => {
     btn.addEventListener("click", () => enterAs(btn.dataset.login));
+  });
+  $("#btnDownloadSrsLogin")?.addEventListener("click", (e) => {
+    e.preventDefault();
+    e.stopPropagation();
+    downloadSrsDocument();
   });
 }
 
@@ -5284,6 +5316,7 @@ function renderGuide() {
         </ul>
         <div class="overview-cta">
           <button type="button" class="btn btn-primary" data-goto="dashboard">홈으로 시작하기</button>
+          <button type="button" class="btn" id="btnDownloadSrsGuide">SRS 문서 다운로드</button>
         </div>
       </section>
     </div>
@@ -5292,6 +5325,7 @@ function renderGuide() {
   el.querySelectorAll("[data-goto]").forEach((btn) => {
     btn.addEventListener("click", () => setView(btn.dataset.goto));
   });
+  $("#btnDownloadSrsGuide")?.addEventListener("click", () => downloadSrsDocument());
 }
 
 function checklistStatusBadge(status) {
