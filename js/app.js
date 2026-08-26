@@ -117,17 +117,13 @@ const NAV_GROUPS = {
   },
   tfall: {
     label: "TF 업무 모두보기",
-    views: ["tf-all", "collections", "budget", "kpi", "schedule", "review", "resources"],
+    views: ["collections", "budget", "kpi"],
     labels: {
-      "tf-all": "통합현황",
       collections: "보고서 통합",
       budget: "예산 통합",
       kpi: "성과지표",
-      schedule: "일정",
-      review: "윤독",
-      resources: "양식",
     },
-    defaultView: "tf-all",
+    defaultView: "collections",
   },
   guide: {
     label: "사용방법",
@@ -872,6 +868,11 @@ function navGroupOf(viewName) {
 function resolveViewName(name) {
   if (!name) return "dashboard";
   if (name === "ai-brief") return "collections";
+  // 제거된 하위메뉴 → 통합 화면으로 흡수
+  if (name === "tf-all") return "collections";
+  if (name === "schedule") return "my-work";
+  if (name === "review") return "collections";
+  if (name === "resources") return "collections";
   // 그룹 id로 들어오면 기본(또는 마지막) 뷰로
   if (NAV_GROUPS[name]) {
     const g = NAV_GROUPS[name];
@@ -2317,7 +2318,6 @@ function buildHomeProgressItems() {
   ensureBudget();
   ensureRequests();
   ensureKpis();
-  ensureReviewSession();
 
   const board = buildTeamCollectionBoard(latestCollection());
   const colDone = board.filter((r) => r.status.id === "done").length;
@@ -2330,9 +2330,6 @@ function buildHomeProgressItems() {
   const pageTarget = Number(state.meta?.totalTargetPages) || 0;
   const pageAlloc = allocatedTotal();
   const pagePct = pageTarget ? Math.min(100, Math.round((pageAlloc / pageTarget) * 100)) : partsPct;
-
-  const resources = Array.isArray(state.resources) ? state.resources.length : 0;
-  const resPct = resources > 0 ? 100 : 0;
 
   const reqs = admin
     ? state.requests || []
@@ -2354,9 +2351,6 @@ function buildHomeProgressItems() {
   const schedTotal = sched.length;
   const schedPct = schedTotal ? Math.round((schedDone / schedTotal) * 100) : 100;
 
-  const reviewComments = state.reviewSession?.comments?.length || 0;
-  const reviewPct = Math.min(100, reviewComments * 20);
-
   const kpis = state.kpis || [];
   let kpiPct = 0;
   if (kpis.length) {
@@ -2370,22 +2364,19 @@ function buildHomeProgressItems() {
 
   const raw = admin
     ? [
-        { label: "양식", pct: resPct, goto: "resources" },
         { label: "목차", pct: pagePct, goto: "parts" },
         { label: "요청", pct: reqPct, goto: "requests" },
-        { label: "취합", pct: colPct, goto: "collections" },
-        { label: "윤독", pct: reviewPct, goto: "review" },
+        { label: "보고서", pct: colPct, goto: "collections" },
         { label: "예산", pct: budPct, goto: "budget" },
         { label: "성과", pct: kpiPct, goto: "kpi" },
-        { label: "일정", pct: schedPct, goto: "schedule" },
+        { label: "일정", pct: schedPct, goto: "my-work" },
       ]
     : [
-        { label: "양식", pct: resPct, goto: "resources" },
-        { label: "취합", pct: colPct, goto: "collections" },
+        { label: "보고서", pct: colPct, goto: "collections" },
         { label: "요청", pct: reqPct, goto: "requests" },
         { label: "예산", pct: budPct, goto: "budget" },
         { label: "성과", pct: kpiPct, goto: "kpi" },
-        { label: "일정", pct: schedPct, goto: "schedule" },
+        { label: "일정", pct: schedPct, goto: "my-work" },
       ];
 
   const items = raw.map((it) => ({ ...it, status: statusOfPct(it.pct) }));
@@ -2461,9 +2452,9 @@ function renderDashboard() {
     ${homeStatusStripHtml(progress)}
 
     <div class="urgency-strip home-urgency" aria-label="마감 요약">
-      <button type="button" class="urgency-pill critical" data-goto="schedule"><strong>${counts.urgent}</strong><span>긴급</span></button>
-      <button type="button" class="urgency-pill watch" data-goto="schedule"><strong>${counts.warn}</strong><span>주의</span></button>
-      <button type="button" class="urgency-pill calm" data-goto="schedule"><strong>${counts.check}</strong><span>체크</span></button>
+      <button type="button" class="urgency-pill critical" data-goto="my-work"><strong>${counts.urgent}</strong><span>긴급</span></button>
+      <button type="button" class="urgency-pill watch" data-goto="my-work"><strong>${counts.warn}</strong><span>주의</span></button>
+      <button type="button" class="urgency-pill calm" data-goto="my-work"><strong>${counts.check}</strong><span>체크</span></button>
       ${
         peakIso
           ? `<p class="urgency-peak">가장 급한 마감 · <button type="button" class="linkish" id="homePeakDay">${escapeHtml(formatKorDate(peakIso))}</button></p>`
@@ -5613,9 +5604,9 @@ const GUIDE_MENU = [
     how: "레고 조립 레이아웃 → 도식 → PPT. 하단 Flaticon 검색으로 그림을 받습니다.",
   },
   {
-    tab: "tf-all",
+    tab: "collections",
     name: "TF 업무 모두보기",
-    how: "보고서 분량·예산 구성비·성과지표 달성·밸런스를 통합 분석합니다.",
+    how: "보고서 통합 · 예산 통합 · 성과지표 세 화면으로만 구성합니다. 일정·윤독·양식은 내업무·보고서 쪽에 흡수했습니다.",
   },
   {
     tab: "food",
@@ -5637,6 +5628,7 @@ const GUIDE_MENU = [
 
 const GUIDE_TIPS = [
   "상단 메뉴는 TF 요약 · 내업무 · TF 업무 모두보기 · 사용방법 네 칸입니다. 관리자는 Setting이 추가됩니다.",
+  "TF 업무 모두보기는 보고서 통합 · 예산 통합 · 성과지표만 둡니다. 일정은 내업무에서 다룹니다.",
   "접속할 때마다 이름 선택 화면부터 시작합니다. TF주제 리스트에서 TF를 고른 뒤 참가자를 선택하세요.",
   "종(알람)은 마감 임박·초과(지연 일수)·파일/예산/성과지표 코멘트를 모읍니다. 지연은 붉은 글로우로 표시됩니다.",
   "「오늘 뭐먹지」는 내업무 안에 있습니다. 확정 후 카톡 문구·링크로 배포하면 성명·메뉴가 자동 취합됩니다.",
