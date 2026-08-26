@@ -2476,7 +2476,7 @@ function renderDashboard() {
     <section class="yeonu-hero yeonu-hero-simple" aria-label="TF 요약">
       <div class="yeonu-hero-brand">
         <img class="yeonu-hero-mark" src="assets/yeonuhue-login.png" alt="연어회(硏語會)" width="72" height="72" />
-        <p class="yeonu-tagline"><strong>연어회(硏語會)</strong> · 연(硏)성의 말(語)이 모이면(會) 못 이룰것이 없다.</p>
+        <p class="yeonu-tagline">연(硏)성에서 우리의 말(語)이 모이면(會) 풀지 못할일이 없다.</p>
       </div>
       <aside class="yeonu-hero-aside report-deadline" aria-live="polite">
         <p class="deadline-label">보고서 제출일시</p>
