@@ -3527,12 +3527,16 @@ function workFeedRowHtml(s, admin) {
             : "";
   const origin =
     s.createdBy === sessionUser
-      ? { tag: "나혼자", tone: "solo", from: "" }
-      : s.createdBy
-        ? { tag: "요청받음", tone: "requested", from: `${s.createdBy}으로부터` }
-        : { tag: "나혼자", tone: "solo", from: "" };
+      ? { tag: scheduleAssigneesOf(s).length ? "요청함" : "나혼자", tone: scheduleAssigneesOf(s).length ? "offered" : "solo", from: "" }
+      : scheduleAssigneesOf(s).includes(sessionUser)
+        ? { tag: "요청받음", tone: "requested", from: s.createdBy ? `${s.createdBy}으로부터` : "" }
+        : s.createdBy
+          ? { tag: "요청받음", tone: "requested", from: `${s.createdBy}으로부터` }
+          : { tag: "나혼자", tone: "solo", from: "" };
+  const people = scheduleAssigneesOf(s);
   const metaBits = [
     glowLabel || dueWindow || "일정",
+    people.length ? `대상 ${people.length}명` : "",
     s.note ? String(s.note).slice(0, 48) : "",
     days < 0 ? `${Math.abs(days)}일 지남` : days === 0 ? "오늘" : `${days}일 남음`,
   ].filter(Boolean);
@@ -4201,7 +4205,46 @@ function openBudgetCard(itemId) {
 }
 
 function typeLabel(type) {
-  return { meeting: "회의", deadline: "마감", milestone: "마일스톤", other: "기타" }[type] || type;
+  return (
+    {
+      submit: "제출",
+      meeting: "회의",
+      deadline: "마감",
+      milestone: "마감",
+      other: "기타",
+    }[type] || type || "기타"
+  );
+}
+
+const SCHEDULE_TYPE_OPTIONS = [
+  { value: "submit", label: "제출" },
+  { value: "meeting", label: "회의" },
+  { value: "deadline", label: "마감" },
+  { value: "other", label: "기타" },
+];
+
+function normalizeScheduleType(type) {
+  if (type === "milestone") return "deadline";
+  if (SCHEDULE_TYPE_OPTIONS.some((t) => t.value === type)) return type;
+  if (type === "제출") return "submit";
+  if (type === "회의") return "meeting";
+  if (type === "마감") return "deadline";
+  if (type === "기타") return "other";
+  return "other";
+}
+
+function scheduleAssigneesOf(s) {
+  if (Array.isArray(s?.assignees) && s.assignees.length) {
+    return s.assignees.map((n) => String(n).trim()).filter(Boolean);
+  }
+  return [];
+}
+
+function scheduleVisibleToUser(s, who = sessionUser) {
+  if (isAdmin()) return true;
+  if (!who) return true;
+  if (s.createdBy === who) return true;
+  return scheduleAssigneesOf(s).includes(who);
 }
 
 function renderRequests() {
@@ -8255,67 +8298,17 @@ function renderMyWork() {
   if (!el) return;
   const who = sessionUser || "작성자";
   const admin = isAdmin();
-  const items = [...(state.schedule || [])].sort((a, b) => a.date.localeCompare(b.date));
-  const list = buildMyWorkChecklist();
-  const open = list.filter((i) => !i.done);
-  const overdue = open.filter((i) => i.overdue);
+  const items = [...(state.schedule || [])]
+    .filter((s) => scheduleVisibleToUser(s, who))
+    .sort((a, b) => a.date.localeCompare(b.date));
 
   el.innerHTML = `
     <div class="mywork-page">
       ${scheduleFeedPanelHtml(who, admin, items)}
-
-      <section class="panel mywork-hero ${overdue.length ? "is-overdue-glow" : ""}">
-        <div class="panel-head" style="margin-bottom:0">
-          <div>
-            <h2 class="panel-title">${escapeHtml(who)}님의 작성 할 일</h2>
-            <p class="muted" style="margin:4px 0 0">목차 할당·요청·예산·성과지표 작성 항목입니다.</p>
-          </div>
-          <span class="badge ${overdue.length ? "danger" : "warn"}">${open.length}건 남음</span>
-        </div>
-      </section>
-
-      <section class="panel">
-        <div class="panel-head">
-          <h2 class="panel-title">체크리스트</h2>
-          <button type="button" class="btn btn-sm btn-primary" data-goto="ai-art">보고서 그림그리기</button>
-        </div>
-        <ol class="mywork-checklist">
-          ${list
-            .map(
-              (it, idx) => `
-            <li class="mywork-item ${it.done ? "is-done" : ""} ${it.overdue ? "is-overdue-glow" : ""} ${it.approaching ? "is-approaching" : ""}">
-              <span class="mywork-num">${idx + 1}</span>
-              <div class="mywork-body">
-                <strong>${escapeHtml(it.title)}</strong>
-                <span>${escapeHtml(it.meta)}${it.done ? " · 완료" : ""}</span>
-              </div>
-              <button type="button" class="btn btn-sm" data-goto="${escapeAttr(it.goto)}">${it.done ? "보기" : "작성"}</button>
-            </li>`
-            )
-            .join("")}
-        </ol>
-      </section>
-
-      <section class="panel">
-        <div class="panel-head">
-          <h2 class="panel-title">바로가기</h2>
-        </div>
-        <div class="mywork-shortcuts">
-          <button type="button" class="btn" data-goto="collections">취합 업로드</button>
-          <button type="button" class="btn" data-goto="budget">예산 입력</button>
-          <button type="button" class="btn" data-goto="kpi">성과지표</button>
-          <button type="button" class="btn" data-goto="requests">요청함</button>
-          <button type="button" class="btn" data-goto="food">오늘 뭐먹지</button>
-          <button type="button" class="btn btn-primary" data-goto="ai-art">보고서 그림</button>
-        </div>
-      </section>
     </div>
   `;
 
   bindScheduleFeedActions(el, refreshActiveScheduleSurface);
-  el.querySelectorAll("[data-goto]").forEach((btn) => {
-    btn.addEventListener("click", () => setView(btn.dataset.goto));
-  });
 }
 
 function renderTfAll() {
@@ -8660,6 +8653,10 @@ function openScheduleModal(id) {
     return;
   }
   const canDelete = Boolean(item) && canEditScheduleItem(item);
+  const members = membersForActiveTopic();
+  const selectedAssignees = new Set(scheduleAssigneesOf(item));
+  const allSelected = members.length > 0 && members.every((m) => selectedAssignees.has(m.name));
+  const currentType = normalizeScheduleType(item?.type || "meeting");
   openModal({
     kicker: item ? "업무 수정" : "새 일정",
     title: item ? "주요 업무를 수정합니다." : "업무일정을 입력합니다.",
@@ -8677,13 +8674,11 @@ function openScheduleModal(id) {
           </label>
           <label class="wp-field">
             <span class="wp-label">유형</span>
-            <select name="type" class="wp-input wp-select">
-              ${["meeting", "deadline", "milestone", "other"]
-                .map(
-                  (t) =>
-                    `<option value="${t}" ${item?.type === t ? "selected" : ""}>${typeLabel(t)}</option>`
-                )
-                .join("")}
+            <select name="type" class="wp-input wp-select" required>
+              ${SCHEDULE_TYPE_OPTIONS.map(
+                (t) =>
+                  `<option value="${t.value}" ${currentType === t.value ? "selected" : ""}>${escapeHtml(t.label)}</option>`
+              ).join("")}
             </select>
           </label>
         </div>
@@ -8712,8 +8707,29 @@ function openScheduleModal(id) {
         </label>
         <label class="wp-field">
           <span class="wp-label">관리 목표·메모</span>
-          <textarea name="note" rows="4" class="wp-input" placeholder="목표값·협업 메모">${escapeHtml(item?.note || "")}</textarea>
+          <textarea name="note" rows="3" class="wp-input" placeholder="목표값·협업 메모">${escapeHtml(item?.note || "")}</textarea>
         </label>
+        <fieldset class="wp-field schedule-assignee-field">
+          <legend class="wp-label">함께 업무할 대상자</legend>
+          <p class="muted schedule-assignee-hint">ALL 또는 TF 참여자를 복수 선택할 수 있습니다.</p>
+          <div class="schedule-assignee-grid">
+            <label class="schedule-assignee-chip is-all">
+              <input type="checkbox" id="scheduleAssigneeAll" ${allSelected ? "checked" : ""} />
+              <span>ALL</span>
+            </label>
+            ${members
+              .map(
+                (m) => `
+              <label class="schedule-assignee-chip">
+                <input type="checkbox" name="assignees" value="${escapeAttr(m.name)}" ${
+                  selectedAssignees.has(m.name) || allSelected ? "checked" : ""
+                } />
+                <span>${escapeHtml(m.name)}${m.role === "admin" ? " · 관리자" : ""}</span>
+              </label>`
+              )
+              .join("")}
+          </div>
+        </fieldset>
         ${
           canDelete
             ? `<button type="button" class="btn btn-danger btn-sm" id="scheduleModalDelete">이 일정 삭제</button>`
@@ -8722,14 +8738,16 @@ function openScheduleModal(id) {
       </div>
     `,
     onSubmit: (fd) => {
+      const assignees = [...new Set(fd.getAll("assignees").map((v) => String(v).trim()).filter(Boolean))];
       const data = {
         title: fd.get("title").trim(),
         date: fd.get("date"),
         endDate: fd.get("endDate") || fd.get("date"),
-        type: fd.get("type"),
+        type: normalizeScheduleType(fd.get("type")),
         createdBy: fd.get("createdBy").trim(),
         note: fd.get("note").trim(),
         status: fd.get("status") || "준비",
+        assignees,
       };
       if (item) Object.assign(item, data);
       else state.schedule.push({ id: uid("s"), ...data });
@@ -8738,6 +8756,20 @@ function openScheduleModal(id) {
       return true;
     },
   });
+  const allBox = $("#scheduleAssigneeAll");
+  const boxes = () => $$("[name='assignees']", $("#modalBody") || document);
+  const syncAllState = () => {
+    const list = boxes();
+    if (!allBox || !list.length) return;
+    allBox.checked = list.every((b) => b.checked);
+  };
+  allBox?.addEventListener("change", () => {
+    const on = Boolean(allBox.checked);
+    boxes().forEach((b) => {
+      b.checked = on;
+    });
+  });
+  boxes().forEach((b) => b.addEventListener("change", syncAllState));
   $("#scheduleModalDelete")?.addEventListener("click", () => {
     if (!item || !confirm("이 일정을 삭제할까요?")) return;
     state.schedule = state.schedule.filter((s) => s.id !== item.id);
