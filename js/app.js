@@ -2566,31 +2566,14 @@ function renderDashboard() {
     if (!peakIso) return;
     openDayDeadlineDetail(peakIso);
   });
-  $("#homeAddSchedule")?.addEventListener("click", () => openScheduleModal());
-  el.querySelectorAll("[data-edit]").forEach((btn) =>
-    btn.addEventListener("click", (e) => {
-      e.stopPropagation();
-      openScheduleModal(btn.dataset.edit);
-    })
-  );
-  el.querySelectorAll("[data-del]").forEach((btn) =>
-    btn.addEventListener("click", (e) => {
-      e.stopPropagation();
-      if (!confirm("이 일정을 삭제할까요?")) return;
-      state.schedule = state.schedule.filter((s) => s.id !== btn.dataset.del);
-      saveAndRender("dashboard");
-      updateRemindBell();
-    })
-  );
-  el.querySelectorAll("[data-status]").forEach((sel) => {
-    sel.addEventListener("change", () => {
-      const item = state.schedule.find((s) => s.id === sel.dataset.status);
-      if (!item) return;
-      item.status = sel.value;
-      persist();
-      renderDashboard();
-      updateRemindBell();
-    });
+  if (admin) {
+    $("#homeAddSchedule")?.addEventListener("click", () => openScheduleModal());
+  } else {
+    $("#homeAddSchedule")?.remove();
+  }
+  bindScheduleFeedActions(el, () => {
+    renderDashboard();
+    updateRemindBell();
   });
 }
 
@@ -3284,6 +3267,32 @@ function renderSchedule() {
   });
 }
 
+function canEditScheduleItem(s) {
+  if (!s) return false;
+  if (isAdmin()) return true;
+  // 본인이 등록한 일정만 수정·삭제 가능. 타인(요청) 일정은 관리자만.
+  return Boolean(s.createdBy) && s.createdBy === sessionUser;
+}
+
+function denySchedulePermission(message = "권한이 없습니다. 요청 업무 수정·삭제는 관리자만 가능합니다.") {
+  try {
+    if (navigator.vibrate) navigator.vibrate([28, 40, 28]);
+  } catch {
+    /* ignore */
+  }
+  const root = document.body;
+  root.classList.remove("shake-deny");
+  void root.offsetWidth;
+  root.classList.add("shake-deny");
+  window.setTimeout(() => root.classList.remove("shake-deny"), 420);
+  alert(message);
+}
+
+function openScheduleUploadForItem(s) {
+  // 취합·마감·원고 관련이면 보고서 업로드(취합)로, 그 외에도 내 원고 제출 화면으로
+  setView("collections");
+}
+
 function scheduleByMonth(items) {
   const byMonth = {};
   items.forEach((s) => {
@@ -3302,12 +3311,12 @@ function scheduleFeedPanelHtml(who, admin, items) {
       <div class="panel-head">
         <div>
           <h2 class="panel-title">${escapeHtml(who)}님에게 보이는 일정입니다.</h2>
-          <p class="muted" style="margin:4px 0 0">주요 업무를 등록·수정·삭제합니다.</p>
+          <p class="muted" style="margin:4px 0 0">일정을 누르면 보고서 업로드로 이동합니다. 수정·삭제는 관리자(또는 본인 등록분)만 가능합니다.</p>
         </div>
         ${
           admin
             ? `<button type="button" class="work-fab" id="addSchedule" title="주요 업무 추가" aria-label="주요 업무 추가">✎</button>`
-            : `<button type="button" class="btn btn-primary" id="addSchedule">일정 추가</button>`
+            : ""
         }
       </div>
       ${
@@ -3329,16 +3338,33 @@ function scheduleFeedPanelHtml(who, admin, items) {
 }
 
 function bindScheduleFeedActions(root, onRefresh) {
-  root.querySelector("#addSchedule")?.addEventListener("click", () => openScheduleModal());
+  root.querySelector("#addSchedule")?.addEventListener("click", () => {
+    if (!isAdmin()) {
+      denySchedulePermission("일정 등록은 관리자만 가능합니다.");
+      return;
+    }
+    openScheduleModal();
+  });
+
   root.querySelectorAll("[data-edit]").forEach((btn) =>
     btn.addEventListener("click", (e) => {
       e.stopPropagation();
+      const item = state.schedule.find((s) => s.id === btn.dataset.edit);
+      if (!canEditScheduleItem(item)) {
+        denySchedulePermission();
+        return;
+      }
       openScheduleModal(btn.dataset.edit);
     })
   );
   root.querySelectorAll("[data-del]").forEach((btn) =>
     btn.addEventListener("click", (e) => {
       e.stopPropagation();
+      const item = state.schedule.find((s) => s.id === btn.dataset.del);
+      if (!canEditScheduleItem(item)) {
+        denySchedulePermission();
+        return;
+      }
       if (!confirm("이 일정을 삭제할까요?")) return;
       state.schedule = state.schedule.filter((s) => s.id !== btn.dataset.del);
       persist();
@@ -3354,6 +3380,117 @@ function bindScheduleFeedActions(root, onRefresh) {
       onRefresh?.();
     });
   });
+
+  root.querySelectorAll(".swipe-row[data-schedule-id]").forEach((row) => {
+    bindScheduleSwipeRow(row, onRefresh);
+  });
+}
+
+function bindScheduleSwipeRow(row, onRefresh) {
+  const id = row.dataset.scheduleId;
+  const front = row.querySelector(".swipe-front");
+  const task = row.querySelector(".task-row");
+  if (!front || !task) return;
+
+  let startX = 0;
+  let startY = 0;
+  let dx = 0;
+  let dragging = false;
+  let locked = null; // 'h' | 'v'
+  const THRESH = 72;
+  const MAX = 110;
+
+  const setOffset = (x) => {
+    dx = Math.max(-MAX, Math.min(MAX, x));
+    front.style.transform = `translateX(${dx}px)`;
+    row.classList.toggle("is-swiping-edit", dx > 12);
+    row.classList.toggle("is-swiping-delete", dx < -12);
+  };
+  const reset = () => {
+    front.style.transition = "transform 180ms ease";
+    setOffset(0);
+    window.setTimeout(() => {
+      front.style.transition = "";
+    }, 200);
+    row.classList.remove("is-swiping-edit", "is-swiping-delete");
+  };
+
+  const onPointerDown = (e) => {
+    if (e.target.closest("select, button, a, input")) return;
+    startX = e.clientX;
+    startY = e.clientY;
+    dx = 0;
+    dragging = true;
+    locked = null;
+    front.style.transition = "none";
+    try {
+      front.setPointerCapture?.(e.pointerId);
+    } catch {
+      /* ignore */
+    }
+  };
+  const onPointerMove = (e) => {
+    if (!dragging) return;
+    const mx = e.clientX - startX;
+    const my = e.clientY - startY;
+    if (!locked) {
+      if (Math.abs(mx) < 6 && Math.abs(my) < 6) return;
+      locked = Math.abs(mx) > Math.abs(my) ? "h" : "v";
+      if (locked === "v") {
+        dragging = false;
+        reset();
+        return;
+      }
+    }
+    if (locked !== "h") return;
+    e.preventDefault();
+    setOffset(mx);
+  };
+  const onPointerUp = (e) => {
+    if (!dragging && locked !== "h") {
+      dragging = false;
+      return;
+    }
+    dragging = false;
+    const item = state.schedule.find((s) => s.id === id);
+    const moved = Math.abs(dx);
+    const wasTap = moved < 12 && Math.abs((e.clientY || startY) - startY) < 12;
+
+    if (dx >= THRESH) {
+      reset();
+      if (!canEditScheduleItem(item)) {
+        denySchedulePermission();
+        return;
+      }
+      openScheduleModal(id);
+      return;
+    }
+    if (dx <= -THRESH) {
+      reset();
+      if (!canEditScheduleItem(item)) {
+        denySchedulePermission();
+        return;
+      }
+      if (!confirm("이 일정을 삭제할까요?")) return;
+      state.schedule = state.schedule.filter((s) => s.id !== id);
+      persist();
+      onRefresh?.();
+      return;
+    }
+
+    reset();
+    if (wasTap && locked !== "v") {
+      openScheduleUploadForItem(item);
+    }
+  };
+
+  front.addEventListener("pointerdown", onPointerDown);
+  front.addEventListener("pointermove", onPointerMove);
+  front.addEventListener("pointerup", onPointerUp);
+  front.addEventListener("pointercancel", () => {
+    dragging = false;
+    reset();
+  });
 }
 
 function refreshActiveScheduleSurface() {
@@ -3365,7 +3502,7 @@ function refreshActiveScheduleSurface() {
 }
 
 function workFeedRowHtml(s, admin) {
-  const canManage = admin || s.createdBy === sessionUser;
+  const canManage = canEditScheduleItem(s);
   const days = daysUntil(s.endDate || s.date);
   const bucket = scheduleBucket(s);
   const urgency = scheduleUrgency(s);
@@ -3396,17 +3533,13 @@ function workFeedRowHtml(s, admin) {
     (s.status || "준비") === "완료" ? "done" : (s.status || "준비") === "진행" ? "active" : "planned";
 
   return `
-    <div class="swipe-row ${canManage ? "has-edit-handle has-delete-handle" : ""}">
+    <div class="swipe-row has-edit-handle has-delete-handle ${canManage ? "can-manage" : "no-manage"}" data-schedule-id="${escapeAttr(s.id)}">
       <div class="swipe-front">
-        ${
-          canManage
-            ? `<button type="button" class="swipe-handle swipe-handle-edit" data-edit="${s.id}" title="수정" aria-label="수정">
-                <span class="swipe-handle-arrow" aria-hidden="true">›</span>
-                <span class="swipe-handle-label">수정</span>
-              </button>`
-            : ""
-        }
-        <article class="task-row tone-${statusTone}">
+        <button type="button" class="swipe-handle swipe-handle-edit" data-edit="${s.id}" title="오른쪽으로 밀어 수정" aria-label="수정">
+          <span class="swipe-handle-arrow" aria-hidden="true">›</span>
+          <span class="swipe-handle-label">수정</span>
+        </button>
+        <article class="task-row tone-${statusTone}" data-open-upload="${escapeAttr(s.id)}" role="button" tabindex="0">
           <span class="origin-stack">
             ${origin.from ? `<span class="from-owner">${escapeHtml(origin.from)}</span>` : ""}
             <span class="origin-tag ${origin.tone}">${escapeHtml(origin.tag)}</span>
@@ -3437,20 +3570,16 @@ function workFeedRowHtml(s, admin) {
             }
             <span class="due-badge">${escapeHtml(formatKorDate(s.endDate || s.date))}</span>
           </span>
-          <select class="status-select status-${statusTone}" data-status="${s.id}" ${canManage ? "" : "disabled"}>
+          <select class="status-select status-${statusTone}" data-status="${s.id}">
             ${["준비", "진행", "완료"]
               .map((st) => `<option value="${st}" ${(s.status || "준비") === st ? "selected" : ""}>${st}</option>`)
               .join("")}
           </select>
         </article>
-        ${
-          canManage
-            ? `<button type="button" class="swipe-handle swipe-handle-delete" data-del="${s.id}" title="삭제" aria-label="삭제">
-                <span class="swipe-handle-arrow" aria-hidden="true">‹</span>
-                <span class="swipe-handle-label">삭제</span>
-              </button>`
-            : ""
-        }
+        <button type="button" class="swipe-handle swipe-handle-delete" data-del="${s.id}" title="왼쪽으로 밀어 삭제" aria-label="삭제">
+          <span class="swipe-handle-arrow" aria-hidden="true">‹</span>
+          <span class="swipe-handle-label">삭제</span>
+        </button>
       </div>
     </div>`;
 }
@@ -8518,7 +8647,15 @@ function openRoundModal(round) {
 
 function openScheduleModal(id) {
   const item = id ? state.schedule.find((s) => s.id === id) : null;
-  const canDelete = Boolean(item) && (isAdmin() || item.createdBy === sessionUser);
+  if (item && !canEditScheduleItem(item)) {
+    denySchedulePermission();
+    return;
+  }
+  if (!item && !isAdmin()) {
+    denySchedulePermission("일정 등록은 관리자만 가능합니다.");
+    return;
+  }
+  const canDelete = Boolean(item) && canEditScheduleItem(item);
   openModal({
     kicker: item ? "업무 수정" : "새 일정",
     title: item ? "주요 업무를 수정합니다." : "업무일정을 입력합니다.",
