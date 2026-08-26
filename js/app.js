@@ -3301,6 +3301,99 @@ function openScheduleUploadForItem(s) {
   setView("collections");
 }
 
+function scheduleCommentsOf(s) {
+  if (!s) return [];
+  if (!Array.isArray(s.comments)) s.comments = [];
+  return s.comments;
+}
+
+function formatCommentStamp(iso) {
+  const raw = String(iso || "").trim();
+  if (!raw) return "";
+  return raw.slice(0, 16).replace("T", " ");
+}
+
+function openScheduleCommentModal(scheduleId) {
+  const item = state.schedule.find((s) => s.id === scheduleId);
+  if (!item) return;
+  const who = currentUserName();
+
+  const bodyHtml = () => {
+    const comments = scheduleCommentsOf(item);
+    return `
+      <p class="schedule-comment-lead">${escapeHtml(who)}님 이름으로 의견을 남깁니다. 로그인 사용자 모두 작성·답변할 수 있습니다.</p>
+      <div class="schedule-comment-thread" id="scheduleCommentThread">
+        ${
+          comments.length
+            ? comments
+                .map(
+                  (c) => `
+            <article class="schedule-comment-card">
+              <header>
+                <strong>${escapeHtml(c.author || "사용자")}</strong>
+                <time>${escapeHtml(formatCommentStamp(c.createdAt))}</time>
+              </header>
+              <p>${escapeHtml(c.text || "")}</p>
+              ${
+                isAdmin() || c.author === who
+                  ? `<button type="button" class="btn btn-sm btn-ghost" data-del-sched-comment="${escapeAttr(c.id)}">삭제</button>`
+                  : ""
+              }
+            </article>`
+                )
+                .join("")
+            : `<div class="schedule-comment-empty">아직 코멘트가 없습니다. 아래에서 의견을 남겨 주세요.</div>`
+        }
+      </div>
+      <div class="schedule-comment-composer">
+        <textarea id="scheduleCommentInput" class="wp-input" rows="3" placeholder="의견을 입력하세요"></textarea>
+        <button type="button" class="btn btn-primary schedule-comment-post" id="scheduleCommentPost">등록</button>
+      </div>
+    `;
+  };
+
+  const wire = () => {
+    $("#scheduleCommentPost")?.addEventListener("click", () => {
+      const input = $("#scheduleCommentInput");
+      const text = (input?.value || "").trim();
+      if (!text) {
+        alert("의견을 입력해 주세요.");
+        return;
+      }
+      scheduleCommentsOf(item).unshift({
+        id: uid("sc"),
+        author: who,
+        text,
+        createdAt: new Date().toISOString(),
+      });
+      item.comments = item.comments.slice(0, 100);
+      persist();
+      $("#modalBody").innerHTML = bodyHtml();
+      wire();
+      refreshActiveScheduleSurface();
+    });
+    $$("#modalBody [data-del-sched-comment]").forEach((btn) => {
+      btn.addEventListener("click", () => {
+        if (!confirm("이 코멘트를 삭제할까요?")) return;
+        item.comments = scheduleCommentsOf(item).filter((c) => c.id !== btn.dataset.delSchedComment);
+        persist();
+        $("#modalBody").innerHTML = bodyHtml();
+        wire();
+        refreshActiveScheduleSurface();
+      });
+    });
+  };
+
+  openModal({
+    title: item.title || "일정",
+    kicker: "일정 코멘트",
+    hideFooter: true,
+    bodyHtml: bodyHtml(),
+    onSubmit: null,
+  });
+  wire();
+}
+
 function scheduleByMonth(items) {
   const byMonth = {};
   items.forEach((s) => {
@@ -3467,6 +3560,13 @@ function bindScheduleFeedActions(root, onRefresh) {
     });
   });
 
+  root.querySelectorAll("[data-comment]").forEach((btn) => {
+    btn.addEventListener("click", (e) => {
+      e.stopPropagation();
+      openScheduleCommentModal(btn.dataset.comment);
+    });
+  });
+
   root.querySelectorAll(".swipe-row[data-schedule-id]").forEach((row) => {
     bindScheduleSwipeRow(row, onRefresh);
   });
@@ -3625,6 +3725,7 @@ function workFeedRowHtml(s, admin) {
   ].filter(Boolean);
   const statusTone =
     (s.status || "준비") === "완료" ? "done" : (s.status || "준비") === "진행" ? "active" : "planned";
+  const commentCount = scheduleCommentsOf(s).length;
 
   return `
     <div class="swipe-row has-edit-handle has-delete-handle ${canManage ? "can-manage" : "no-manage"}" data-schedule-id="${escapeAttr(s.id)}">
@@ -3672,6 +3773,10 @@ function workFeedRowHtml(s, admin) {
             }
             <span class="due-badge">${escapeHtml(formatKorDate(s.endDate || s.date))}</span>
           </span>
+          <button type="button" class="task-comment-btn ${commentCount ? "has-count" : ""}" data-comment="${escapeAttr(s.id)}" title="코멘트" aria-label="코멘트 ${commentCount}개">
+            <span class="task-comment-icon" aria-hidden="true"></span>
+            <span class="task-comment-count">${commentCount || ""}</span>
+          </button>
           <select class="status-select status-${statusTone}" data-status="${s.id}">
             ${["준비", "진행", "완료"]
               .map((st) => `<option value="${st}" ${(s.status || "준비") === st ? "selected" : ""}>${st}</option>`)
@@ -8893,7 +8998,7 @@ function openMetaModal() {
 
 /* ---------- Modals ---------- */
 
-function openModal({ title, kicker = "입력", submitLabel = "저장", bodyHtml, onSubmit }) {
+function openModal({ title, kicker = "입력", submitLabel = "저장", bodyHtml, onSubmit, hideFooter = false }) {
   const dialog = $("#modal");
   const kickerEl = $("#modalKicker");
   if (kickerEl) kickerEl.textContent = kicker;
@@ -8905,12 +9010,21 @@ function openModal({ title, kicker = "입력", submitLabel = "저장", bodyHtml,
     submitBtn.textContent = submitLabel;
     submitBtn.classList.remove("btn-ghost");
   }
+  const foot = dialog.querySelector(".modal-foot");
+  if (foot) foot.hidden = Boolean(hideFooter);
+  dialog.classList.toggle("is-comment-modal", Boolean(hideFooter));
   dialog.showModal();
 }
 
 function closeModal() {
   $("#modal").close();
   modalHandler = null;
+  const dialog = $("#modal");
+  if (dialog) {
+    dialog.classList.remove("is-comment-modal");
+    const foot = dialog.querySelector(".modal-foot");
+    if (foot) foot.hidden = false;
+  }
 }
 
 function openPartModal(id) {
