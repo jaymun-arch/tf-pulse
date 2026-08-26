@@ -177,11 +177,12 @@ export function computeMilestoneProgress(ctx) {
     points,
     runnerLeft,
     todayPct,
+    todayIso: nowIso,
   };
 }
 
 export function marathonTrackHtml(progress, escapeHtml) {
-  const { doneCount, pct, currentIndex, barPct, points, todayPct, startDate, endDate } = progress;
+  const { doneCount, pct, currentIndex, barPct, points, todayPct, startDate, endDate, todayIso } = progress;
   const current = points?.[Math.min(currentIndex, (points?.length || 1) - 1)] || TF_MILESTONES[0];
   const flags = points?.length
     ? points
@@ -192,7 +193,10 @@ export function marathonTrackHtml(progress, escapeHtml) {
         summary: m.tip,
       }));
   const runTo = Number(todayPct ?? progress.runnerLeft ?? pct) || 4;
-  const durationSec = Math.max(3.2, Math.min(7.5, 2.4 + runTo / 18));
+  const durationSec = Math.max(4.2, Math.min(8.5, 3 + runTo / 16));
+  const iso = todayIso || new Date().toISOString().slice(0, 10);
+  const [, tm, td] = String(iso).split("-").map(Number);
+  const todayLabel = `오늘(${tm || 0}월${td || 0}일)`;
   return `
     <section class="marathon-panel" aria-label="TF 일정 진도">
       <div class="marathon-head">
@@ -208,9 +212,12 @@ export function marathonTrackHtml(progress, escapeHtml) {
           <div
             class="marathon-runner is-running"
             style="--run-from:2%;--run-to:${runTo}%;--run-duration:${durationSec}s"
-            title="출발 → 오늘 위치 반복"
+            title="출발 → 오늘 위치"
             aria-hidden="true"
-          >🏃</div>
+          >
+            <span class="marathon-runner-emoji">🏃</span>
+            <span class="marathon-runner-today">${escapeHtml(todayLabel)}</span>
+          </div>
           ${flags
             .map(
               (m) => `

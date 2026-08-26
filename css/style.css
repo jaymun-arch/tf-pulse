@@ -8145,3 +8145,86 @@ body.view-home .page-hero {
   }
   .task-comment-btn { grid-area: comment; justify-self: end; }
 }
+
+/* Marathon runner face-forward + today pause label */
+.marathon-rail {
+  height: 88px;
+}
+.marathon-runner {
+  position: absolute;
+  top: 0;
+  left: var(--run-from, 2%);
+  transform: translateX(-50%);
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  gap: 2px;
+  font-size: inherit;
+  line-height: 1;
+  filter: none;
+  z-index: 3;
+  pointer-events: none;
+  will-change: left;
+}
+.marathon-runner-emoji {
+  display: block;
+  font-size: 2.15rem;
+  line-height: 1;
+  transform: scaleX(-1);
+  filter: drop-shadow(0 2px 3px rgba(0,0,0,.18));
+  transform-origin: center;
+}
+.marathon-runner-today {
+  opacity: 0;
+  font-size: 0.62rem;
+  font-weight: 800;
+  color: #c45a00;
+  white-space: nowrap;
+  background: rgba(255, 248, 230, 0.96);
+  border: 1px solid rgba(255, 149, 0, 0.35);
+  padding: 2px 7px;
+  border-radius: 999px;
+  box-shadow: 0 1px 4px rgba(0,0,0,.08);
+  pointer-events: none;
+}
+.marathon-runner.is-running {
+  animation: marathon-run-leg var(--run-duration, 5.5s) cubic-bezier(0.4, 0.05, 0.2, 1) infinite;
+}
+.marathon-runner.is-running .marathon-runner-emoji {
+  animation: marathon-bob 0.42s ease-in-out infinite;
+}
+.marathon-runner.is-running .marathon-runner-today {
+  animation: marathon-today-show var(--run-duration, 5.5s) cubic-bezier(0.4, 0.05, 0.2, 1) infinite;
+}
+@keyframes marathon-run-leg {
+  0% { left: var(--run-from, 2%); }
+  68% { left: var(--run-to, 40%); }
+  86% { left: var(--run-to, 40%); }
+  87% { left: var(--run-from, 2%); }
+  100% { left: var(--run-from, 2%); }
+}
+@keyframes marathon-bob {
+  0%, 100% { transform: scaleX(-1) translateY(0); }
+  50% { transform: scaleX(-1) translateY(-3px); }
+}
+@keyframes marathon-today-show {
+  0%, 64% { opacity: 0; transform: translateY(3px); }
+  70%, 84% { opacity: 1; transform: translateY(0); }
+  88%, 100% { opacity: 0; transform: translateY(2px); }
+}
+@media (prefers-reduced-motion: reduce) {
+  .marathon-runner.is-running,
+  .marathon-runner.is-running .marathon-runner-emoji,
+  .marathon-runner.is-running .marathon-runner-today {
+    animation: none;
+  }
+  .marathon-runner.is-running {
+    left: var(--run-to, 40%);
+  }
+  .marathon-runner.is-running .marathon-runner-today {
+    opacity: 1;
+  }
+  .marathon-runner-emoji {
+    transform: scaleX(-1);
+  }
+}

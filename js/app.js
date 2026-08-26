@@ -2518,13 +2518,10 @@ function renderDashboard() {
         ? `<section class="panel">
         <div class="panel-head">
           <h2 class="panel-title">${escapeHtml(formatKorDate(selected))} 일정</h2>
-          <button type="button" class="btn btn-sm btn-primary" id="homeAddSchedule">일정 추가</button>
         </div>
         <div class="work-feed">${dayItems.map((s) => workFeedRowHtml(s, admin)).join("")}</div>
       </section>`
-        : `<div class="row" style="justify-content:flex-end;margin-top:8px">
-            <button type="button" class="btn btn-primary" id="homeAddSchedule">일정 추가</button>
-          </div>`
+        : ""
     }
   `;
 
@@ -2574,11 +2571,6 @@ function renderDashboard() {
     if (!peakIso) return;
     openDayDeadlineDetail(peakIso);
   });
-  if (admin) {
-    $("#homeAddSchedule")?.addEventListener("click", () => openScheduleModal());
-  } else {
-    $("#homeAddSchedule")?.remove();
-  }
   bindScheduleFeedActions(el, () => {
     renderDashboard();
     updateRemindBell();
