@@ -8633,3 +8633,26 @@ body.view-home .page-hero {
   font-size: 1.55rem;
   font-weight: 800;
 }
+
+/* Progress bar follows marathon runner, then stops */
+.marathon-bar i {
+  width: var(--run-from, 2%);
+  transition: none;
+}
+.marathon-bar.is-running i {
+  animation: marathon-bar-fill var(--run-duration, 5.5s) cubic-bezier(0.4, 0.05, 0.2, 1) 1 forwards;
+}
+.marathon-bar.is-arrived i {
+  width: var(--run-to, 40%);
+  animation: none;
+}
+@keyframes marathon-bar-fill {
+  0% { width: var(--run-from, 2%); }
+  100% { width: var(--run-to, 40%); }
+}
+@media (prefers-reduced-motion: reduce) {
+  .marathon-bar.is-running i {
+    animation: none;
+    width: var(--run-to, 40%);
+  }
+}

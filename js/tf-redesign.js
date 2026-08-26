@@ -208,7 +208,10 @@ export function marathonTrackHtml(progress, escapeHtml) {
       </div>
       <div class="marathon-track" role="img" aria-label="마라톤 진도 ${pct}% · 오늘 위치까지 질주 후 정지">
         <div class="marathon-rail">
-          <div class="marathon-bar"><i style="width:${Math.min(100, barPct ?? pct)}%"></i></div>
+          <div
+            class="marathon-bar is-running"
+            style="--run-from:2%;--run-to:${runTo}%;--run-duration:${durationSec}s"
+          ><i></i></div>
           <div
             class="marathon-runner is-running"
             style="--run-from:2%;--run-to:${runTo}%;--run-duration:${durationSec}s"
@@ -251,14 +254,29 @@ export function marathonTrackHtml(progress, escapeHtml) {
 
 export function bindMarathonRunner(root = document) {
   const runner = root.querySelector?.(".marathon-runner.is-running") || null;
-  if (!runner) return;
+  const bar = root.querySelector?.(".marathon-bar.is-running") || null;
+  if (!runner && !bar) return;
+  let settled = false;
+  const settle = () => {
+    if (settled) return;
+    settled = true;
+    runner?.classList.remove("is-running");
+    runner?.classList.add("is-arrived");
+    bar?.classList.remove("is-running");
+    bar?.classList.add("is-arrived");
+  };
+  if (!runner) {
+    settle();
+    return;
+  }
   const onEnd = (e) => {
     if (e.animationName && e.animationName !== "marathon-run-leg") return;
-    runner.classList.remove("is-running");
-    runner.classList.add("is-arrived");
+    settle();
     runner.removeEventListener("animationend", onEnd);
   };
   runner.addEventListener("animationend", onEnd);
+  const dur = Number.parseFloat(getComputedStyle(runner).getPropertyValue("--run-duration")) || 5.5;
+  window.setTimeout(settle, Math.ceil(dur * 1000) + 80);
 }
 
 function escapeAttrSafe(str = "") {
