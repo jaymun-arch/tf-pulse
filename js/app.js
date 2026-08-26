@@ -1092,17 +1092,19 @@ function showLoginGate() {
       state.activeTfTopicId = topicSel.value;
       localStorage.setItem(TF_TOPIC_KEY, topicSel.value);
       renderLoginMembers();
-      if (topicDesc) topicDesc.textContent = activeTfTopic()?.desc || "";
+      if (topicDesc) {
+        const desc = activeTfTopic()?.desc || "";
+        topicDesc.textContent = desc;
+        topicDesc.hidden = !desc;
+      }
     };
   }
-  if (topicDesc) topicDesc.textContent = activeTfTopic()?.desc || "";
+  if (topicDesc) {
+    const desc = activeTfTopic()?.desc || "";
+    topicDesc.textContent = desc;
+    topicDesc.hidden = !desc;
+  }
   renderLoginMembers();
-
-  $("#btnDownloadSrsLogin")?.addEventListener("click", (e) => {
-    e.preventDefault();
-    e.stopPropagation();
-    downloadSrsDocument();
-  });
 }
 
 function renderLoginMembers() {

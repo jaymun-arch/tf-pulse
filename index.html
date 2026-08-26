@@ -30,24 +30,18 @@
     <div class="login-card">
       <div class="login-hero">
         <div class="login-hero-visual">
-          <img src="assets/yeonuhue-hero.png" alt="연어회 일러스트" width="320" height="180" />
+          <img src="assets/yeonuhue-login.png" alt="연어회" width="200" height="200" />
         </div>
-        <h1 class="login-title-hanja">연어회<span>(硏語會)</span></h1>
-        <p class="login-story">
-          연<span>(硏)</span>성의 말<span>(語)</span>이 모이면<span>(會)</span><br />
-          못 이룰것이 없다.
-        </p>
-        <p class="login-prompt">TF주제와 권한을 선택해 접속하세요</p>
-        <p class="login-srs">
-          <button type="button" class="btn btn-sm" id="btnDownloadSrsLogin">SRS 문서 다운로드</button>
-        </p>
+        <p class="login-tagline">연어회(硏語會) · 연(硏)성의 말(語)이 모이면(會) 못 이룰것이 없다.</p>
       </div>
-      <div class="login-topic-block">
-        <label class="login-topic-label" for="loginTfTopic">TF주제 리스트</label>
-        <select id="loginTfTopic" class="wp-input wp-select" aria-label="TF주제 선택"></select>
-        <p class="muted login-topic-desc" id="loginTfTopicDesc"></p>
+      <div class="login-stack">
+        <label class="login-topic-wrap">
+          <span class="login-topic-hint">TF 구분</span>
+          <select id="loginTfTopic" class="login-topic-select" aria-label="TF 구분 선택"></select>
+        </label>
+        <p class="login-topic-desc" id="loginTfTopicDesc" hidden></p>
+        <div class="member-list" id="loginMemberList"></div>
       </div>
-      <div class="member-list" id="loginMemberList"></div>
     </div>
   </div>
 
