@@ -225,9 +225,12 @@ export function marathonTrackHtml(progress, escapeHtml) {
             .map(
               (m) => `
             <button type="button" class="marathon-flag is-${escapeHtml(m.state || "todo")}" style="left:${Number(m.left) || 0}%" data-mile="${escapeAttrSafe(m.id)}" aria-label="${escapeHtml(m.label)} ${escapeHtml(formatMileDate(m.date))}">
-              <span class="marathon-peg" aria-hidden="true"></span>
               <span class="marathon-flag-date">${escapeHtml(formatMileDate(m.date))}</span>
-              <span class="marathon-flag-short">${escapeHtml(m.short)}</span>
+              <span class="marathon-peg" aria-hidden="true"></span>
+              <span class="marathon-flag-copy">
+                <em class="marathon-flag-short">${escapeHtml(m.short)}</em>
+                <strong class="marathon-flag-label">${escapeHtml(m.label)}</strong>
+              </span>
               <span class="marathon-tip" role="tooltip">
                 <strong>${escapeHtml(m.label)}</strong>
                 <em>${escapeHtml(formatMileDate(m.date))} · ${m.state === "done" ? "완료" : m.state === "now" ? "진행중" : "예정"}</em>
@@ -237,17 +240,6 @@ export function marathonTrackHtml(progress, escapeHtml) {
             )
             .join("")}
         </div>
-        <ol class="marathon-legend">
-          ${flags
-            .map(
-              (m) => `
-            <li class="is-${escapeHtml(m.state || "todo")}">
-              <em>${escapeHtml(m.short)}</em>
-              <strong>${escapeHtml(m.label)}</strong>
-            </li>`
-            )
-            .join("")}
-        </ol>
       </div>
     </section>`;
 }

@@ -8750,3 +8750,68 @@ body.view-home .page-hero {
   margin: 0;
   font-size: 0.8rem;
 }
+
+/* Unified marathon flags (no separate legend row) */
+.marathon-rail {
+  height: 118px;
+  margin: 18px 2px 4px;
+}
+.marathon-bar {
+  top: 36px;
+}
+.marathon-runner {
+  top: 0;
+}
+.marathon-flag {
+  top: 12px;
+  width: 72px;
+  gap: 0;
+}
+.marathon-flag-date {
+  order: 0;
+  margin: 0 0 4px;
+  font-size: 0.6rem;
+  font-weight: 750;
+  color: var(--ink-soft);
+  line-height: 1;
+}
+.marathon-peg {
+  order: 1;
+  margin: 0;
+}
+.marathon-flag-copy {
+  order: 2;
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  gap: 1px;
+  margin-top: 8px;
+  width: 100%;
+}
+.marathon-flag-short {
+  display: block;
+  font-style: normal;
+  font-size: 0.72rem;
+  font-weight: 800;
+  color: var(--ink);
+  line-height: 1.15;
+}
+.marathon-flag-label {
+  display: block;
+  font-size: 0.58rem;
+  font-weight: 600;
+  color: var(--ink-soft);
+  line-height: 1.25;
+  text-align: center;
+  max-width: 4.8rem;
+}
+.marathon-flag.is-done .marathon-flag-short { color: #0a7ea4; }
+.marathon-flag.is-now .marathon-flag-short { color: #e67e00; }
+.marathon-legend {
+  display: none !important;
+}
+@media (max-width: 720px) {
+  .marathon-rail { height: 128px; }
+  .marathon-flag { width: 56px; }
+  .marathon-flag-label { max-width: 3.6rem; font-size: 0.54rem; }
+}
