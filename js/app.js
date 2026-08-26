@@ -905,6 +905,7 @@ function renderSubNav(navId, viewName) {
   const group = NAV_GROUPS[navId];
   if (!group || group.views.length <= 1) {
     bar.hidden = true;
+    bar.classList.remove("has-area-tabs");
     bar.innerHTML = "";
     return;
   }
@@ -912,15 +913,23 @@ function renderSubNav(navId, viewName) {
   const views = group.views.filter((v) => !adminOnlyViews.has(v) || isAdmin());
   if (views.length <= 1) {
     bar.hidden = true;
+    bar.classList.remove("has-area-tabs");
     bar.innerHTML = "";
     return;
   }
   bar.hidden = false;
+  bar.classList.add("has-area-tabs");
   bar.innerHTML = views
     .map((v) => {
       const label = group.labels?.[v] || VIEW_META[v]?.title || v;
       const on = v === viewName;
-      return `<button type="button" class="sub-tab-btn ${on ? "active" : ""}" data-view="${escapeAttr(v)}" aria-pressed="${on ? "true" : "false"}">${escapeHtml(label)}</button>`;
+      const area =
+        v === "collections" || v === "budget" || v === "kpi"
+          ? `area-${v === "collections" ? "report" : v}`
+          : v === "my-work" || v === "ai-art" || v === "food" || v === "requests"
+            ? `area-${v}`
+            : "";
+      return `<button type="button" class="sub-tab-btn ${on ? "active" : ""} ${area}" data-view="${escapeAttr(v)}" aria-pressed="${on ? "true" : "false"}">${escapeHtml(label)}</button>`;
     })
     .join("");
   bar.querySelectorAll("[data-view]").forEach((btn) => {
