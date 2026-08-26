@@ -206,13 +206,13 @@ export function marathonTrackHtml(progress, escapeHtml) {
         </div>
         <span class="marathon-pct">${pct}% · ${escapeHtml(current?.label || "")}</span>
       </div>
-      <div class="marathon-track" role="img" aria-label="마라톤 진도 ${pct}% · 오늘 위치까지 반복 질주">
+      <div class="marathon-track" role="img" aria-label="마라톤 진도 ${pct}% · 오늘 위치까지 질주 후 정지">
         <div class="marathon-rail">
           <div class="marathon-bar"><i style="width:${Math.min(100, barPct ?? pct)}%"></i></div>
           <div
             class="marathon-runner is-running"
             style="--run-from:2%;--run-to:${runTo}%;--run-duration:${durationSec}s"
-            title="출발 → 오늘 위치"
+            title="출발 → 오늘 위치에서 정지"
             aria-hidden="true"
           >
             <span class="marathon-runner-emoji">🏃</span>
@@ -247,6 +247,18 @@ export function marathonTrackHtml(progress, escapeHtml) {
         </ol>
       </div>
     </section>`;
+}
+
+export function bindMarathonRunner(root = document) {
+  const runner = root.querySelector?.(".marathon-runner.is-running") || null;
+  if (!runner) return;
+  const onEnd = (e) => {
+    if (e.animationName && e.animationName !== "marathon-run-leg") return;
+    runner.classList.remove("is-running");
+    runner.classList.add("is-arrived");
+    runner.removeEventListener("animationend", onEnd);
+  };
+  runner.addEventListener("animationend", onEnd);
 }
 
 function escapeAttrSafe(str = "") {

@@ -13,6 +13,7 @@ import {
   DEFAULT_TF_TOPICS,
   computeMilestoneProgress,
   marathonTrackHtml,
+  bindMarathonRunner,
   flaticonSearchHtml,
   bindFlaticonSearch,
   legoBuilderHtml,
@@ -2534,6 +2535,7 @@ function renderDashboard() {
     updateReportDeadline();
   };
   tickHomeDeadline();
+  bindMarathonRunner(el);
 
   el.querySelectorAll("[data-goto]").forEach((btn) => {
     btn.addEventListener("click", () => setView(btn.dataset.goto));

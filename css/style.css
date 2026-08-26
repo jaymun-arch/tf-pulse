@@ -8188,29 +8188,37 @@ body.view-home .page-hero {
   pointer-events: none;
 }
 .marathon-runner.is-running {
-  animation: marathon-run-leg var(--run-duration, 5.5s) cubic-bezier(0.4, 0.05, 0.2, 1) infinite;
+  animation: marathon-run-leg var(--run-duration, 5.5s) cubic-bezier(0.4, 0.05, 0.2, 1) 1 forwards;
 }
 .marathon-runner.is-running .marathon-runner-emoji {
   animation: marathon-bob 0.42s ease-in-out infinite;
 }
 .marathon-runner.is-running .marathon-runner-today {
-  animation: marathon-today-show var(--run-duration, 5.5s) cubic-bezier(0.4, 0.05, 0.2, 1) infinite;
+  animation: marathon-today-show var(--run-duration, 5.5s) cubic-bezier(0.4, 0.05, 0.2, 1) 1 forwards;
+}
+.marathon-runner.is-arrived {
+  left: var(--run-to, 40%);
+  transform: translateX(-50%);
+}
+.marathon-runner.is-arrived .marathon-runner-emoji {
+  transform: scaleX(-1);
+  animation: none;
+}
+.marathon-runner.is-arrived .marathon-runner-today {
+  opacity: 1;
+  transform: translateY(0);
 }
 @keyframes marathon-run-leg {
   0% { left: var(--run-from, 2%); }
-  68% { left: var(--run-to, 40%); }
-  86% { left: var(--run-to, 40%); }
-  87% { left: var(--run-from, 2%); }
-  100% { left: var(--run-from, 2%); }
+  100% { left: var(--run-to, 40%); }
 }
 @keyframes marathon-bob {
   0%, 100% { transform: scaleX(-1) translateY(0); }
   50% { transform: scaleX(-1) translateY(-3px); }
 }
 @keyframes marathon-today-show {
-  0%, 64% { opacity: 0; transform: translateY(3px); }
-  70%, 84% { opacity: 1; transform: translateY(0); }
-  88%, 100% { opacity: 0; transform: translateY(2px); }
+  0%, 72% { opacity: 0; transform: translateY(3px); }
+  88%, 100% { opacity: 1; transform: translateY(0); }
 }
 @media (prefers-reduced-motion: reduce) {
   .marathon-runner.is-running,
@@ -8218,10 +8226,12 @@ body.view-home .page-hero {
   .marathon-runner.is-running .marathon-runner-today {
     animation: none;
   }
-  .marathon-runner.is-running {
+  .marathon-runner.is-running,
+  .marathon-runner.is-arrived {
     left: var(--run-to, 40%);
   }
-  .marathon-runner.is-running .marathon-runner-today {
+  .marathon-runner.is-running .marathon-runner-today,
+  .marathon-runner.is-arrived .marathon-runner-today {
     opacity: 1;
   }
   .marathon-runner-emoji {
