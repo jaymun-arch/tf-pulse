@@ -3595,15 +3595,32 @@ function scheduleFeedPanelHtml(who, admin, items) {
               .map((g) => {
                 const rows = byGroup[g.id] || [];
                 if (!rows.length && groupFilter === "all") return "";
+                const byMonth = scheduleByMonth(rows);
+                const months = Object.keys(byMonth).sort((a, b) => b.localeCompare(a));
                 return `
-                <div class="work-group-block">
-                  <h3 class="work-month-title">${escapeHtml(g.label)} <span class="muted">${rows.length}</span></h3>
-                  <div class="work-feed">${
-                    rows.length
-                      ? rows.map((s) => workFeedRowHtml(s, admin)).join("")
-                      : `<div class="empty">해당 그룹 일정이 없습니다.</div>`
-                  }</div>
-                </div>`;
+                <article class="work-group-card">
+                  <header class="work-group-card-head">
+                    <h3>${escapeHtml(g.label)}</h3>
+                    <span class="muted">${rows.length}건 · ${escapeHtml(g.label)}</span>
+                  </header>
+                  <div class="work-group-card-body">
+                    ${
+                      months.length
+                        ? months
+                            .map((ym) => {
+                              const [y, m] = ym.split("-");
+                              const monthLabel = `${Number(y)}년 ${Number(m)}월`;
+                              return `
+                              <div class="work-month-chunk">
+                                <p class="work-month-label">${escapeHtml(monthLabel)}</p>
+                                <div class="work-feed">${byMonth[ym].map((s) => workFeedRowHtml(s, admin)).join("")}</div>
+                              </div>`;
+                            })
+                            .join("")
+                        : `<div class="work-feed">${rows.map((s) => workFeedRowHtml(s, admin)).join("")}</div>`
+                    }
+                  </div>
+                </article>`;
               })
               .join("")
           : `<div class="empty">표시할 일정이 없습니다. ${admin ? "연필 버튼으로 주요 업무를 추가하세요." : ""}</div>`
@@ -3813,27 +3830,20 @@ function workFeedRowHtml(s, admin) {
   const urgency = scheduleUrgency(s);
   const glowLabel =
     bucket === "overdue" ? "지연" : bucket === "today" ? "오늘까지" : bucket === "week" ? "이번주" : "";
-  const dueWindow =
-    bucket === "overdue"
-      ? "지연"
-      : bucket === "today"
-        ? "오늘까지"
-        : bucket === "week"
-          ? "이번주까지"
-          : bucket === "month"
-            ? "이번달까지"
-            : "";
   const origin = scheduleOriginOf(s, sessionUser);
   const people = scheduleAssigneesOf(s);
+  const collabNames = people.length ? `협업 ${people.slice(0, 4).join(", ")}${people.length > 4 ? " 외" : ""}` : "";
   const metaBits = [
-    glowLabel || dueWindow || "일정",
-    people.length ? `대상 ${people.length}명` : "",
-    s.note ? String(s.note).slice(0, 48) : "",
+    glowLabel || (bucket === "month" ? "이번달" : "일정"),
+    s.note ? String(s.note).slice(0, 40) : "",
+    collabNames,
     days < 0 ? `${Math.abs(days)}일 지남` : days === 0 ? "오늘" : `${days}일 남음`,
   ].filter(Boolean);
   const statusTone =
     (s.status || "준비") === "완료" ? "done" : (s.status || "준비") === "진행" ? "active" : "planned";
   const commentCount = scheduleCommentsOf(s).length;
+  const typeName = typeLabel(s.type);
+  const groupName = scheduleGroupLabel(scheduleGroupOf(s));
 
   return `
     <div class="swipe-row has-edit-handle has-delete-handle ${canManage ? "can-manage" : "no-manage"}" data-schedule-id="${escapeAttr(s.id)}">
@@ -3841,7 +3851,7 @@ function workFeedRowHtml(s, admin) {
         <span class="swipe-action-main">수정하기</span>
       </div>
       <div class="swipe-action swipe-action-delete" aria-hidden="true">
-        <span class="swipe-action-main"><span aria-hidden="true">🗑</span> 삭제</span>
+        <span class="swipe-action-main">삭제</span>
       </div>
       <div class="swipe-front">
         <button type="button" class="swipe-edge swipe-edge-edit" data-edit="${s.id}" title="오른쪽으로 밀어 수정" aria-label="수정">
@@ -3855,12 +3865,12 @@ function workFeedRowHtml(s, admin) {
           </span>
           <div class="task-row-main">
             <p class="task-title">
-              ${escapeHtml(s.title)}
-              <span class="kind-tag dept-tag">${escapeHtml(scheduleGroupLabel(scheduleGroupOf(s)))}</span>
-              <span class="kind-tag dept-tag">${escapeHtml(typeLabel(s.type))}</span>
-              ${s.dept ? `<span class="kind-tag dept-tag">${escapeHtml(s.dept)}</span>` : ""}
-              ${s.createdBy || s.owner ? `<span class="kind-tag owner-tag">${escapeHtml(s.owner || s.createdBy)}</span>` : ""}
-              <span class="kind-tag work-kind">${escapeHtml(scheduleStatusLabel(s.status))}</span>
+              <span class="task-title-text">${escapeHtml(s.title)}</span>
+              ${s.dept ? `<span class="kind-tag pill-blue">${escapeHtml(s.dept)}</span>` : ""}
+              ${s.owner || s.createdBy ? `<span class="kind-tag pill-blue">${escapeHtml(s.owner || s.createdBy)}</span>` : ""}
+              ${s.project ? `<span class="kind-tag pill-blue">${escapeHtml(s.project)}</span>` : ""}
+              <span class="kind-tag pill-violet">${escapeHtml(groupName)}</span>
+              <span class="kind-tag pill-violet">${escapeHtml(typeName)}</span>
               ${
                 urgency === "check"
                   ? `<span class="kind-tag check-tag">✓ 체크</span>`
@@ -3871,25 +3881,23 @@ function workFeedRowHtml(s, admin) {
             </p>
             <p class="task-meta">${escapeHtml(metaBits.join(" · "))}</p>
           </div>
-          <span class="due-cluster">
+          <span class="due-cluster ${glowLabel === "지연" ? "is-overdue" : ""}">
             ${
               glowLabel
                 ? `<span class="remind-title-glow due-glow">${escapeHtml(glowLabel)}</span>`
-                : dueWindow
-                  ? `<span class="kind-tag due-window due-${escapeAttr(bucket)}">${escapeHtml(dueWindow)}</span>`
-                  : ""
+                : ""
             }
             <span class="due-badge">${escapeHtml(formatKorDate(s.endDate || s.date))}</span>
           </span>
-          <button type="button" class="task-comment-btn ${commentCount ? "has-count" : ""}" data-comment="${escapeAttr(s.id)}" title="코멘트" aria-label="코멘트 ${commentCount}개">
-            <span class="task-comment-icon" aria-hidden="true"></span>
-            <span class="task-comment-count">${commentCount || ""}</span>
-          </button>
           <select class="status-select status-${statusTone}" data-status="${s.id}">
             ${["준비", "진행", "완료"]
               .map((st) => `<option value="${st}" ${(s.status || "준비") === st ? "selected" : ""}>${st}</option>`)
               .join("")}
           </select>
+          <button type="button" class="task-comment-btn ${commentCount ? "has-count" : ""}" data-comment="${escapeAttr(s.id)}" title="코멘트" aria-label="코멘트 ${commentCount}개">
+            <span class="task-comment-icon" aria-hidden="true"></span>
+            <span class="task-comment-count">${commentCount || "0"}</span>
+          </button>
         </article>
         <button type="button" class="swipe-edge swipe-edge-delete" data-del="${s.id}" title="왼쪽으로 밀어 삭제" aria-label="삭제">
           <span class="swipe-edge-arrow" aria-hidden="true">‹</span>

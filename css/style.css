@@ -8815,3 +8815,193 @@ body.view-home .page-hero {
   .marathon-flag { width: 56px; }
   .marathon-flag-label { max-width: 3.6rem; font-size: 0.54rem; }
 }
+
+/* My-work task card — reference design */
+.work-group-card {
+  margin-top: 14px;
+  border: 1px solid rgba(0, 0, 0, 0.08);
+  border-radius: 16px;
+  background: #fff;
+  overflow: hidden;
+  box-shadow: 0 1px 0 rgba(0, 0, 0, 0.02);
+}
+.work-group-card-head {
+  display: flex;
+  align-items: baseline;
+  justify-content: space-between;
+  gap: 10px;
+  padding: 12px 14px;
+  border-bottom: 1px solid rgba(0, 0, 0, 0.06);
+}
+.work-group-card-head h3 {
+  margin: 0;
+  font-size: 0.95rem;
+  font-weight: 800;
+  letter-spacing: -0.02em;
+  color: var(--ink);
+}
+.work-group-card-head .muted {
+  font-size: 0.72rem;
+  white-space: nowrap;
+}
+.work-group-card-body {
+  padding: 8px 10px 12px;
+}
+.work-month-chunk + .work-month-chunk {
+  margin-top: 10px;
+  padding-top: 8px;
+  border-top: 1px dashed rgba(0, 0, 0, 0.06);
+}
+.work-month-label {
+  margin: 0 0 6px 4px;
+  font-size: 0.72rem;
+  font-weight: 700;
+  color: var(--ink-faint);
+}
+.work-group-card .work-feed {
+  gap: 8px;
+}
+.work-group-card .swipe-row {
+  border-radius: 12px;
+  background: transparent;
+}
+.work-group-card .swipe-front {
+  border: 1px solid rgba(0, 0, 0, 0.06);
+  border-radius: 12px;
+  background: #fff;
+  grid-template-columns: 34px minmax(0, 1fr) 34px;
+}
+.work-group-card .swipe-edge {
+  margin: 6px 3px;
+  border-radius: 10px;
+  min-width: 28px;
+  padding: 6px 0;
+}
+.work-group-card .swipe-edge-edit {
+  background: #5b8ec4;
+}
+.work-group-card .swipe-edge-delete {
+  background: #8b5e3c;
+}
+.work-group-card .swipe-edge-label {
+  font-size: 0.58rem;
+  writing-mode: vertical-rl;
+  transform: rotate(180deg);
+  letter-spacing: 0.08em;
+}
+.work-group-card .swipe-edge-arrow {
+  writing-mode: horizontal-tb;
+  transform: none;
+}
+.work-group-card .task-row {
+  border: none;
+  border-bottom: none;
+  padding: 10px 6px;
+  align-items: center;
+  gap: 8px 8px;
+}
+.work-group-card .origin-stack {
+  align-items: center;
+  gap: 3px;
+}
+.work-group-card .from-owner {
+  font-size: 0.62rem;
+  color: var(--ink-faint);
+  font-weight: 650;
+  white-space: nowrap;
+}
+.work-group-card .origin-tag {
+  border-radius: 999px;
+  padding: 4px 8px;
+  font-size: 0.62rem;
+}
+.work-group-card .origin-tag.requested {
+  background: #fff3cd;
+  color: #b8860b;
+  border: 1px solid rgba(184, 134, 11, 0.25);
+}
+.work-group-card .origin-tag.offered {
+  background: rgba(88, 86, 214, 0.12);
+  color: #5856d6;
+}
+.work-group-card .task-title {
+  gap: 5px;
+  align-items: center;
+}
+.work-group-card .task-title-text {
+  font-weight: 800;
+  font-size: 0.9rem;
+  letter-spacing: -0.02em;
+  margin-right: 2px;
+}
+.work-group-card .kind-tag {
+  margin-left: 0;
+  border-radius: 999px;
+  padding: 3px 8px;
+  font-size: 0.62rem;
+  font-weight: 700;
+}
+.work-group-card .kind-tag.pill-blue {
+  background: #e8f1ff;
+  color: #1f6feb;
+}
+.work-group-card .kind-tag.pill-violet {
+  background: #efe8ff;
+  color: #6b4eff;
+}
+.work-group-card .kind-tag.check-tag {
+  background: #eef6ff;
+  color: #1f6feb;
+  box-shadow: none;
+}
+.work-group-card .task-meta {
+  margin-top: 3px;
+  color: #8a8a8e;
+}
+.work-group-card .due-cluster {
+  gap: 4px;
+}
+.work-group-card .due-cluster.is-overdue .due-glow,
+.work-group-card .due-cluster.is-overdue .due-badge {
+  color: #fff;
+}
+.work-group-card .due-cluster.is-overdue {
+  background: #ff3b30;
+  border-radius: 999px;
+  padding: 4px 10px;
+  box-shadow: 0 0 0 3px rgba(255, 59, 48, 0.18), 0 0 14px rgba(255, 59, 48, 0.35);
+}
+.work-group-card .due-cluster.is-overdue .due-glow {
+  font-weight: 800;
+  font-size: 0.68rem;
+}
+.work-group-card .due-cluster.is-overdue .due-badge {
+  font-weight: 750;
+  font-size: 0.72rem;
+}
+.work-group-card .status-select {
+  border-radius: 999px;
+  min-height: 32px;
+}
+.work-group-card .task-comment-btn {
+  border-radius: 999px;
+  background: #eef5ff;
+  border-color: transparent;
+  color: #1f6feb;
+  min-width: 40px;
+}
+.work-group-card .task-comment-btn.has-count {
+  background: #e8f1ff;
+  font-weight: 800;
+}
+@media (max-width: 720px) {
+  .work-group-card .task-row {
+    grid-template-columns: auto 1fr auto;
+    grid-template-areas:
+      "origin main comment"
+      "origin due status";
+  }
+  .work-group-card .task-comment-btn { grid-area: comment; }
+  .work-group-card .status-select { grid-area: status; }
+  .work-group-card .due-cluster { grid-area: due; }
+}
