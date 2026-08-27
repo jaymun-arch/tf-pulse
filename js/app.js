@@ -10,6 +10,25 @@ import { REPORT_LAYOUTS, downloadReportLayoutPpt, layoutPreviewWireHtml } from "
 import { downloadEditableDiagramPpt, diagramPreviewWireHtml } from "./report-diagrams.js";
 import { downloadReportArtPackagePpt } from "./report-art-pack.js";
 import {
+  composeStudioPack,
+  buildStudioUsageGuide,
+  studioStageHtml,
+  animateStudioBuild,
+} from "./report-art-studio.js";
+import {
+  ensureReportStyleLearning,
+  getAllLearnedSamples,
+  pickSamplesForGeneration,
+  buildLearnedStyleGuideBlock,
+  learningBannerHtml,
+  learningGalleryHtml,
+  ingestStyleSample,
+  removeLearnedSample,
+  programStats,
+  STYLE_PROGRAMS,
+  DEFAULT_STYLE_SAMPLES,
+} from "./report-style-learning.js";
+import {
   DEFAULT_TF_TOPICS,
   computeMilestoneProgress,
   marathonTrackHtml,
@@ -21,10 +40,11 @@ import {
   downloadLegoDraftPpt,
 } from "./tf-redesign.js";
 
-const STORAGE_KEY = "tf-ops-data-v16";
+const STORAGE_KEY = "tf-ops-data-v17";
 const USER_KEY = "tf-ops-user-v1";
 const REMIND_KEY = "tf-ops-schedule-remind-v1";
 const TF_TOPIC_KEY = "tf-ops-topic-v1";
+const PROCESS_GUIDE_KEY = "tf-process-guide-dismissed-v1";
 const REMIND_BEFORE_DAYS = 14;
 
 const BUDGET_CATALOG = {
@@ -81,7 +101,7 @@ const BUDGET_CATALOG = {
 
 const VIEW_META = {
   dashboard: { title: "TF 요약", desc: "제출일시·잔여기간·일정 진도" },
-  "my-work": { title: "내 업무", desc: "내가 할 일·작성·제출·피드백" },
+  "my-work": { title: "내 업무", desc: "요청받은 일을 확인하고 상태를 바꿉니다" },
   "tf-all": { title: "TF 업무 모두보기", desc: "보고서·예산·성과지표 통합" },
   parts: { title: "목차·할당", desc: "목차와 파트 분량" },
   collections: { title: "보고서 통합", desc: "차수별 제출·분량 분석" },
@@ -95,7 +115,7 @@ const VIEW_META = {
   members: { title: "구성원", desc: "TF 멤버" },
   "ai-art": { title: "보고서 그림", desc: "레이아웃·도식·PPT" },
   kpi: { title: "성과지표", desc: "달성·밸런스 분석" },
-  guide: { title: "사용방법", desc: "메뉴별 안내" },
+  guide: { title: "사용방법", desc: "처음 사용자도 순서대로 따라갈 수 있습니다" },
 };
 
 /** PDF 요청: TF요약 · 내업무 · TF모두보기 (+ Setting) */
@@ -126,6 +146,11 @@ const NAV_GROUPS = {
       kpi: "성과지표",
     },
     defaultView: "collections",
+  },
+  guide: {
+    label: "사용방법",
+    views: ["guide"],
+    defaultView: "guide",
   },
   setup: {
     label: "Setting",
@@ -629,6 +654,25 @@ function pruneHeavyAiPayloads(level = 0) {
     // 그래도 부족하면 base64 제거(메타만 유지) → 화면에는 빈 카드 대신 정리
     state.aiArts = [];
   }
+  if (level >= 2) {
+    ensureReportStyleLearning(state);
+    state.reportStyleLearning.samples = (state.reportStyleLearning.samples || [])
+      .filter((s) => s.source !== "upload" || s.thumbDataUrl)
+      .slice(0, Math.max(6, 16 - level * 3));
+  }
+  if (level >= 2) {
+    ensureReviewSession();
+    state.reviewSession.comments = (state.reviewSession.comments || []).map((c, i) =>
+      i < 40 ? c : { ...c, photoDataUrl: "", thumbOnly: true }
+    );
+  }
+  if (level >= 3) {
+    ensureReviewSession();
+    state.reviewSession.comments = (state.reviewSession.comments || []).slice(0, 30).map((c) => ({
+      ...c,
+      photoDataUrl: "",
+    }));
+  }
   if (level >= 4) {
     state.aiBriefs = state.aiBriefs.slice(0, 3).map((b) => ({
       ...b,
@@ -710,6 +754,7 @@ async function initState() {
       ensureReviewDocs();
       ensureReviewSession();
       ensureTfTopics();
+      ensureCollectionPhases();
       persist();
       return;
     } catch {
@@ -728,6 +773,7 @@ async function initState() {
   ensureReviewDocs();
   ensureReviewSession();
   ensureTfTopics();
+  ensureCollectionPhases();
   persist();
 }
 
@@ -741,7 +787,7 @@ function ensureTfTopics() {
   state.tfTopics = state.tfTopics.map((t) => {
     let name = String(t.name || "TF").trim();
     name = name.replace(/^연어회\s*·\s*/, "");
-    if (t.id === "yeonu-2026") name = "2026 교육혁신 성과보고서";
+    if (t.id === "yeonu-2026") name = "혁신지원사업 수정사업계획서";
     return {
       id: t.id || uid("tf"),
       name: name || "TF",
@@ -887,6 +933,397 @@ function ensureReviewSession() {
   delete state.reviewSession.activeStep;
 }
 
+function isCollectionFullySubmitted(col) {
+  if (!col?.submissions?.length) return false;
+  return col.submissions.every((s) => submissionBoardStatus(s).id === "done");
+}
+
+function ensureCollectionPhases() {
+  (state.collections || []).forEach((col) => {
+    if (col.requestPhase === "planned" || col.requestPhase === "open" || col.requestPhase === "closed") return;
+    const started = (col.submissions || []).some((s) => submissionBoardStatus(s).id !== "todo");
+    if (isCollectionFullySubmitted(col)) col.requestPhase = "closed";
+    else if (started) col.requestPhase = "open";
+    else col.requestPhase = "planned";
+  });
+}
+
+function collectionPhaseOf(col) {
+  if (!col) return "planned";
+  ensureCollectionPhases();
+  return col.requestPhase || "planned";
+}
+
+function isCollectionRequestOpened(col) {
+  const phase = collectionPhaseOf(col);
+  return phase === "open" || phase === "closed";
+}
+
+function isFinalCollection(col) {
+  if (!col) return false;
+  const name = String(col.name || "");
+  if (/최종/.test(name)) return true;
+  const rounds = [...(state.collections || [])].map((c) => Number(c.round) || 0);
+  const max = rounds.length ? Math.max(...rounds) : 0;
+  return Number(col.round) === max && max > 1;
+}
+
+function collectionWaitingMessage(col) {
+  if (isFinalCollection(col)) {
+    return "아직 관리자가 금번 회차의 최종제출 요청을 하지 않았습니다.";
+  }
+  const name = col?.name || "이번 차수";
+  return `아직 관리자가 ${name} 제출 요청을 하지 않았습니다.`;
+}
+
+function previousCollection(col) {
+  if (!col) return null;
+  const sorted = [...(state.collections || [])].sort((a, b) => (Number(a.round) || 0) - (Number(b.round) || 0));
+  const idx = sorted.findIndex((c) => c.round === col.round);
+  return idx > 0 ? sorted[idx - 1] : null;
+}
+
+function canOpenCollectionRequest(col) {
+  const prev = previousCollection(col);
+  if (!prev) return { ok: true };
+  const prevPhase = collectionPhaseOf(prev);
+  if (prevPhase === "closed" || isCollectionFullySubmitted(prev)) return { ok: true };
+  return {
+    ok: false,
+    reason: `${prev.name} 취합이 마감된 뒤에 ${col.name} 제출 요청을 등록할 수 있습니다.`,
+  };
+}
+
+function collectScheduleRound(s) {
+  const explicit = Number(s?.collectionRound);
+  if (explicit) return explicit;
+  const title = String(s?.title || "");
+  if (/1차/.test(title)) return 1;
+  if (/2차/.test(title)) return 2;
+  if (/최종|3차/.test(title)) {
+    const rounds = (state.collections || []).map((c) => Number(c.round) || 0);
+    return rounds.length ? Math.max(...rounds) : 3;
+  }
+  const due = (s?.endDate || s?.date || "").slice(0, 10);
+  const hit = (state.collections || []).find((c) => (c.dueDate || "") === due);
+  return hit?.round || null;
+}
+
+function collectionBySchedule(s) {
+  const round = collectScheduleRound(s);
+  if (!round) return null;
+  return (state.collections || []).find((c) => Number(c.round) === Number(round)) || null;
+}
+
+function scheduleForCollectionRound(round) {
+  return (state.schedule || []).find(
+    (s) => scheduleGroupOf(s) === "collect" && Number(collectScheduleRound(s)) === Number(round)
+  );
+}
+
+const COLLECT_FLOW_STEPS = [
+  { id: "planned", n: 1, label: "일정 수립" },
+  { id: "open", n: 2, label: "제출 요청" },
+  { id: "upload", n: 3, label: "업로드 취합" },
+  { id: "closed", n: 4, label: "마감" },
+];
+
+function collectFlowIndex(col) {
+  const phase = collectionPhaseOf(col);
+  if (phase === "planned") return 0;
+  if (phase === "closed") return 3;
+  const uploading = (col?.submissions || []).some((s) => submissionBoardStatus(s).id !== "todo");
+  return uploading ? 2 : 1;
+}
+
+function collectFlowLabel(col) {
+  return COLLECT_FLOW_STEPS[collectFlowIndex(col)]?.label || "일정 수립";
+}
+
+function collectStepperHtml(col, { compact = false } = {}) {
+  if (!col) return "";
+  const idx = collectFlowIndex(col);
+  return `
+    <ol class="collect-stepper ${compact ? "is-compact" : ""}" aria-label="${escapeAttr(col.name)} 취합 절차">
+      ${COLLECT_FLOW_STEPS.map((st, i) => {
+        const stateCls = i < idx ? "is-done" : i === idx ? "is-now" : "is-todo";
+        return `<li class="${stateCls}"><em>${st.n}</em><span>${escapeHtml(st.label)}</span></li>`;
+      }).join("")}
+    </ol>`;
+}
+
+function collectPipelineHtml() {
+  ensureCollectionPhases();
+  const rounds = [...(state.collections || [])].sort((a, b) => (Number(a.round) || 0) - (Number(b.round) || 0));
+  if (!rounds.length) return "";
+  return `
+    <div class="collect-pipeline" aria-label="취합 차수 진행">
+      ${rounds
+        .map((col, i) => {
+          const idx = collectFlowIndex(col);
+          const phase = collectionPhaseOf(col);
+          return `
+          <div class="collect-pipeline-item is-${escapeAttr(phase)}">
+            <strong>${escapeHtml(col.name)}</strong>
+            <span>${escapeHtml(COLLECT_FLOW_STEPS[idx].label)}</span>
+          </div>
+          ${i < rounds.length - 1 ? `<span class="collect-pipeline-arrow" aria-hidden="true">→</span>` : ""}`;
+        })
+        .join("")}
+    </div>
+    <p class="collect-pipeline-note muted">전체 일정표는 마감일을 수립하는 단계입니다. 참여자 업로드는 관리자가 해당 차수 <strong>제출 요청</strong>을 등록한 뒤에만 열립니다.</p>`;
+}
+
+function openCollectionRequestModal(round) {
+  if (!isAdmin()) return;
+  const col = (state.collections || []).find((c) => Number(c.round) === Number(round));
+  if (!col) return;
+  const gate = canOpenCollectionRequest(col);
+  if (!gate.ok) {
+    alert(gate.reason);
+    return;
+  }
+  const linked = scheduleForCollectionRound(round);
+  const defaultAsk =
+    (linked?.askMessage || "").trim() ||
+    (Number(round) === 1
+      ? "관리자가 할당받은 보고서의 페이지를 작성하여 1차 업로드를 요청했어요!"
+      : Number(round) === 2
+        ? "관리자가 보완·수정한 원고를 2차 업로드하도록 요청했어요!"
+        : "관리자가 최종 통합본 확인 및 보고서 제출을 요청했어요!");
+  openModal({
+    kicker: "제출 요청",
+    title: `${col.name} 제출 요청을 등록합니다.`,
+    submitLabel: "제출 요청 등록",
+    bodyHtml: `
+      <p class="schedule-comment-lead">일정표의 마감은 이미 수립된 상태입니다. 이제 참여자에게 <strong>작성 파일 업로드</strong>를 요청합니다.</p>
+      ${collectStepperHtml(col)}
+      <label class="wp-field" style="margin-top:12px">
+        <span class="wp-label">담당자에게 보이는 요청 말풍선</span>
+        <textarea name="askMessage" rows="3" class="wp-input">${escapeHtml(defaultAsk)}</textarea>
+      </label>
+      <p class="muted" style="margin:8px 0 0;font-size:var(--text-xs)">등록 후 담당자는 내 업무에서 파일을 올리고, 보고서 통합에서 취합됩니다.</p>
+    `,
+    onSubmit: (fd) => {
+      const ask = (fd.get("askMessage") || "").toString().trim() || defaultAsk;
+      col.requestPhase = "open";
+      col.requestOpenedAt = new Date().toISOString();
+      col.requestOpenedBy = sessionUser || "";
+      col.requestMessage = ask;
+      if (linked) {
+        linked.askMessage = ask;
+        if ((linked.status || "준비") === "준비") linked.status = "진행";
+        linked.collectionRound = col.round;
+      }
+      persist();
+      activeRound = col.round;
+      if (activeViewName === "collections") renderCollections();
+      else refreshActiveScheduleSurface();
+      return true;
+    },
+  });
+}
+
+function closeCollectionRequest(round) {
+  if (!isAdmin()) return;
+  const col = (state.collections || []).find((c) => Number(c.round) === Number(round));
+  if (!col) return;
+  if (!confirm(`${col.name} 취합을 마감할까요? 마감 후 참여자는 파일을 올릴 수 없고, 다음 차수 제출 요청을 등록할 수 있습니다.`)) {
+    return;
+  }
+  col.requestPhase = "closed";
+  col.requestClosedAt = new Date().toISOString();
+  col.requestClosedBy = sessionUser || "";
+  const linked = scheduleForCollectionRound(round);
+  if (linked) linked.status = "완료";
+  persist();
+  if (activeViewName === "collections") renderCollections();
+  else refreshActiveScheduleSurface();
+}
+
+function partReviewComments(partId, round = activeRound) {
+  ensureReviewSession();
+  const r = Number(round);
+  return (state.reviewSession.comments || []).filter(
+    (c) => c.partId === partId && (c.round == null || Number(c.round) === r)
+  );
+}
+
+function reviewRatingLabel(rating) {
+  if (rating === "need") return "보완 필요";
+  if (rating === "hold") return "보류";
+  return "양호";
+}
+
+async function compressReviewPhoto(file, maxBytes = 680 * 1024) {
+  if (!file?.type?.startsWith("image/")) throw new Error("사진(PNG·JPG)만 첨부할 수 있습니다.");
+  const dataUrl = await readFileAsDataUrl(file);
+  if (dataUrl.length <= maxBytes * 1.37) {
+    return { dataUrl, name: file.name || "photo.jpg" };
+  }
+  const img = await new Promise((resolve, reject) => {
+    const el = new Image();
+    el.onload = () => resolve(el);
+    el.onerror = () => reject(new Error("사진을 읽지 못했습니다."));
+    el.src = dataUrl;
+  });
+  const canvas = document.createElement("canvas");
+  const scale = Math.min(1, 1600 / Math.max(img.width, img.height));
+  canvas.width = Math.round(img.width * scale);
+  canvas.height = Math.round(img.height * scale);
+  canvas.getContext("2d").drawImage(img, 0, 0, canvas.width, canvas.height);
+  let quality = 0.88;
+  let out = canvas.toDataURL("image/jpeg", quality);
+  while (out.length > maxBytes * 1.37 && quality > 0.45) {
+    quality -= 0.08;
+    out = canvas.toDataURL("image/jpeg", quality);
+  }
+  return { dataUrl: out, name: (file.name || "photo.jpg").replace(/\.\w+$/, ".jpg") };
+}
+
+function renderReviewCommentCardHtml(c, { admin = false, largePhoto = false } = {}) {
+  const hasPhoto = Boolean(c.photoDataUrl);
+  const photoLarge = largePhoto || hasPhoto;
+  return `
+    <article class="review-comment-card rating-${escapeAttr(c.rating || "good")} ${hasPhoto ? "has-photo" : ""} ${photoLarge ? "photo-emphasis" : ""}">
+      <header>
+        <span class="review-rating-badge">${escapeHtml(reviewRatingLabel(c.rating))}</span>
+        <span class="muted">${escapeHtml(c.by || "")} · ${escapeHtml((c.createdAt || "").slice(0, 16).replace("T", " "))}</span>
+        ${admin ? `<button type="button" class="btn btn-sm btn-danger" data-del-comment="${escapeAttr(c.id)}">삭제</button>` : ""}
+      </header>
+      <p>${escapeHtml(c.text || "")}</p>
+      ${
+        hasPhoto
+          ? `<figure class="review-comment-photo ${photoLarge ? "is-large" : ""}">
+              <img src="${escapeAttr(c.photoDataUrl)}" alt="${escapeAttr(c.photoName || "회의 첨부")}" loading="lazy" />
+              <figcaption class="muted">${escapeHtml(c.photoCaption || "회의·현장 참고 사진 · 해당 영역 그림은 크게 반영")}</figcaption>
+            </figure>`
+          : ""
+      }
+    </article>`;
+}
+
+function bindReviewCommentDeletes(root) {
+  root?.querySelectorAll("[data-del-comment]").forEach((btn) => {
+    btn.addEventListener("click", () => {
+      if (!isAdmin()) return;
+      if (!confirm("이 코멘트를 삭제할까요?")) return;
+      ensureReviewSession();
+      state.reviewSession.comments = state.reviewSession.comments.filter((c) => c.id !== btn.dataset.delComment);
+      persist();
+      renderCollections();
+      renderReview();
+    });
+  });
+}
+
+async function addReviewCommentEntry({ partId, round, text, rating, photoFile, photoCaption }) {
+  ensureReviewSession();
+  let photoDataUrl = "";
+  let photoName = "";
+  if (photoFile && photoFile.size > 0) {
+    const compressed = await compressReviewPhoto(photoFile);
+    photoDataUrl = compressed.dataUrl;
+    photoName = compressed.name;
+  }
+  state.reviewSession.comments.unshift({
+    id: uid("rc"),
+    partId,
+    round: Number(round) || activeRound,
+    text,
+    rating: rating || "good",
+    by: sessionUser || "",
+    createdAt: new Date().toISOString(),
+    photoDataUrl,
+    photoName,
+    photoCaption: photoCaption || (photoDataUrl ? "회의·현장 참고 사진 · 해당 영역 그림은 크게 반영" : ""),
+  });
+  state.reviewSession.comments = state.reviewSession.comments.slice(0, 200);
+  persist();
+}
+
+function openPartReviewCommentModal(partId, round = activeRound) {
+  const col = state.collections.find((c) => c.round === round);
+  if (!col || !isCollectionFullySubmitted(col)) {
+    alert("전 파트 제출이 완료된 후 리뷰회의 코멘트를 남길 수 있습니다.");
+    return;
+  }
+  const part = partById(partId);
+  const assignee = part ? memberById(part.assigneeId) : null;
+  const comments = partReviewComments(partId, round);
+  const admin = isAdmin();
+  const isMine = myPartIds().includes(partId);
+
+  openModal({
+    kicker: "리뷰회의 정리",
+    title: part ? `${part.section}. ${part.title}` : partId,
+    submitLabel: admin ? "코멘트 등록" : "닫기",
+    hideFooter: !admin,
+    bodyHtml: `
+      <p class="schedule-comment-lead">
+        ${escapeHtml(col.name)} 제출 완료 · 담당 <strong>${escapeHtml(assignee?.name || "-")}</strong>
+        ${isMine ? " · 내 담당 파트" : ""}
+      </p>
+      <p class="muted" style="margin-top:-6px;font-size:var(--text-sm)">
+        회의에서 논의된 정리사항을 코멘트로 남깁니다. 모바일에서 사진을 찍어 첨부하면 해당 영역 그림을 <strong>더 크게</strong> 넣기로 한 내용도 함께 기록할 수 있습니다.
+      </p>
+      ${
+        admin
+          ? `<div class="review-comment-form modal-review-form">
+            <label class="field full">정리 코멘트
+              <textarea id="partReviewCommentText" rows="4" placeholder="예: IV. 성과분석 — KPI 표를 1페이지 확대, ICC 매트릭스는 회의 사진 참고하여 그림 비중 확대"></textarea>
+            </label>
+            <label class="field">판정
+              <select id="partReviewCommentRating">
+                <option value="good">양호</option>
+                <option value="need">보완 필요</option>
+                <option value="hold">보류·추가논의</option>
+              </select>
+            </label>
+            <label class="field full">사진 첨부 (모바일 촬영)
+              <input type="file" id="partReviewCommentPhoto" accept="image/*" capture="environment" />
+              <span class="muted" style="display:block;margin-top:4px">화이트보드·인쇄본·PPT 화면 등 — 첨부 시 아래에 크게 표시됩니다.</span>
+            </label>
+            <label class="field full">사진·그림 관련 메모 (선택)
+              <input id="partReviewCommentPhotoCaption" placeholder="예: 이 부분 그림을 더 크게 넣기로 함" />
+            </label>
+          </div>`
+          : ""
+      }
+      <div class="review-comment-list review-comment-list-modal">
+        ${
+          comments.length
+            ? comments.map((c) => renderReviewCommentCardHtml(c, { admin, largePhoto: true })).join("")
+            : `<div class="empty">아직 리뷰회의 코멘트가 없습니다.${admin ? " 위에서 첫 코멘트를 등록해 주세요." : ""}</div>`
+        }
+      </div>
+    `,
+    onSubmit: admin
+      ? async (fd) => {
+          const text = ($("#partReviewCommentText")?.value || fd.get("text") || "").trim();
+          const photoFile = $("#partReviewCommentPhoto")?.files?.[0];
+          if (!text && !(photoFile && photoFile.size)) {
+            alert("코멘트 또는 사진 중 하나는 입력해 주세요.");
+            return false;
+          }
+          await addReviewCommentEntry({
+            partId,
+            round,
+            text: text || "(사진 첨부)",
+            rating: $("#partReviewCommentRating")?.value || "good",
+            photoFile,
+            photoCaption: ($("#partReviewCommentPhotoCaption")?.value || "").trim(),
+          });
+          closeModal();
+          renderCollections();
+          return true;
+        }
+      : null,
+  });
+
+  bindReviewCommentDeletes($("#modalBody"));
+}
+
 function navGroupOf(viewName) {
   return VIEW_TO_NAV[viewName] || "home";
 }
@@ -899,7 +1336,6 @@ function resolveViewName(name) {
   if (name === "schedule") return "my-work";
   if (name === "review") return "collections";
   if (name === "resources") return "collections";
-  if (name === "guide") return "dashboard";
   // 그룹 id로 들어오면 기본(또는 마지막) 뷰로
   if (NAV_GROUPS[name]) {
     const g = NAV_GROUPS[name];
@@ -985,11 +1421,14 @@ function setView(name) {
   let desc = meta.desc;
   if (viewName === "collections") {
     desc = isAdmin()
-      ? "취합 현황을 확인하고, 문서를 올리면 AI가 포함 내용을 브리핑합니다."
-      : "본인 담당 파트의 작성 페이지·제출 상태를 입력합니다.";
+      ? "제출 요청을 열고, 취합 현황을 확인합니다."
+      : "제출 요청이 열린 차수에 파일을 올리고 제출합니다.";
   }
   if (viewName === "dashboard") {
-    desc = "영역별 완료 여부와 일정·할 일을 한눈에 봅니다.";
+    desc = "아래 순서를 따라 내업무부터 시작하면 됩니다.";
+  }
+  if (viewName === "guide") {
+    desc = "칸을 누르면 해당 화면으로 바로 이동합니다.";
   }
   if (viewName === "budget") {
     const modeMeta = budgetModeMeta();
@@ -1059,7 +1498,15 @@ async function applyLoginWeather() {
     const label = labels[kind] || kind;
     gate.title = `로그인 배경 · 현재 날씨: ${label}`;
     if (badge) {
-      badge.textContent = `${icons[kind] || "☁"} ${label}${note ? ` · ${note}` : " · 안양"}`;
+      const iconEl = badge.querySelector(".wx-badge-icon");
+      const textEl = badge.querySelector(".wx-badge-text");
+      const text = `${label}${note ? ` · ${note}` : " · 안양"}`;
+      if (iconEl && textEl) {
+        iconEl.textContent = icons[kind] || "☁";
+        textEl.textContent = text;
+      } else {
+        badge.textContent = `${icons[kind] || "☁"} ${text}`;
+      }
     }
   };
   try {
@@ -1179,8 +1626,7 @@ function enterAs(name) {
   renderAll();
   setView("dashboard");
   window.setTimeout(() => {
-    openRemindPopup(false);
-    openRequestPopup(false);
+    openUnifiedAlarmPopup({ mode: "unified", browseAll: false });
   }, 280);
 }
 
@@ -1820,7 +2266,12 @@ function formatKorDate(iso) {
   return `${m}월 ${d}일`;
 }
 
-/* ---------- Schedule remind popup ---------- */
+/* ---------- Schedule / comment alarm popup ---------- */
+
+const ALARM_AUTO_WAIT_SEC = 5;
+let alarmPopupMode = "unified";
+let alarmPopupPhase = "schedule";
+let alarmPhaseTransitionTimer = null;
 
 function loadRemindState() {
   try {
@@ -1880,15 +2331,32 @@ function updateRemindBell() {
   const countEl = $("#remindBellCount");
   if (!bell || !sessionUser) return;
   const pending = getUpcomingReminders();
-  const feed = myCommentFeedItems();
-  const count = pending.length + feed.length;
-  if (count > 0) {
+  if (pending.length > 0) {
     bell.hidden = false;
-    bell.classList.toggle("has-pending", pending.length > 0 || feed.length > 0);
-    countEl.textContent = String(count);
+    bell.classList.toggle("has-pending", true);
+    countEl.textContent = String(pending.length);
   } else {
     bell.hidden = true;
+    bell.classList.remove("has-pending");
   }
+}
+
+function updateCommentBell() {
+  const btn = $("#btnRequestPlane");
+  const countEl = $("#requestPlaneCount");
+  if (!btn || !sessionUser) return;
+  const feed = myCommentFeedItems();
+  if (feed.length > 0) {
+    btn.hidden = false;
+    countEl.textContent = String(feed.length);
+  } else {
+    btn.hidden = true;
+  }
+}
+
+function updateAlarmButtons() {
+  updateRemindBell();
+  updateCommentBell();
 }
 
 function remindTaskCardHtml(s, sourceLabel = "") {
@@ -1944,23 +2412,45 @@ function remindFeedCardHtml(r) {
     </button>`;
 }
 
-function renderRemindList() {
-  const root = $("#remindList");
+function bindRemindListActions(root) {
+  root?.querySelectorAll("[data-goto-schedule]").forEach((el) => {
+    el.addEventListener("click", () => {
+      cancelRemindPopupAutoClose();
+      clearAlarmPhaseTransitionTimer();
+      closeRemindPopup();
+      setView("schedule");
+    });
+  });
+  root?.querySelectorAll("[data-goto-request]").forEach((el) => {
+    el.addEventListener("click", () => {
+      cancelRemindPopupAutoClose();
+      clearAlarmPhaseTransitionTimer();
+      closeRemindPopup();
+      setView("requests");
+    });
+  });
+  root?.querySelectorAll("[data-goto-view]").forEach((el) => {
+    el.addEventListener("click", () => {
+      cancelRemindPopupAutoClose();
+      clearAlarmPhaseTransitionTimer();
+      closeRemindPopup();
+      setView(el.dataset.gotoView || "my-work");
+    });
+  });
+}
+
+function renderScheduleRemindList(root, items = getUpcomingReminders()) {
   if (!root) return;
-  const items = getUpcomingReminders();
   const overdue = items.filter((s) => s.daysUntil < 0);
   const todayItems = items.filter((s) => s.daysUntil === 0);
   const soon = items.filter((s) => s.daysUntil > 0 && s.daysUntil <= 7);
-  const feed = myCommentFeedItems();
   const overdueNote = "빨리 처리하거나, 처리 일정을 재수립하거나, 완료 여부를 점검하세요";
 
-  const section = (tone, title, count, cards, { glow = false, note = "", bird = false } = {}) => {
+  const section = (tone, title, count, cards, { glow = false, note = "" } = {}) => {
     if (!cards.length) return "";
     const titleHtml = glow
       ? `<span class="remind-title-glow">${escapeHtml(title)}</span>`
-      : bird
-        ? `<span class="remind-section-label"><span class="feedback-bird" aria-hidden="true">🐦</span>${escapeHtml(title)}</span>`
-        : `<span class="remind-section-label">${escapeHtml(title)}</span>`;
+      : `<span class="remind-section-label">${escapeHtml(title)}</span>`;
     return `
       <section class="remind-section is-${escapeAttr(tone)}">
         <h3>${titleHtml}<span class="remind-count">${count}건</span></h3>
@@ -1994,59 +2484,108 @@ function renderRemindList() {
       soon.length,
       soon.slice(0, 5).map((s) => remindTaskCardHtml(s, s.createdBy || "일정"))
     ),
-    section(
-      "comment",
-      "내가 받은 피드백",
-      feed.length,
-      feed.slice(0, 6).map((r) => remindFeedCardHtml(r)),
-      { bird: feed.length > 0 }
-    ),
   ]
     .filter(Boolean)
     .join("");
 
   if (!root.innerHTML.trim()) {
-    root.innerHTML = `<div class="empty">지금 챙길 일정·피드백이 없습니다.</div>`;
+    root.innerHTML = `<div class="empty">지금 챙길 일정이 없습니다.</div>`;
+  }
+  bindRemindListActions(root);
+}
+
+function renderCommentRemindList(root, feed = myCommentFeedItems()) {
+  if (!root) return;
+  if (!feed.length) {
+    root.innerHTML = `<div class="empty">확인할 코멘트·피드백이 없습니다.</div>`;
+    return;
+  }
+  root.innerHTML = `
+    <section class="remind-section is-comment">
+      <h3>
+        <span class="remind-section-label"><span class="feedback-bird" aria-hidden="true">🐦</span>코멘트 · 피드백</span>
+        <span class="remind-count">${feed.length}건</span>
+      </h3>
+      ${feed.slice(0, 8).map((r) => remindFeedCardHtml(r)).join("")}
+    </section>`;
+  bindRemindListActions(root);
+}
+
+function updateAlarmPopupChrome({ phase, mode, scheduleCount = 0, commentCount = 0, transitionSec = 0 } = {}) {
+  const kicker = $("#remindKicker");
+  const who = $("#remindWho");
+  const title = $("#remindTitle");
+  const desc = $("#remindDesc");
+  const hint = $("#remindPhaseHint");
+  const hideOpts = document.querySelector("#remindBackdrop .remind-hide-opts");
+  const goBtn = $("#remindGoSchedule");
+
+  if (who) who.textContent = `${sessionUser || "작성자"}님`;
+
+  if (phase === "schedule") {
+    if (kicker) kicker.textContent = "일정 리마인드";
+    if (title) title.innerHTML = `<span class="name-honorific">${escapeHtml(sessionUser || "작성자")}님</span>, 지금 챙길 일정입니다.`;
+    if (desc) {
+      const overdue = getUpcomingReminders().filter((s) => s.daysUntil < 0).length;
+      const todayN = getUpcomingReminders().filter((s) => s.daysUntil === 0).length;
+      desc.textContent = `${isAdmin() ? "등록·수정 권한" : "조회 권한"}으로 접속 · 일정 ${scheduleCount}건${commentCount && mode === "unified" ? ` · 이어서 코멘트 ${commentCount}건` : ""}${overdue ? ` · 지연 ${overdue}건` : ""}${todayN ? ` · 오늘 ${todayN}건` : ""}`;
+    }
+    if (goBtn) goBtn.textContent = "일정 보기";
+    if (hideOpts) hideOpts.hidden = false;
+  } else {
+    if (kicker) kicker.textContent = "코멘트 리마인드";
+    if (title) title.innerHTML = `<span class="name-honorific">${escapeHtml(sessionUser || "작성자")}님</span>, 확인할 코멘트가 있습니다.`;
+    if (desc) desc.textContent = `요청·리뷰·예산·성과지표 등 코멘트 ${commentCount}건을 확인해 주세요.`;
+    if (goBtn) goBtn.textContent = "내 업무 보기";
+    if (hideOpts) hideOpts.hidden = true;
   }
 
-  root.querySelectorAll("[data-goto-schedule]").forEach((el) => {
-    el.addEventListener("click", () => {
-      cancelRemindPopupAutoClose();
-      closeRemindPopup();
-      setView("schedule");
-    });
-  });
-  root.querySelectorAll("[data-goto-request]").forEach((el) => {
-    el.addEventListener("click", () => {
-      cancelRemindPopupAutoClose();
-      closeRemindPopup();
-      setView("requests");
-    });
-  });
-  root.querySelectorAll("[data-goto-view]").forEach((el) => {
-    el.addEventListener("click", () => {
-      cancelRemindPopupAutoClose();
-      closeRemindPopup();
-      setView(el.dataset.gotoView || "requests");
-    });
-  });
+  if (hint) {
+    if (transitionSec > 0 && phase === "schedule" && mode === "unified" && commentCount > 0) {
+      hint.hidden = false;
+      hint.textContent = `코멘트 리마인드로 이어집니다 · ${transitionSec}초`;
+    } else if (mode === "unified" && phase === "comment" && scheduleCount > 0) {
+      hint.hidden = false;
+      hint.textContent = "일정 확인 후 · 코멘트 리마인드";
+    } else {
+      hint.hidden = true;
+      hint.textContent = "";
+    }
+  }
+}
+
+function renderRemindList() {
+  const root = $("#remindList");
+  if (!root) return;
+  if (alarmPopupPhase === "comment") {
+    renderCommentRemindList(root);
+  } else {
+    renderScheduleRemindList(root);
+  }
 }
 
 function dismissReminder(id) {
   const map = loadRemindState();
   map[`dismiss:${id}`] = new Date().toISOString();
   saveRemindState(map);
-  updateRemindBell();
+  updateAlarmButtons();
 }
 
 function snoozeReminder(id) {
   const map = loadRemindState();
   map[`snooze:${id}`] = today();
   saveRemindState(map);
-  updateRemindBell();
+  updateAlarmButtons();
 }
 
 let remindPopupCountdownTimer = null;
+
+function clearAlarmPhaseTransitionTimer() {
+  if (alarmPhaseTransitionTimer) {
+    window.clearInterval(alarmPhaseTransitionTimer);
+    alarmPhaseTransitionTimer = null;
+  }
+}
 
 function clearRemindPopupAutoClose() {
   if (remindPopupCountdownTimer) {
@@ -2065,13 +2604,14 @@ function clearRemindPopupAutoClose() {
 
 function cancelRemindPopupAutoClose() {
   clearRemindPopupAutoClose();
+  clearAlarmPhaseTransitionTimer();
 }
 
-function startRemindPopupAutoClose() {
+function startRemindPopupAutoClose({ dismissScheduleOnClose = false } = {}) {
   clearRemindPopupAutoClose();
   const countEl = $("#remindAutoCloseCount");
   const secEl = $("#remindConfirmSec");
-  let left = 3;
+  let left = ALARM_AUTO_WAIT_SEC;
   if (countEl) {
     countEl.hidden = false;
     countEl.textContent = String(left);
@@ -2082,7 +2622,9 @@ function startRemindPopupAutoClose() {
     left -= 1;
     if (left <= 0) {
       clearRemindPopupAutoClose();
-      getUpcomingReminders().forEach((s) => dismissReminder(s.id));
+      if (dismissScheduleOnClose) {
+        getUpcomingReminders().forEach((s) => dismissReminder(s.id));
+      }
       closeRemindPopup({ skipHideOpts: false });
       return;
     }
@@ -2094,49 +2636,130 @@ function startRemindPopupAutoClose() {
   }, 1000);
 }
 
-function openRemindPopup(browseAll = false) {
+function startAlarmPhaseTransition(scheduleCount, commentCount) {
+  clearAlarmPhaseTransitionTimer();
+  clearRemindPopupAutoClose();
+  let left = ALARM_AUTO_WAIT_SEC;
+  updateAlarmPopupChrome({
+    phase: "schedule",
+    mode: alarmPopupMode,
+    scheduleCount,
+    commentCount,
+    transitionSec: left,
+  });
+  alarmPhaseTransitionTimer = window.setInterval(() => {
+    left -= 1;
+    updateAlarmPopupChrome({
+      phase: "schedule",
+      mode: alarmPopupMode,
+      scheduleCount,
+      commentCount,
+      transitionSec: left,
+    });
+    if (left <= 0) {
+      clearAlarmPhaseTransitionTimer();
+      showAlarmPhase("comment", { browseAll: false, auto: true });
+    }
+  }, 1000);
+}
+
+function showAlarmPhase(phase, { browseAll = false, auto = false } = {}) {
+  alarmPopupPhase = phase;
+  const scheduleItems = getUpcomingReminders({ includeDismissed: browseAll });
+  const commentItems = myCommentFeedItems();
+  updateAlarmPopupChrome({
+    phase,
+    mode: alarmPopupMode,
+    scheduleCount: scheduleItems.length,
+    commentCount: commentItems.length,
+  });
+  renderRemindList();
+
+  const hideToday = $("#remindHideToday");
+  const hideForever = $("#remindHideForever");
+  if (hideToday) hideToday.checked = false;
+  if (hideForever) hideForever.checked = false;
+
+  $("#remindBackdrop").hidden = false;
+  updateAlarmButtons();
+
+  clearRemindPopupAutoClose();
+  clearAlarmPhaseTransitionTimer();
+
+  if (!auto) return;
+
+  if (
+    alarmPopupMode === "unified" &&
+    phase === "schedule" &&
+    scheduleItems.length > 0 &&
+    commentItems.length > 0
+  ) {
+    startAlarmPhaseTransition(scheduleItems.length, commentItems.length);
+    return;
+  }
+
+  if (phase === "comment" || (phase === "schedule" && !commentItems.length)) {
+    startRemindPopupAutoClose({
+      dismissScheduleOnClose: phase === "schedule" && !commentItems.length,
+    });
+  }
+}
+
+function openUnifiedAlarmPopup({ mode = "unified", browseAll = false } = {}) {
+  alarmPopupMode = mode;
+  clearAlarmPhaseTransitionTimer();
+  clearRemindPopupAutoClose();
+
+  const scheduleItems = getUpcomingReminders({ includeDismissed: browseAll });
+  const commentItems = myCommentFeedItems();
+
+  if (mode === "schedule") {
+    showAlarmPhase("schedule", { browseAll, auto: false });
+    return;
+  }
+  if (mode === "comment") {
+    showAlarmPhase("comment", { browseAll, auto: false });
+    return;
+  }
+
   const map = loadRemindState();
   if (!browseAll) {
     if (map.hideForever) return;
     if (map.hideToday === today()) return;
   }
-  const pending = getUpcomingReminders({ includeDismissed: browseAll });
-  const feed = myCommentFeedItems();
-  if (!browseAll && !pending.length && !feed.length) {
+  if (!browseAll && !scheduleItems.length && !commentItems.length) {
     closeRemindPopup({ skipHideOpts: true });
-    updateRemindBell();
+    updateAlarmButtons();
     return;
   }
-  const who = $("#remindWho");
-  if (who) who.textContent = `${sessionUser || "작성자"}님`;
-  const overdue = pending.filter((s) => s.daysUntil < 0).length;
-  const todayN = pending.filter((s) => s.daysUntil === 0).length;
-  const weekN = pending.filter((s) => s.daysUntil > 0 && s.daysUntil <= 7).length;
-  const desc = $("#remindDesc");
-  if (desc) {
-    desc.textContent = `${isAdmin() ? "등록·수정 권한" : "조회 권한"}으로 접속했습니다. 지연 ${overdue}건 · 오늘 ${todayN}건 · 이번주 ${weekN}건 · 피드백 ${feed.length}건`;
+
+  if (scheduleItems.length) {
+    showAlarmPhase("schedule", { browseAll, auto: !browseAll });
+  } else if (commentItems.length) {
+    showAlarmPhase("comment", { browseAll, auto: !browseAll });
   }
-  const hideToday = $("#remindHideToday");
-  const hideForever = $("#remindHideForever");
-  if (hideToday) hideToday.checked = false;
-  if (hideForever) hideForever.checked = false;
-  renderRemindList();
-  $("#remindBackdrop").hidden = false;
-  updateRemindBell();
-  if (!browseAll) startRemindPopupAutoClose();
-  else clearRemindPopupAutoClose();
+}
+
+function openRemindPopup(browseAll = false) {
+  openUnifiedAlarmPopup({ mode: browseAll ? "schedule" : "unified", browseAll });
 }
 
 function closeRemindPopup({ skipHideOpts = false } = {}) {
   clearRemindPopupAutoClose();
-  if (!skipHideOpts) {
+  clearAlarmPhaseTransitionTimer();
+  if (!skipHideOpts && alarmPopupPhase === "schedule") {
     const map = loadRemindState();
     if ($("#remindHideForever")?.checked) map.hideForever = true;
     if ($("#remindHideToday")?.checked) map.hideToday = today();
     saveRemindState(map);
   }
   $("#remindBackdrop").hidden = true;
-  updateRemindBell();
+  const hint = $("#remindPhaseHint");
+  if (hint) {
+    hint.hidden = true;
+    hint.textContent = "";
+  }
+  updateAlarmButtons();
 }
 
 function myPendingRequests() {
@@ -2155,15 +2778,17 @@ function myCommentFeedItems() {
   const me = currentMember();
 
   (state.reviewSession?.comments || []).forEach((c) => {
-    if (!c?.text) return;
+    if (!c?.text && !c?.photoDataUrl) return;
     if (mine.has(c.partId) || c.partId === "__overall__") {
+      const part = partById(c.partId);
+      const photoNote = c.photoDataUrl ? " · 📷 사진 첨부" : "";
       items.push({
         id: `rev-${c.id}`,
-        title: "윤독 코멘트",
-        memo: c.text,
-        requester: c.author || "관리자",
+        title: part ? `리뷰회의 · ${part.section}. ${part.title}` : "윤독 코멘트",
+        memo: `${c.text || ""}${photoNote}`.trim(),
+        requester: c.by || "관리자",
         dueDate: null,
-        goto: "review",
+        goto: "collections",
         kind: "review",
       });
     }
@@ -2228,87 +2853,11 @@ function myCommentFeedItems() {
 }
 
 function updateRequestPlane() {
-  const btn = $("#btnRequestPlane");
-  const countEl = $("#requestPlaneCount");
-  if (!btn || !sessionUser) return;
-  const pending = myPendingRequests();
-  if (pending.length > 0) {
-    btn.hidden = false;
-    countEl.textContent = String(pending.length);
-  } else {
-    btn.hidden = true;
-  }
-}
-
-let requestPopupCountdownTimer = null;
-
-function clearRequestPopupAutoClose() {
-  if (requestPopupCountdownTimer) {
-    window.clearInterval(requestPopupCountdownTimer);
-    requestPopupCountdownTimer = null;
-  }
-  const countEl = $("#requestAutoCloseCount");
-  const secEl = $("#requestConfirmSec");
-  if (countEl) {
-    countEl.hidden = true;
-    countEl.textContent = "";
-    countEl.classList.remove("is-urgent");
-  }
-  if (secEl) secEl.textContent = "";
-}
-
-function cancelRequestPopupAutoClose() {
-  clearRequestPopupAutoClose();
-}
-
-function startRequestPopupAutoClose() {
-  clearRequestPopupAutoClose();
-  const countEl = $("#requestAutoCloseCount");
-  const secEl = $("#requestConfirmSec");
-  let left = 3;
-  if (countEl) {
-    countEl.hidden = false;
-    countEl.textContent = String(left);
-    countEl.classList.toggle("is-urgent", left <= 2);
-  }
-  if (secEl) secEl.textContent = `(${left})`;
-  requestPopupCountdownTimer = window.setInterval(() => {
-    left -= 1;
-    if (left <= 0) {
-      clearRequestPopupAutoClose();
-      closeRequestPopup();
-      return;
-    }
-    if (countEl) {
-      countEl.textContent = String(left);
-      countEl.classList.toggle("is-urgent", left <= 2);
-    }
-    if (secEl) secEl.textContent = `(${left})`;
-  }, 1000);
+  updateCommentBell();
 }
 
 function renderRequestPopupList(items) {
-  const list = $("#requestList");
-  if (!items.length) {
-    list.innerHTML = `<p class="empty">확인할 요청이 없습니다.</p>`;
-    return;
-  }
-  list.innerHTML = `
-    <section class="remind-section is-comment">
-      <h3>
-        <span class="remind-section-label"><span class="feedback-bird" aria-hidden="true">🐦</span>내가 받은 피드백</span>
-        <span class="remind-count">${items.length}건</span>
-      </h3>
-      ${items.map((r) => remindFeedCardHtml(r)).join("")}
-    </section>`;
-
-  list.querySelectorAll("[data-goto-request]").forEach((el) => {
-    el.addEventListener("click", () => {
-      cancelRequestPopupAutoClose();
-      closeRequestPopup();
-      setView(isAdmin() ? "requests" : "my-work");
-    });
-  });
+  renderCommentRemindList($("#requestList"), items);
 }
 
 function completeRequest(id) {
@@ -2324,25 +2873,15 @@ function completeRequest(id) {
 }
 
 function openRequestPopup(force = false) {
-  const pending = myPendingRequests();
-  if (!pending.length && !force) {
-    updateRequestPlane();
-    return;
-  }
-  if (!pending.length) {
-    closeRequestPopup();
-    return;
-  }
-  renderRequestPopupList(pending);
-  $("#requestBackdrop").hidden = false;
-  updateRequestPlane();
-  startRequestPopupAutoClose();
+  openUnifiedAlarmPopup({ mode: "comment", browseAll: force });
 }
 
 function closeRequestPopup() {
-  clearRequestPopupAutoClose();
-  $("#requestBackdrop").hidden = true;
-  updateRequestPlane();
+  closeRemindPopup();
+}
+
+function cancelRequestPopupAutoClose() {
+  cancelRemindPopupAutoClose();
 }
 
 /** 홈 진행률 바용 지표 */
@@ -2449,6 +2988,85 @@ function homeStatusStripHtml({ doneCount, total, items }) {
 
 /* ---------- Renderers ---------- */
 
+function processGuideDismissed() {
+  try {
+    return localStorage.getItem(PROCESS_GUIDE_KEY) === "1";
+  } catch {
+    return false;
+  }
+}
+
+function processStepsForRole() {
+  if (isAdmin()) {
+    return [
+      { n: "1", title: "일정 수립", desc: "내업무에서 할 일과 마감을 넣습니다", view: "my-work" },
+      { n: "2", title: "제출 요청", desc: "보고서 통합에서 차수 요청을 엽니다", view: "collections" },
+      { n: "3", title: "취합·리뷰", desc: "제출을 확인하고 리뷰회의를 남깁니다", view: "collections" },
+      { n: "4", title: "사용방법", desc: "역할별 권한·메뉴를 확인합니다", view: "guide" },
+    ];
+  }
+  return [
+    { n: "1", title: "내업무 확인", desc: "요청받은 일과 말풍선을 봅니다", view: "my-work" },
+    { n: "2", title: "작성·업로드", desc: "제출 요청이 열리면 파일을 올립니다", view: "collections" },
+    { n: "3", title: "제출 확인", desc: "보고서 통합에서 상태를 확인합니다", view: "collections" },
+    { n: "4", title: "사용방법", desc: "막히면 여기 그림 안내를 봅니다", view: "guide" },
+  ];
+}
+
+function processRailHtml({ compact = false, currentView = "", dismissible = true } = {}) {
+  if (dismissible && !compact && processGuideDismissed()) return "";
+  const steps = processStepsForRole();
+  const kicker = isAdmin() ? "관리자 진행 순서" : "처음이라면 이 순서로";
+  const title = isAdmin()
+    ? "일정 → 제출 요청 → 취합"
+    : "내업무 확인 → 업로드 → 제출";
+  return `
+    <section class="process-rail ${compact ? "is-compact" : ""}" aria-label="${escapeAttr(kicker)}">
+      <div class="process-rail-head">
+        <div>
+          <p class="process-rail-kicker">${escapeHtml(kicker)}</p>
+          <p class="process-rail-title">${escapeHtml(title)}</p>
+        </div>
+        ${
+          dismissible && !compact
+            ? `<button type="button" class="process-rail-dismiss" id="processGuideDismiss">안내 숨기기</button>`
+            : ""
+        }
+      </div>
+      <ol class="process-rail-steps">
+        ${steps
+          .map((step, i) => {
+            const on =
+              step.view === currentView || (currentView === "dashboard" && i === 0);
+            return `<li>
+              <button type="button" class="process-step ${on ? "is-current" : ""}" data-process-view="${escapeAttr(step.view)}">
+                <em>${escapeHtml(step.n)}</em>
+                <strong>${escapeHtml(step.title)}</strong>
+                <span>${escapeHtml(step.desc)}</span>
+              </button>
+            </li>`;
+          })
+          .join("")}
+      </ol>
+    </section>`;
+}
+
+function bindProcessRail(root) {
+  if (!root) return;
+  root.querySelectorAll("[data-process-view]").forEach((btn) => {
+    btn.addEventListener("click", () => setView(btn.dataset.processView));
+  });
+  $("#processGuideDismiss", root)?.addEventListener("click", () => {
+    try {
+      localStorage.setItem(PROCESS_GUIDE_KEY, "1");
+    } catch {
+      /* ignore */
+    }
+    const rail = root.querySelector(".process-rail:not(.is-compact)");
+    if (rail) rail.remove();
+  });
+}
+
 function renderDashboard() {
   const el = $("#view-dashboard");
   ensureReportDoc();
@@ -2463,10 +3081,6 @@ function renderDashboard() {
   const mode = state._calRange;
   const stepIndex = HEAT_RANGE_STEPS.indexOf(mode);
   const selected = state._calSelected;
-  const { start, end } = getHeatVisibleRange(mode, cursor);
-  const counts = countOpenByUrgencyInRange(toIsoDate(start), toIsoDate(end));
-  const nearest = nearestDeadlineItem(state.schedule);
-  const peakIso = nearest ? nearest.endDate || nearest.date : "";
   const dayItems = selected
     ? eventsOnDate(selected).filter((s) => (s.status || "") !== "완료")
     : [];
@@ -2480,7 +3094,7 @@ function renderDashboard() {
       </div>
       <aside class="yeonu-hero-aside report-deadline" aria-live="polite">
         <p class="deadline-label">보고서 제출일시</p>
-        <p class="deadline-when">2026년 9월 30일 오후 4시</p>
+        <p class="deadline-when">2026년 9월 15일 오후 4시</p>
         <p class="deadline-remain">
           잔여
           <strong id="homeDeadlineRemain">—</strong>
@@ -2488,18 +3102,9 @@ function renderDashboard() {
       </aside>
     </section>
 
-    ${marathonTrackHtml(mile, escapeHtml)}
+    ${processRailHtml({ currentView: "dashboard", dismissible: true })}
 
-    <div class="urgency-strip home-urgency" aria-label="마감 요약">
-      <button type="button" class="urgency-pill critical" data-goto="my-work"><strong>${counts.urgent}</strong><span>긴급</span></button>
-      <button type="button" class="urgency-pill watch" data-goto="my-work"><strong>${counts.warn}</strong><span>주의</span></button>
-      <button type="button" class="urgency-pill calm" data-goto="my-work"><strong>${counts.check}</strong><span>체크</span></button>
-      ${
-        peakIso
-          ? `<p class="urgency-peak">가장 급한 마감 · <button type="button" class="linkish" id="homePeakDay">${escapeHtml(formatKorDate(peakIso))}</button></p>`
-          : ""
-      }
-    </div>
+    ${marathonTrackHtml(mile, escapeHtml)}
 
     <section class="panel heatmap-panel home-cal-panel">
       <div class="range-navigator">
@@ -2525,11 +3130,6 @@ function renderDashboard() {
           <button type="button" class="btn btn-sm" id="homeCalToday">오늘</button>
         </div>
       </div>
-      <div class="heat-legend" aria-hidden="true">
-        <span class="leg-swatch urgent"></span><span>긴급</span>
-        <span class="leg-swatch warn"></span><span>주의</span>
-        <span class="leg-swatch check"></span><span>체크</span>
-      </div>
       ${buildHeatCalendarHtml(cursor, { mode, selectedIso: selected, bandFilter: null })}
     </section>
 
@@ -2550,6 +3150,7 @@ function renderDashboard() {
   };
   tickHomeDeadline();
   bindMarathonRunner(el);
+  bindProcessRail(el);
 
   el.querySelectorAll("[data-goto]").forEach((btn) => {
     btn.addEventListener("click", () => setView(btn.dataset.goto));
@@ -2588,13 +3189,9 @@ function renderDashboard() {
       renderDashboard();
     },
   });
-  $("#homePeakDay")?.addEventListener("click", () => {
-    if (!peakIso) return;
-    openDayDeadlineDetail(peakIso);
-  });
   bindScheduleFeedActions(el, () => {
     renderDashboard();
-    updateRemindBell();
+    updateAlarmButtons();
   });
 }
 
@@ -2907,8 +3504,12 @@ function renderCollections() {
   const boardWip = boardRows.filter((r) => r.status.id === "wip").length;
   const boardDone = boardRows.filter((r) => r.status.id === "done").length;
   const doc = reportDocKindMeta();
+  const allSubmitted = col ? isCollectionFullySubmitted(col) : false;
+  const phase = col ? collectionPhaseOf(col) : "planned";
+  const phaseOpen = phase === "open";
 
   el.innerHTML = `
+    ${processRailHtml({ compact: true, currentView: "collections", dismissible: false })}
     <div class="panel hub-doc-banner is-compact" data-kind="${escapeAttr(getReportDocKind())}" style="margin-bottom:10px">
       <div class="hub-doc-banner-main">
         <span class="hub-doc-kicker">작성 기준</span>
@@ -2921,17 +3522,61 @@ function renderCollections() {
       ${rounds
         .map((c) => {
           const s = collectionSummary(c.round);
-          return `<button class="round-tab ${c.round === activeRound ? "active" : ""}" data-round="${c.round}">
-            ${escapeHtml(c.name)} · ${s.pages}p
+          const opened = isCollectionRequestOpened(c);
+          const waiting = !opened;
+          const on = c.round === activeRound;
+          const label = waiting ? "요청 전" : `${s.pages}p`;
+          return `<button type="button" class="round-tab ${on ? "active" : ""} ${waiting ? "is-waiting" : ""} ${opened ? "is-opened" : ""}" data-round="${c.round}" title="${escapeAttr(waiting ? collectionWaitingMessage(c) : c.name)}">
+            ${escapeHtml(c.name)} · ${escapeHtml(label)}
           </button>`;
         })
         .join("")}
       <button class="btn btn-sm admin-only" id="addRound" style="margin-left:auto">차수 추가</button>
     </div>
 
+    ${col ? collectStepperHtml(col) : ""}
+    ${col ? collectPipelineHtml() : ""}
+
     ${
-      col
-        ? `
+      col && collectionPhaseOf(col) === "planned"
+        ? `<div class="collect-phase-banner is-planned collect-waiting-panel">
+            <div>
+              <p class="collect-waiting-kicker">${escapeHtml(col.name)}</p>
+              <strong>${escapeHtml(collectionWaitingMessage(col))}</strong>
+              <p class="muted">일정표에 마감만 수립된 상태입니다. 관리자가 내 업무에서 해당 차수 <strong>제출 요청</strong>을 등록하면 이 탭이 활성화되고 파일을 업로드할 수 있습니다.</p>
+            </div>
+            ${isAdmin() ? `<button type="button" class="btn btn-primary" id="openCollectRequest">제출 요청 등록</button>` : ""}
+          </div>`
+        : ""
+    }
+    ${
+      col && collectionPhaseOf(col) === "open"
+        ? `<div class="collect-phase-banner is-open">
+            <div>
+              <strong>업로드 취합 중</strong>
+              <p class="muted">${escapeHtml(col.requestMessage || "참여자가 담당 파트 한글 파일을 올리고 제출합니다.")}</p>
+            </div>
+            ${isAdmin() ? `<button type="button" class="btn" id="closeCollectRequest">취합 마감</button>` : ""}
+          </div>`
+        : ""
+    }
+    ${
+      col && collectionPhaseOf(col) === "closed"
+        ? `<div class="collect-phase-banner is-closed">
+            <div>
+              <strong>취합 마감</strong>
+              <p class="muted">이 차수 업로드는 닫혔습니다. 다음 차수 제출 요청을 등록할 수 있습니다.</p>
+            </div>
+          </div>`
+        : ""
+    }
+
+    ${
+      !col
+        ? `<div class="empty">취합 차수가 없습니다.</div>`
+        : !isCollectionRequestOpened(col)
+        ? ""
+        : `
       <div class="metrics" style="grid-template-columns:repeat(4,1fr)">
         <div class="stat accent">
           <div class="label">${escapeHtml(col.name)} 작성 페이지</div>
@@ -2961,6 +3606,15 @@ function renderCollections() {
           : `<p class="muted" style="margin:0 0 10px">진도판: <strong>미착수 → 작성중 → 제출</strong>. 담당·상태만으로도 누가 남았는지 보입니다.</p>`
       }
 
+      ${
+        allSubmitted
+          ? `<div class="collection-review-ready">
+              <strong>전 파트 제출 완료</strong>
+              <span class="muted">리뷰회의에서 영역별 정리 코멘트·사진을 담당자에게 남길 수 있습니다.</span>
+            </div>`
+          : ""
+      }
+
       <div class="panel">
         <div class="panel-head">
           <div>
@@ -2980,6 +3634,7 @@ function renderCollections() {
                 <th>상태</th>
                 <th>제출일</th>
                 <th>한글 파일</th>
+                ${allSubmitted ? `<th>리뷰 코멘트</th>` : ""}
                 <th></th>
               </tr>
             </thead>
@@ -2990,11 +3645,14 @@ function renderCollections() {
                   const m = p ? memberById(p.assigneeId) : null;
                   const alloc = p ? pagesOf(p) : 0;
                   const editable = canEditSubmission(s.partId);
+                  const canUpload = editable && phaseOpen;
                   const isMine = myPartIds().includes(s.partId);
                   const hasFile =
                     normalizeCheckFiles(s).some((f) => isHangulFileName(f.name)) || Boolean(s.altSubmit);
                   const boardSt = submissionBoardStatus(s);
                   const submitter = s.submittedBy || (s.status === "submitted" ? m?.name : "");
+                  const reviewComments = allSubmitted ? partReviewComments(s.partId, activeRound) : [];
+                  const reviewPhotoCount = reviewComments.filter((c) => c.photoDataUrl).length;
                   const tags = [
                     editable && !isAdmin() ? '<span class="badge admin">내 담당</span>' : "",
                     isMine && !editable ? "" : "",
@@ -3013,16 +3671,31 @@ function renderCollections() {
                     <td>${escapeHtml(m?.name || "-")}</td>
                     <td>${alloc}p</td>
                     <td>
-                      <input class="inline-input" type="number" min="0" value="${Number(s.pageCount) || 0}" data-pages="${s.partId}" ${editable ? "" : "disabled"} />
+                      <input class="inline-input" type="number" min="0" value="${Number(s.pageCount) || 0}" data-pages="${s.partId}" ${canUpload ? "" : "disabled"} />
                     </td>
                     <td><span class="badge ${boardSt.cls}">${escapeHtml(boardSt.label)}</span></td>
                     <td class="muted">${escapeHtml(s.submittedAt || "-")}</td>
                     <td>
-                      <button type="button" class="btn btn-sm check-open-btn ${hasFile ? "has-check" : ""}" data-check="${s.partId}" data-editable="${editable ? "1" : "0"}">
+                      <button type="button" class="btn btn-sm check-open-btn ${hasFile ? "has-check" : ""}" data-check="${s.partId}" data-editable="${canUpload ? "1" : "0"}">
                         ${escapeHtml(checkRequestSummary(s))}
                       </button>
                     </td>
-                    <td>${editable ? `<button class="btn btn-sm btn-primary" data-save-sub="${s.partId}">제출</button>` : `<span class="muted">조회</span>`}</td>
+                    ${
+                      allSubmitted
+                        ? `<td>
+                      <button type="button" class="btn btn-sm ${reviewComments.length ? "btn-primary" : ""}" data-part-review="${s.partId}" title="리뷰회의 코멘트">
+                        ${reviewComments.length ? `코멘트 ${reviewComments.length}${reviewPhotoCount ? ` · 📷${reviewPhotoCount}` : ""}` : "코멘트"}
+                      </button>
+                    </td>`
+                        : ""
+                    }
+                    <td>${
+                      canUpload
+                        ? `<button class="btn btn-sm btn-primary" data-save-sub="${s.partId}">제출</button>`
+                        : editable && !phaseOpen
+                          ? `<span class="muted">${phase === "closed" ? "마감" : "요청 전"}</span>`
+                          : `<span class="muted">조회</span>`
+                    }</td>
                   </tr>`;
                 })
                 .join("")}
@@ -3030,11 +3703,49 @@ function renderCollections() {
           </table>
         </div>
       </div>
+
+      ${
+        allSubmitted
+          ? `<div class="panel collection-review-panel">
+        <div class="panel-head">
+          <div>
+            <h2>${escapeHtml(col.name)} 리뷰회의 · 영역별 정리</h2>
+            <p class="muted">담당자에게 전달할 회의 정리·사진입니다. 사진이 첨부된 항목은 해당 영역 그림을 크게 반영하기로 한 내용입니다.</p>
+          </div>
+        </div>
+        <div class="collection-review-grid">
+          ${col.submissions
+            .map((s) => {
+              const p = partById(s.partId);
+              const m = p ? memberById(p.assigneeId) : null;
+              const comments = partReviewComments(s.partId, activeRound);
+              return `
+            <article class="collection-review-part ${comments.some((c) => c.photoDataUrl) ? "has-photo-note" : ""}">
+              <header>
+                <strong>${escapeHtml(p ? `${p.section}. ${p.title}` : s.partId)}</strong>
+                <span class="muted">담당 ${escapeHtml(m?.name || "-")}</span>
+                ${isAdmin() ? `<button type="button" class="btn btn-sm" data-part-review="${escapeAttr(s.partId)}">+ 코멘트</button>` : ""}
+              </header>
+              <div class="review-comment-list">
+                ${
+                  comments.length
+                    ? comments.map((c) => renderReviewCommentCardHtml(c, { admin: isAdmin(), largePhoto: true })).join("")
+                    : `<p class="muted empty-inline">회의 정리 코멘트 없음</p>`
+                }
+              </div>
+            </article>`;
+            })
+            .join("")}
+        </div>
+      </div>`
+          : ""
+      }
+
       ${isAdmin() ? renderAiBriefSectionHtml(activeRound) : ""}`
-        : `<div class="empty">취합 차수가 없습니다.</div>`
     }
   `;
 
+  bindProcessRail(el);
   el.querySelectorAll("[data-round]").forEach((btn) => {
     btn.addEventListener("click", () => {
       activeRound = Number(btn.dataset.round);
@@ -3050,6 +3761,7 @@ function renderCollections() {
       name: `${next}차 취합`,
       dueDate: "",
       description: "",
+      requestPhase: "planned",
       submissions: state.parts.map((p) => ({
         partId: p.id,
         pageCount: 0,
@@ -3069,6 +3781,14 @@ function renderCollections() {
     if (!isAdmin()) return;
     openRoundModal(activeRound);
   });
+  $("#openCollectRequest")?.addEventListener("click", () => openCollectionRequestModal(activeRound));
+  $("#closeCollectRequest")?.addEventListener("click", () => closeCollectionRequest(activeRound));
+
+  el.querySelectorAll("[data-part-review]").forEach((btn) => {
+    btn.addEventListener("click", () => openPartReviewCommentModal(btn.dataset.partReview, activeRound));
+  });
+
+  bindReviewCommentDeletes(el);
 
   el.querySelectorAll("[data-check]").forEach((btn) => {
     btn.addEventListener("click", () => {
@@ -3081,6 +3801,10 @@ function renderCollections() {
       const partId = btn.dataset.saveSub;
       if (!canEditSubmission(partId)) return;
       const colRef = state.collections.find((c) => c.round === activeRound);
+      if (collectionPhaseOf(colRef) !== "open") {
+        alert("관리자가 이 차수 제출 요청을 등록한 뒤에 업로드·제출할 수 있습니다.");
+        return;
+      }
       const sub = colRef.submissions.find((s) => s.partId === partId);
       const pagesInput = el.querySelector(`[data-pages="${partId}"]`);
       const hasHwp = normalizeCheckFiles(sub).some((f) => isHangulFileName(f.name));
@@ -3287,7 +4011,7 @@ function renderSchedule() {
 
   bindScheduleFeedActions(el, () => {
     renderSchedule();
-    updateRemindBell();
+    updateAlarmButtons();
   });
 }
 
@@ -3327,14 +4051,217 @@ function openScheduleUploadForItem(s) {
     setView("budget");
     return;
   }
-  // 보고서 취합(및 그 외 기본): 취합 업로드 화면
+  if (group === "collect") {
+    const col = collectionBySchedule(s);
+    if (!col) {
+      setView("collections");
+      return;
+    }
+    activeRound = col.round;
+    const phase = collectionPhaseOf(col);
+    if (phase === "planned") {
+      if (isAdmin()) {
+        openCollectionRequestModal(col.round);
+        return;
+      }
+      alert("이 차수는 일정표에 수립만 되어 있습니다. 관리자가 제출 요청을 등록하면 파일을 업로드할 수 있습니다.");
+      return;
+    }
+    if (phase === "closed" && !isAdmin()) {
+      alert("이 차수 취합은 마감되었습니다. 보고서 통합에서 결과를 확인할 수 있습니다.");
+    }
+    setView("collections");
+    return;
+  }
   setView("collections");
 }
 
-const SHARED_MATERIAL_CATS = ["지침", "서식", "정의서", "스타일"];
+/** 일정(서식 및 지침확인) 업로드 탭 */
+const SCHEDULE_FORM_UPLOAD_CATS = [
+  { id: "지침", label: "지침", resourceCategory: "지침" },
+  { id: "서식", label: "서식", resourceCategory: "서식" },
+  { id: "집행기준", label: "집행기준", resourceCategory: "집행기준" },
+  { id: "스타일가이드", label: "스타일가이드", resourceCategory: "스타일" },
+];
+
+const SCHEDULE_FORM_UPLOAD_TITLES = {
+  지침: "작성 지침",
+  서식: "공통 서식",
+  집행기준: "집행기준",
+  스타일가이드: "스타일 가이드",
+};
+
+function scheduleFormUploadSectionHtml(item) {
+  if (!isAdmin()) return "";
+  const files = item?.sharedFiles || {};
+  return `
+    <section class="schedule-form-upload" id="scheduleFormUploadSection" hidden>
+      <p class="schedule-form-upload-alert" role="alert">* 이 업무에서는 공통양식(서식)을 함께 공유합니다.</p>
+      <p class="wp-form-hint">지침·서식·집행기준·스타일가이드를 업로드하면 참여자 킥오프 화면에 자동으로 공유됩니다.</p>
+      <div class="schedule-form-upload-tabs sub-tab-bar" role="tablist" aria-label="공통양식 업로드">
+        ${SCHEDULE_FORM_UPLOAD_CATS.map(
+          (c, i) => `
+          <button type="button" class="sub-tab-btn schedule-form-upload-tab ${i === 0 ? "active" : ""}" role="tab" data-form-tab="${escapeAttr(c.id)}" aria-selected="${i === 0 ? "true" : "false"}">${escapeHtml(c.label)}</button>`
+        ).join("")}
+      </div>
+      <div class="schedule-form-upload-panels">
+        ${SCHEDULE_FORM_UPLOAD_CATS.map(
+          (c, i) => {
+            const existing = files[c.id];
+            return `
+          <div class="schedule-form-upload-panel ${i === 0 ? "is-active" : ""}" data-form-panel="${escapeAttr(c.id)}" role="tabpanel">
+            <label class="wp-field">
+              <span class="wp-label">${escapeHtml(c.label)} 파일</span>
+              <input type="file" name="sharedFile_${escapeAttr(c.id)}" class="wp-input" accept=".pdf,.doc,.docx,.xls,.xlsx,.hwp,.hwpx,.ppt,.pptx" />
+              ${
+                existing?.dataUrl || existing?.fileName
+                  ? `<span class="muted schedule-form-upload-current">등록됨: ${escapeHtml(existing.fileName || "첨부 파일")}${existing.uploadedAt ? ` · ${escapeHtml(existing.uploadedAt)}` : ""}</span>`
+                  : `<span class="muted schedule-form-upload-current">아직 등록된 ${escapeHtml(c.label)} 파일이 없습니다.</span>`
+              }
+            </label>
+          </div>`;
+          }
+        ).join("")}
+      </div>
+    </section>`;
+}
+
+function bindScheduleFormUploadTabs() {
+  $$(".schedule-form-upload-tab").forEach((tab) => {
+    tab.addEventListener("click", () => {
+      const id = tab.dataset.formTab;
+      $$(".schedule-form-upload-tab").forEach((t) => {
+        const on = t === tab;
+        t.classList.toggle("active", on);
+        t.setAttribute("aria-selected", on ? "true" : "false");
+      });
+      $$(".schedule-form-upload-panel").forEach((p) => p.classList.toggle("is-active", p.dataset.formPanel === id));
+    });
+  });
+}
+
+function syncScheduleUploadsToResources(scheduleItem, sharedFiles = {}) {
+  if (!scheduleItem?.id || !sharedFiles || typeof sharedFiles !== "object") return;
+  if (!Array.isArray(state.resources)) state.resources = [];
+  const scheduleTitle = scheduleItem.title || "킥오프 공유";
+
+  SCHEDULE_FORM_UPLOAD_CATS.forEach((cat) => {
+    const file = sharedFiles[cat.id];
+    if (!file?.dataUrl) return;
+    const resourceCategory = cat.resourceCategory || cat.id;
+    const existingIdx = state.resources.findIndex((r) => r.scheduleId === scheduleItem.id && r.uploadSlot === cat.id);
+    const entry = normalizeResourceEntry({
+      title: SCHEDULE_FORM_UPLOAD_TITLES[cat.id] || cat.label,
+      category: resourceCategory,
+      fileName: file.fileName,
+      dataUrl: file.dataUrl,
+      url: file.dataUrl,
+      uploadedAt: file.uploadedAt || today(),
+      note: `${scheduleTitle} · 자동 공유`,
+      scheduleId: scheduleItem.id,
+      uploadSlot: cat.id,
+    });
+    if (existingIdx >= 0) Object.assign(state.resources[existingIdx], entry);
+    else state.resources.push({ id: uid("r"), ...entry });
+  });
+}
+
+function bindScheduleFormUploadSection(currentGroup) {
+  const section = $("#scheduleFormUploadSection");
+  const workGroupEl = $("#schedWorkGroup");
+  if (!section || !workGroupEl) return;
+
+  let formsAlertShown = false;
+
+  const refresh = () => {
+    const isForms = workGroupEl.value === "forms";
+    section.hidden = !isForms || !isAdmin();
+    const collectField = $("#schedCollectRoundField");
+    if (collectField) collectField.hidden = workGroupEl.value !== "collect";
+    if (isForms && isAdmin() && !formsAlertShown) {
+      formsAlertShown = true;
+      alert("* 이 업무에서는 공통양식(서식)을 함께 공유합니다.");
+    }
+  };
+
+  workGroupEl.addEventListener("change", refresh);
+  refresh();
+  bindScheduleFormUploadTabs();
+}
+
+const RESOURCE_FILE_MAX_BYTES = 30 * 1024 * 1024;
+const SHARED_MATERIAL_CATS = ["지침", "서식", "집행기준", "스타일"];
+
+function extractGoogleDriveFileId(url = "") {
+  const u = String(url).trim();
+  if (!u) return "";
+  const byPath = u.match(/\/file\/d\/([^/?#]+)/);
+  if (byPath) return byPath[1];
+  const byQuery = u.match(/[?&]id=([^&]+)/);
+  if (byQuery) return byQuery[1];
+  return "";
+}
+
+function isGoogleDriveFolderUrl(url = "") {
+  return /\/drive\/(?:u\/\d+\/)?folders\//i.test(String(url));
+}
+
+function resourceDownloadMeta(resource = {}) {
+  const fileName = String(resource.fileName || resource.title || "download").trim() || "download";
+  if (resource.dataUrl) {
+    return { href: resource.dataUrl, download: fileName };
+  }
+  const url = String(resource.url || "").trim();
+  if (!url) return { href: "#", download: "" };
+  if (isGoogleDriveFolderUrl(url)) {
+    return { href: url, download: "", external: true };
+  }
+  const fileId = extractGoogleDriveFileId(url);
+  if (fileId) {
+    return {
+      href: `https://drive.google.com/uc?export=download&id=${encodeURIComponent(fileId)}`,
+      download: fileName,
+    };
+  }
+  if (/^data:/i.test(url)) {
+    return { href: url, download: fileName };
+  }
+  return { href: url, download: fileName };
+}
+
+function resourceDownloadLinkHtml(resource, label = "다운로드", className = "btn btn-sm btn-primary") {
+  const meta = resourceDownloadMeta(resource);
+  const dl = meta.download ? ` download="${escapeAttr(meta.download)}"` : "";
+  const ext = meta.external ? ` target="_blank" rel="noopener noreferrer"` : "";
+  return `<a class="${className}" href="${escapeAttr(meta.href)}"${dl}${ext}>${escapeHtml(label)}</a>`;
+}
+
+function normalizeResourceEntry(resource = {}) {
+  if (!resource || typeof resource !== "object") return resource;
+  if (resource.dataUrl && !resource.url) resource.url = resource.dataUrl;
+  if (!resource.fileName && resource.title) resource.fileName = resource.title;
+  return resource;
+}
+
+function bindResourceFileAutofill() {
+  const fileInput = $("#modalBody")?.querySelector('input[name="file"]');
+  if (!fileInput || fileInput.dataset.bound) return;
+  fileInput.dataset.bound = "1";
+  fileInput.addEventListener("change", () => {
+    const file = fileInput.files?.[0];
+    if (!file) return;
+    const form = $("#modalForm");
+    const titleInput = form?.querySelector('[name="title"]');
+    const fileNameInput = form?.querySelector('[name="fileName"]');
+    const baseName = file.name.replace(/\.[^.]+$/, "");
+    if (titleInput && !titleInput.value.trim()) titleInput.value = baseName;
+    if (fileNameInput && !fileNameInput.value.trim()) fileNameInput.value = file.name;
+  });
+}
 
 function ensureSharedResources() {
   if (!Array.isArray(state.resources)) state.resources = [];
+  state.resources = state.resources.map((r) => normalizeResourceEntry(r));
   const hasDef = state.resources.some((r) => r.category === "정의서" || /정의서/.test(r.title || ""));
   if (!hasDef) {
     state.resources.push({
@@ -3356,7 +4283,7 @@ function sharedSetupResources() {
     .filter((r) => {
       const c = String(r.category || "");
       if (SHARED_MATERIAL_CATS.includes(c)) return true;
-      return /지침|가이드|서식|정의|스타일/i.test(`${r.title || ""} ${r.note || ""} ${c}`);
+      return /지침|가이드|서식|정의|집행|스타일/i.test(`${r.title || ""} ${r.note || ""} ${c}`);
     })
     .sort((a, b) => (order[a.category] ?? 99) - (order[b.category] ?? 99) || String(a.title).localeCompare(String(b.title), "ko"));
 }
@@ -3375,10 +4302,10 @@ function openSharedMaterialsModal(scheduleItem) {
 
   openModal({
     kicker: "킥오프 공유 자료",
-    title: scheduleItem?.title || "서식 · 지침 · 정의서 · 스타일",
+    title: scheduleItem?.title || "서식 · 지침 · 집행기준 · 스타일",
     hideFooter: true,
     bodyHtml: `
-      <p class="schedule-comment-lead">관리자가 공유한 지침·서식·정의서·스타일 가이드입니다. 바로 열어 확인하세요.</p>
+      <p class="schedule-comment-lead">관리자가 공유한 지침·서식·집행기준·스타일 가이드입니다. 바로 다운로드해 확인하세요.</p>
       <div class="shared-materials">
         ${SHARED_MATERIAL_CATS.map((cat) => {
           const rows = byCat[cat] || [];
@@ -3394,8 +4321,13 @@ function openSharedMaterialsModal(scheduleItem) {
                       <div class="shared-mat-copy">
                         <strong>${escapeHtml(r.title)}</strong>
                         <span class="muted">${escapeHtml(r.fileName || "")}${r.note ? ` · ${escapeHtml(r.note)}` : ""}</span>
+                        ${
+                          r.dataUrl || extractGoogleDriveFileId(r.url)
+                            ? `<span class="shared-mat-ready muted"> · 다운로드 링크 자동 제공</span>`
+                            : ""
+                        }
                       </div>
-                      <a class="btn btn-sm btn-primary" href="${escapeAttr(r.url)}" target="_blank" rel="noopener noreferrer">열기</a>
+                      ${resourceDownloadLinkHtml(r)}
                     </li>`
                       )
                       .join("")}</ul>`
@@ -3560,8 +4492,8 @@ function scheduleFeedPanelHtml(who, admin, items) {
     <section class="panel work-feed-panel mywork-schedule-panel">
       <div class="panel-head">
         <div>
-          <h2 class="panel-title">${escapeHtml(who)}님에게 보이는 일정입니다.</h2>
-          <p class="muted" style="margin:4px 0 0">내가 요청·요청받은 업무만 모입니다. 수정·삭제는 관리자(또는 본인 등록분)만 가능합니다.</p>
+          <h2 class="panel-title panel-title-mine"><span class="name-honorific">${escapeHtml(who)}</span>님에게 보이는 일정입니다.</h2>
+          <p class="muted" style="margin:4px 0 0">요청받은 업무에는 관리자가 무엇을 해달라고 했는지 말풍선으로 보입니다. 수정·삭제는 관리자(또는 본인 등록분)만 가능합니다.</p>
         </div>
         ${
           admin
@@ -3603,6 +4535,7 @@ function scheduleFeedPanelHtml(who, admin, items) {
                     <h3>${escapeHtml(g.label)}</h3>
                     <span class="muted">${rows.length}건 · ${escapeHtml(g.label)}</span>
                   </header>
+                  ${g.id === "collect" ? collectPipelineHtml() : ""}
                   <div class="work-group-card-body">
                     ${
                       months.length
@@ -3816,11 +4749,21 @@ function bindScheduleSwipeRow(row, onRefresh) {
 }
 
 function refreshActiveScheduleSurface() {
-  updateRemindBell();
+  updateAlarmButtons();
   if (activeViewName === "my-work") renderMyWork();
   else if (activeViewName === "schedule") renderSchedule();
   else if (activeViewName === "dashboard") renderDashboard();
   else renderView(activeViewName || "my-work");
+}
+
+function scheduleCommentBubbleText(s) {
+  const comments = scheduleCommentsOf(s);
+  if (!comments.length) return "";
+  const latest = comments[0];
+  const author = latest.author || "관리자";
+  const preview = String(latest.text || "").trim().replace(/\s+/g, " ").slice(0, 42);
+  if (preview) return `${author}가 코멘트를 남겼어요! ${preview}${String(latest.text || "").trim().length > 42 ? "…" : ""}`;
+  return `${author}가 코멘트 확인을 요청했어요!`;
 }
 
 function workFeedRowHtml(s, admin) {
@@ -3843,9 +4786,46 @@ function workFeedRowHtml(s, admin) {
     (s.status || "준비") === "완료" ? "done" : (s.status || "준비") === "진행" ? "active" : "planned";
   const commentCount = scheduleCommentsOf(s).length;
   const typeName = typeLabel(s.type);
-  const groupName = scheduleGroupLabel(scheduleGroupOf(s));
+  const groupId = scheduleGroupOf(s);
+  const groupName = scheduleGroupLabel(groupId);
+  const collectCol = groupId === "collect" ? collectionBySchedule(s) : null;
+  const collectPhase = collectCol ? collectionPhaseOf(collectCol) : "";
+  const askKicker =
+    collectPhase === "planned"
+      ? "일정 수립"
+      : collectPhase === "closed"
+        ? "취합 마감"
+        : collectPhase === "open"
+          ? "제출 요청"
+          : "일정 리마인드";
+  const askText = origin.kind === "received" ? scheduleAskMessage(s) : "";
+  const commentText = scheduleCommentBubbleText(s);
+  const floatCount = (askText ? 1 : 0) + (commentText ? 1 : 0);
 
   return `
+    <div class="work-task-wrap ${floatCount ? `has-float-bubbles float-n-${floatCount}` : ""}">
+      ${
+        floatCount
+          ? `<div class="task-float-stack" aria-live="polite">
+              ${
+                askText
+                  ? `<p class="task-float-bubble is-schedule ${statusTone === "done" ? "is-done" : ""}" role="note">
+                      <span class="task-float-kicker">${escapeHtml(askKicker)}</span>
+                      <span class="task-float-text">${escapeHtml(askText)}</span>
+                    </p>`
+                  : ""
+              }
+              ${
+                commentText
+                  ? `<button type="button" class="task-float-bubble is-comment ${statusTone === "done" ? "is-done" : ""}" data-comment="${escapeAttr(s.id)}" title="코멘트 보기">
+                      <span class="task-float-kicker">코멘트 리마인드</span>
+                      <span class="task-float-text">${escapeHtml(commentText)}</span>
+                    </button>`
+                  : ""
+              }
+            </div>`
+          : ""
+      }
     <div class="swipe-row has-edit-handle has-delete-handle ${canManage ? "can-manage" : "no-manage"}" data-schedule-id="${escapeAttr(s.id)}">
       <div class="swipe-action swipe-action-edit" aria-hidden="true">
         <span class="swipe-action-main">수정하기</span>
@@ -3879,6 +4859,7 @@ function workFeedRowHtml(s, admin) {
                     : ""
               }
             </p>
+            ${collectCol ? collectStepperHtml(collectCol, { compact: true }) : ""}
             <p class="task-meta">${escapeHtml(metaBits.join(" · "))}</p>
           </div>
           <span class="due-cluster ${glowLabel === "지연" ? "is-overdue" : ""}">
@@ -3904,6 +4885,7 @@ function workFeedRowHtml(s, admin) {
           <span class="swipe-edge-label">삭제</span>
         </button>
       </div>
+    </div>
     </div>`;
 }
 
@@ -3963,7 +4945,7 @@ function renderResources() {
         <button class="btn btn-primary admin-only" id="addResource">자료 등록</button>
       </div>
       <p class="muted" style="margin-top:-0.35rem;margin-bottom:1rem">
-        카톡방·드라이브 검색 없이, 초반 셋업에 필요한 공통 자료를 여기에 모아 두세요. (파일은 구글드라이브 URL 또는 공개 링크로 등록)
+        관리자가 올린 파일은 다운로드 링크가 자동으로 생성됩니다. 참여자는 별도 요청 없이 바로 받을 수 있습니다.
       </p>
       <div class="grid grid-2">
         ${
@@ -3979,7 +4961,7 @@ function renderResources() {
               <a href="${escapeAttr(r.url)}" target="_blank" rel="noopener noreferrer">${escapeHtml(r.title)}</a>
               <p class="muted">${escapeHtml(r.fileName || "")}${r.note ? ` · ${escapeHtml(r.note)}` : ""}</p>
               <div class="card-meta">
-                <a class="btn btn-sm btn-primary" href="${escapeAttr(r.url)}" target="_blank" rel="noopener noreferrer">바로 열기</a>
+                ${resourceDownloadLinkHtml(r, "다운로드")}
                 <div class="row admin-only">
                   <button class="btn btn-sm" data-edit="${r.id}">수정</button>
                   <button class="btn btn-sm btn-danger" data-del="${r.id}">삭제</button>
@@ -4556,6 +5538,7 @@ const SCHEDULE_GUIDE_TEMPLATES = [
     goal: "공통 표지·목차 서식과 교육부/교내 작성 지침을 전원에게 공유하고 확인받는다.",
     prep: "서식·지침·정의서 링크 준비 · 공유 폴더 권한 확인",
     carePoints: "필수 확인 항목을 체크리스트로 남기고, 질의는 킥오프에서 모은다.",
+    askMessage: "관리자가 작성지침, 양식, 스타일 가이드 확인을 요청했어요!",
     dueOffsetDays: 0,
     assignAll: true,
   },
@@ -4571,6 +5554,7 @@ const SCHEDULE_GUIDE_TEMPLATES = [
     goal: "본문 톤·글꼴·여백·표·그림 캡션 규칙을 통일하고 확인 회신을 받는다.",
     prep: "스타일 가이드 PDF/드라이브 링크 등록",
     carePoints: "샘플 1페이지 적용 여부를 확인한다.",
+    askMessage: "관리자가 보고서 스타일 가이드 확인을 요청했어요!",
     dueOffsetDays: 3,
     assignAll: true,
   },
@@ -4586,6 +5570,7 @@ const SCHEDULE_GUIDE_TEMPLATES = [
     goal: "핵심 용어·성과지표 정의를 공유해 작성 기준을 맞춘다.",
     prep: "정의서 최신본 업로드",
     carePoints: "지표 산식·단위 해석이 다르면 즉시 질의한다.",
+    askMessage: "관리자가 용어·지표 정의서 확인을 요청했어요!",
     dueOffsetDays: 5,
     assignAll: true,
   },
@@ -4601,6 +5586,7 @@ const SCHEDULE_GUIDE_TEMPLATES = [
     goal: "목차별 담당·페이지 범위를 확정하고 중복·누락을 점검한다.",
     prep: "할당표(엑셀) 갱신",
     carePoints: "이의·조정 요청은 마감 전 회신한다.",
+    askMessage: "관리자가 담당 영역·페이지 할당 확인을 요청했어요!",
     dueOffsetDays: 7,
     assignAll: true,
   },
@@ -4616,6 +5602,7 @@ const SCHEDULE_GUIDE_TEMPLATES = [
     goal: "차수별 취합 마감을 공유하고 담당 파트 초안 업로드를 독려한다.",
     prep: "1·2·최종 취합일·드라이브 경로 안내",
     carePoints: "지연 예상 시 사전에 총괄에게 공유한다.",
+    askMessage: "관리자가 할당받은 보고서의 페이지를 작성하여 취합 업로드를 요청했어요!",
     dueOffsetDays: 10,
     assignAll: true,
   },
@@ -4631,6 +5618,7 @@ const SCHEDULE_GUIDE_TEMPLATES = [
     goal: "취합본 중복·누락·톤을 점검하고 수정 포인트를 확정한다.",
     prep: "취합본·체크리스트 준비",
     carePoints: "파트별 수정 기한을 회의에서 합의한다.",
+    askMessage: "관리자가 리뷰회의에 참석해 담당 파트 점검·수정을 요청했어요!",
     dueOffsetDays: 20,
     assignAll: true,
   },
@@ -4646,6 +5634,7 @@ const SCHEDULE_GUIDE_TEMPLATES = [
     goal: "예산 통합 화면에 편성금액·산출근거를 입력·확정한다.",
     prep: "총액·비목·담당 항목 배정 확인",
     carePoints: "미입력 항목을 남기지 않는다.",
+    askMessage: "관리자가 담당 예산 편성·산출근거 입력을 요청했어요!",
     dueOffsetDays: 25,
     assignAll: false,
   },
@@ -4661,6 +5650,7 @@ const SCHEDULE_GUIDE_TEMPLATES = [
     goal: "핵심·자율 지표의 목표·실적·산식을 입력·확정한다.",
     prep: "지표 목록·세세부 항목 준비",
     carePoints: "미달 지표는 보완 계획을 메모한다.",
+    askMessage: "관리자가 성과지표 목표·실적 입력을 요청했어요!",
     dueOffsetDays: 30,
     assignAll: true,
   },
@@ -4718,6 +5708,49 @@ function scheduleOriginOf(s, who = sessionUser) {
     kind: "received",
     from: owner ? `${owner}으로부터` : "",
   };
+}
+
+/** 담당자에게 보이는 관리자 요청 말풍선 */
+function scheduleAskMessage(s) {
+  const custom = String(s?.askMessage || "").trim();
+  if (custom) return custom;
+  const group = scheduleGroupOf(s);
+  const title = String(s?.title || "");
+  const blob = `${title} ${s?.note || ""} ${s?.goal || ""}`;
+  if (group === "forms" || /서식|지침|스타일|가이드|킥오프/.test(blob)) {
+    return "관리자가 작성지침, 양식, 스타일 가이드 확인을 요청했어요!";
+  }
+  if (group === "collect" || /취합|업로드|제출/.test(blob)) {
+    const col = collectionBySchedule(s);
+    const phase = collectionPhaseOf(col);
+    if (phase === "planned" || !col) {
+      return isAdmin()
+        ? "일정표에 취합 마감만 수립된 상태입니다. 제출 요청을 등록하면 참여자가 파일을 업로드합니다."
+        : "관리자가 취합 일정을 수립했습니다. 제출 요청이 등록되면 파일을 업로드할 수 있어요.";
+    }
+    if (phase === "closed") {
+      return "이 차수 취합은 마감되었습니다. 결과는 보고서 통합에서 확인할 수 있어요.";
+    }
+    if (/1차/.test(title)) return col.requestMessage || "관리자가 할당받은 보고서의 페이지를 작성하여 1차 업로드를 요청했어요!";
+    if (/2차/.test(title)) return col.requestMessage || "관리자가 보완·수정한 원고를 2차 업로드하도록 요청했어요!";
+    if (/최종/.test(title)) return col.requestMessage || "관리자가 최종 통합본 확인 및 보고서 제출을 요청했어요!";
+    return col.requestMessage || "관리자가 할당받은 보고서의 페이지를 작성하여 취합 업로드를 요청했어요!";
+  }
+  if (group === "review" || /리뷰|윤독|검토회의/.test(blob)) {
+    return "관리자가 리뷰회의에 참석해 담당 파트 점검·수정을 요청했어요!";
+  }
+  if (group === "budget" || /예산/.test(blob)) {
+    return "관리자가 담당 예산 편성·산출근거 입력을 요청했어요!";
+  }
+  if (group === "kpi" || /성과|지표/.test(blob)) {
+    return "관리자가 성과지표 목표·실적 입력을 요청했어요!";
+  }
+  if (group === "committee") {
+    return "관리자가 위원회 안건 확인 및 참석을 요청했어요!";
+  }
+  const note = String(s?.goal || s?.note || "").trim();
+  if (note) return `관리자가 ${note}을(를) 요청했어요!`;
+  return title ? `관리자가 「${title}」 업무 처리를 요청했어요!` : "";
 }
 
 function scheduleDeptOptions() {
@@ -4967,7 +6000,7 @@ function requestAiContext() {
   return {
     tfName: state.meta?.tfName || "TF",
     adminName: state.meta?.adminName || sessionUser || "관리자",
-    deadlineLabel: "2026년 9월 30일 오후 4시",
+    deadlineLabel: "2026년 9월 15일 오후 4시",
     budgetLabel: total ? `${Math.round(total / 1e8)}억` : "총액 기준",
     today: today(),
   };
@@ -5819,6 +6852,9 @@ function renderFoodPollVoteOverlay(pollId) {
     host.className = "food-poll-overlay";
     document.body.appendChild(host);
   }
+  host.onclick = (e) => {
+    if (e.target === host) host.hidden = true;
+  };
   const tally = foodPollTally(poll);
   const myVote = (poll.votes || []).find((v) => v.by === sessionUser);
   host.hidden = false;
@@ -6394,7 +7430,7 @@ const GUIDE_TIPS = [
   "상단 메뉴는 TF 요약 · 내업무 · TF 업무 모두보기 · 사용방법 네 칸입니다. 관리자는 Setting이 추가됩니다.",
   "TF 업무 모두보기는 보고서 통합 · 예산 통합 · 성과지표만 둡니다. 일정은 내업무에서 다룹니다.",
   "접속할 때마다 이름 선택 화면부터 시작합니다. TF주제 리스트에서 TF를 고른 뒤 참가자를 선택하세요.",
-  "종(알람)은 마감 임박·초과(지연 일수)·파일/예산/성과지표 코멘트를 모읍니다. 지연은 붉은 글로우로 표시됩니다.",
+  "상단 알람은 일정 리마인드(빨간)와 코멘트 리마인드(파란) 두 가지입니다. 로그인 시 일정 → 코멘트 순으로 통합 팝업이 표시됩니다.",
   "「오늘 뭐먹지」는 내업무 안에 있습니다. 확정 후 카톡 문구·링크로 배포하면 성명·메뉴가 자동 취합됩니다.",
 ];
 
@@ -6404,6 +7440,9 @@ function renderGuide() {
   const menus = GUIDE_MENU.filter((m) => !m.adminOnly || isAdmin());
   el.innerHTML = `
     <div class="overview-page">
+      <div class="overview-process">
+        ${processRailHtml({ compact: false, currentView: "guide", dismissible: false })}
+      </div>
       ${GUIDE_SECTIONS.map(
         (sec) => `
         <section class="panel overview-panel">
@@ -6456,6 +7495,7 @@ function renderGuide() {
   el.querySelectorAll("[data-goto]").forEach((btn) => {
     btn.addEventListener("click", () => setView(btn.dataset.goto));
   });
+  bindProcessRail(el);
   $("#btnDownloadSrsGuide")?.addEventListener("click", () => downloadSrsDocument());
 }
 
@@ -6967,52 +8007,48 @@ function renderAiArt() {
   if (!el) return;
   ensureAiArts();
   ensureAiBriefs();
-  const arts = [...state.aiArts];
+  ensureReportStyleLearning(state);
+
+  const who = sessionUser || "작성자";
+  const artTab = state._aiArtTab === "learn" ? "learn" : "create";
+  state._aiArtTab = artTab;
   const selectedFrame = state._aiArtFrame || "core-project";
   const frame = reportFrameById(selectedFrame);
-  const selectedType = state._aiArtType || frame.defaultType || "overview";
-  const type = reportArtTypeById(selectedType);
-  // 예전 네이비/컬러 가이드가 남아 있으면 흑백 기본으로 교체
-  if (state._aiArtStyleGuide && /0B2C5F|딥네이비|라이트블루|D6E6F5/i.test(state._aiArtStyleGuide)) {
-    state._aiArtStyleGuide = "";
-  }
-  const styleGuide = state._aiArtStyleGuide || buildYeonsungStyleGuide(type, frame);
-  const contextSeed = state._aiArtContextSeed || frame.contextGuide;
-  const prefillBriefId = state._aiArtBriefId || "";
+  const docKind = getReportDocKind();
+  const seed = state._artStudioSeed || Date.now();
+  const allLearned = getAllLearnedSamples(state);
+  const activeLearned = pickSamplesForGeneration(state, {
+    themeId: selectedFrame,
+    direction: state._aiArtContextSeed || "",
+    limit: 5,
+  });
+  const learnFilter = state._styleLearnFilter || "all";
+  const learnStats = programStats(allLearned);
+  const lastPack =
+    state._artStudioPack ||
+    composeStudioPack({
+      themeId: selectedFrame,
+      direction: state._aiArtContextSeed || "",
+      seed,
+      learnedSamples: activeLearned,
+    });
+  const lastGuide = state._artStudioGuide || null;
   const briefOpts = state.aiBriefs
     .slice(0, 12)
     .map(
       (b) =>
-        `<option value="${escapeAttr(b.id)}" ${b.id === prefillBriefId ? "selected" : ""}>${escapeHtml(
+        `<option value="${escapeAttr(b.id)}" ${b.id === (state._aiArtBriefId || "") ? "selected" : ""}>${escapeHtml(
           `${b.roundName || ""} · ${b.analysis?.adminBrief || b.fileName || b.id}`
         )}</option>`
     )
     .join("");
-  const groups = artTypesByGroup();
-  // 다중 선택: 없으면 전체 레이아웃을 기본 재료로 선택
-  let selectedLayoutIds = Array.isArray(state._reportLayoutIds)
-    ? state._reportLayoutIds.filter((id) => REPORT_LAYOUTS.some((l) => l.id === id))
-    : [];
-  if (!selectedLayoutIds.length) {
-    selectedLayoutIds = REPORT_LAYOUTS.map((l) => l.id);
-    state._reportLayoutIds = [...selectedLayoutIds];
-  }
-
-  ensureReportDoc();
-  const doc = reportDocKindMeta();
-  const docKind = getReportDocKind();
-  const sub = ["layout", "diagram", "result"].includes(state._aiArtSub) ? state._aiArtSub : "layout";
-  state._aiArtSub = sub;
-  const who = sessionUser || "작성자";
-  const layoutCount = selectedLayoutIds.length;
-  const flowStep = sub === "layout" ? 1 : sub === "diagram" ? 2 : 3;
 
   el.innerHTML = `
-    <div class="ai-page report-make">
+    <div class="ai-page report-make art-studio">
       <header class="report-make-hero">
         <p class="report-make-kicker">보고서 그림</p>
-        <h2 class="report-make-title"><span class="mine-name">${escapeHtml(who)}</span> 님, 기본 재료로 상세 그림을 완성하세요.</h2>
-        <p class="report-make-desc">양식 레이아웃 → 도식 → 패키지 받기의 흐름이 한눈에 보이도록 구성했습니다.</p>
+        <h2 class="report-make-title"><span class="mine-name">${escapeHtml(who)}</span> 님, 정해 주시면 제가 알아서 그림을 그려드립니다.</h2>
+        <p class="report-make-desc">전문대 혁신·RISE·신산업 등 <strong>학습된 보고서 양식</strong>을 반영해 더 정교한 그림을 제안합니다.</p>
         ${
           isAdmin()
             ? `<div class="report-make-mode" role="group" aria-label="작성 기준">
@@ -7023,293 +8059,312 @@ function renderAiArt() {
         }
       </header>
 
-      <ol class="art-flow" aria-label="보고서 그림 제작 흐름">
-        <li class="art-flow-step ${flowStep === 1 ? "is-on" : flowStep > 1 ? "is-done" : ""}">
-          <button type="button" data-art-sub="layout">
-            <span class="art-flow-num">1</span>
-            <strong>양식 레이아웃</strong>
-            <em>${layoutCount}종 선택</em>
-          </button>
-        </li>
-        <li class="art-flow-arrow" aria-hidden="true">→</li>
-        <li class="art-flow-step ${flowStep === 2 ? "is-on" : flowStep > 2 ? "is-done" : ""}">
-          <button type="button" data-art-sub="diagram">
-            <span class="art-flow-num">2</span>
-            <strong>도식 설계</strong>
-            <em>${escapeHtml(type.name)}</em>
-          </button>
-        </li>
-        <li class="art-flow-arrow" aria-hidden="true">→</li>
-        <li class="art-flow-step ${flowStep === 3 ? "is-on" : ""}">
-          <button type="button" data-art-sub="result">
-            <span class="art-flow-num">3</span>
-            <strong>재료 PPT</strong>
-            <em>${escapeHtml(doc.name)}</em>
-          </button>
-        </li>
-      </ol>
-
-      <div class="art-pack-bar">
-        <div>
-          <strong>전체 재료 패키지</strong>
-          <span class="muted">양식 ${REPORT_LAYOUTS.length}종 + 도식 8종을 한 PPT로 받습니다.</span>
-        </div>
-        <button type="button" class="btn btn-primary" id="artPackageDownload">${flaticonIcon("fi-rr-download")} 전체 재료 PPT 다운로드</button>
-        <span class="muted" id="artPackageStatus"></span>
-      </div>
-
-      <nav class="report-make-tabs" role="tablist" aria-label="보고서 그림 단계" hidden>
-        <button type="button" class="report-make-tab ${sub === "layout" ? "active" : ""}" data-art-sub="layout" role="tab">양식</button>
-        <button type="button" class="report-make-tab ${sub === "diagram" ? "active" : ""}" data-art-sub="diagram" role="tab">도식</button>
-        <button type="button" class="report-make-tab ${sub === "result" ? "active" : ""}" data-art-sub="result" role="tab">결과</button>
+      <nav class="art-studio-subtabs sub-tab-bar" role="tablist" aria-label="보고서 그림">
+        <button type="button" class="sub-tab-btn ${artTab === "create" ? "active" : ""}" data-art-tab="create" role="tab">그림 만들기</button>
+        <button type="button" class="sub-tab-btn ${artTab === "learn" ? "active" : ""}" data-art-tab="learn" role="tab">양식학습 <span class="badge">${allLearned.length}</span></button>
       </nav>
 
-      <section class="panel layout-ppt-panel report-make-panel" data-art-panel="layout" ${sub === "layout" ? "" : "hidden"}>
-        <div class="panel-head">
-          <div>
-            <h2 class="panel-title">${flaticonIcon("fi-rr-table-layout", "panel-title-icon")} 1. 양식 레이아웃 재료</h2>
-            <p class="panel-desc">상세 그림의 바탕이 되는 표·조직·SWOT·타임라인·예산 레이아웃입니다. <strong>여러 개</strong> 고른 뒤 내려받으세요.</p>
-          </div>
-          <div class="row">
-            <button type="button" class="btn btn-sm" id="layoutPptAll">전체 선택</button>
-            <button type="button" class="btn btn-sm" id="layoutPptNone">선택 해제</button>
-          </div>
-        </div>
-        <div class="layout-ppt-grid" role="group" aria-label="보고서 레이아웃">
-          ${REPORT_LAYOUTS.map(
-            (l) => `
-            <label class="layout-ppt-card ${selectedLayoutIds.includes(l.id) ? "is-on" : ""}" data-layout-card="${escapeAttr(l.id)}" data-layout-name="${escapeAttr(l.name)}">
-              <input type="checkbox" data-layout-id="${escapeAttr(l.id)}" ${selectedLayoutIds.includes(l.id) ? "checked" : ""} />
-              <div class="layout-card-icon" aria-hidden="true">${flaticonIcon(l.icon || "fi-rr-table-layout")}</div>
-              <div class="layout-thumb" aria-hidden="true">${layoutPreviewWireHtml(l.id)}</div>
-              <span class="layout-ppt-preview">${escapeHtml(l.preview)}</span>
-              <strong>${escapeHtml(l.name)}</strong>
-              <span class="layout-ppt-desc">${escapeHtml(l.desc)}</span>
-            </label>`
-          ).join("")}
-        </div>
-        <div class="layout-float" id="layoutFloat" hidden aria-hidden="true">
-          <p class="layout-float-title" id="layoutFloatTitle"></p>
-          <div class="layout-float-stage" id="layoutFloatStage"></div>
-          <p class="layout-float-hint">대략 구성 미리보기 · PPT에서 문장·수치를 수정해 사용</p>
-        </div>
-        <div class="form-grid two" style="margin-top:12px">
-          <label class="field">장번호 (예: 3, Ⅱ)
-            <input id="layoutChapterNo" value="${escapeAttr(state._layoutChapterNo || "3")}" maxlength="6" />
-          </label>
-          <label class="field">파일명 접두어
-            <input id="layoutFilePrefix" value="${escapeAttr(state._layoutFilePrefix || "연성대_보고서_양식_레이아웃")}" />
-          </label>
-        </div>
-        <div class="report-make-actions">
-          <button type="button" class="btn btn-primary" id="layoutPptDownload">${flaticonIcon("fi-rr-download")} 선택 레이아웃 PPT</button>
-          <button type="button" class="btn" data-art-sub="diagram">다음 · 도식 설계 →</button>
-          <span class="muted" id="layoutPptStatus"></span>
-        </div>
+      <div data-art-tab-panel="create" ${artTab === "create" ? "" : "hidden"}>
+      ${learningBannerHtml(activeLearned)}
 
-        ${legoBuilderHtml(state._legoBlocks || ["title", "kpi-row", "process", "note"])}
-      </section>
-
-      <section class="panel diagram-wizard report-make-panel" data-art-panel="diagram" ${sub === "diagram" ? "" : "hidden"}>
-        <div class="panel-head">
-          <div>
-            <h2 class="panel-title">${flaticonIcon("fi-rr-paintbrush-pencil", "panel-title-icon")} 2. 도식 설계</h2>
-            <p class="panel-desc">작성 틀과 도식 타입을 고르면, 편집용 도식 재료(본도식·빈 골격·8종 키트)가 PPT로 만들어집니다.</p>
-          </div>
-        </div>
-
-        <div class="diagram-step" data-step="1">
-          <div class="diagram-step-head"><span class="diagram-step-num">1</span><strong>작성 방향 틀</strong></div>
-          <div class="ai-type-grid ai-frame-grid" role="radiogroup" aria-label="보고서 작성 방향 틀">
-            ${REPORT_FRAME_GROUPS.map(
-              (g) => `
-              <button type="button" class="ai-type-card ai-frame-card ${g.id === selectedFrame ? "active" : ""}" data-art-frame="${escapeAttr(g.id)}" aria-pressed="${g.id === selectedFrame ? "true" : "false"}">
-                <span class="ai-type-icon">${flaticonIcon(g.icon || "fi-rr-diagram-project")}</span>
-                <strong>${escapeHtml(g.name)}</strong>
-                <span>${escapeHtml(g.desc)}</span>
-              </button>`
-            ).join("")}
-          </div>
-        </div>
-
-        <div class="diagram-step" data-step="2">
-          <div class="diagram-step-head"><span class="diagram-step-num">2</span><strong>도식 타입</strong></div>
-          ${groups
-            .map(
-              (g) => `
-            <div class="ai-type-group">
-              <p class="ai-type-group-title">${escapeHtml(g.label)}</p>
-              <div class="ai-type-grid" role="radiogroup" aria-label="${escapeAttr(g.label)}">
-                ${g.types
-                  .map(
-                    (t) => `
-                  <button type="button" class="ai-type-card ${t.id === selectedType ? "active" : ""}" data-art-type="${escapeAttr(t.id)}" aria-pressed="${t.id === selectedType ? "true" : "false"}">
-                    <span class="ai-type-icon">${flaticonIcon(t.icon || "fi-rr-diagram-project")}</span>
-                    <strong>${escapeHtml(t.name)}</strong>
-                    <span>${escapeHtml(t.desc)}</span>
+      <section class="panel art-studio-compose">
+        <div class="art-studio-compose-grid">
+          <div class="art-studio-inputs">
+            <label class="wp-field">
+              <span class="wp-label">테마 (보고서 작성 방향)</span>
+              <div class="ai-type-grid ai-frame-grid art-studio-themes" role="radiogroup">
+                ${REPORT_FRAME_GROUPS.map(
+                  (g) => `
+                  <button type="button" class="ai-type-card ai-frame-card ${g.id === selectedFrame ? "active" : ""}" data-art-frame="${escapeAttr(g.id)}" aria-pressed="${g.id === selectedFrame ? "true" : "false"}">
+                    <span class="ai-type-icon">${flaticonIcon(g.icon || "fi-rr-diagram-project")}</span>
+                    <strong>${escapeHtml(g.name)}</strong>
+                    <span>${escapeHtml(g.desc)}</span>
                   </button>`
-                  )
-                  .join("")}
+                ).join("")}
               </div>
-            </div>`
-            )
-            .join("")}
-        </div>
-
-        <div class="diagram-step" data-step="3">
-          <div class="diagram-step-head"><span class="diagram-step-num">3</span><strong>제목·내용</strong></div>
-          <div class="form-grid two">
-            <label class="field">슬라이드 제목
-              <input id="aiArtTitle" value="${escapeAttr(type.name)}" />
             </label>
-            <label class="field">AI 취합분석 불러오기 (선택)
-              <select id="aiArtBrief">
-                <option value="">직접 입력 / 작성 틀 가이드 사용</option>
+            <label class="wp-field">
+              <span class="wp-label">작성 방향 · 표현할 내용</span>
+              <textarea id="artStudioDirection" rows="5" class="wp-input" placeholder="예: ICC 특성화·거버넌스·3개년 KPI·2026 확산 실적">${escapeHtml(state._aiArtContextSeed || frameContextGuide(frame))}</textarea>
+            </label>
+            <label class="wp-field">
+              <span class="wp-label">AI 취합분석 불러오기 (선택)</span>
+              <select id="artStudioBrief" class="wp-input wp-select">
+                <option value="">직접 입력</option>
                 ${briefOpts}
               </select>
             </label>
-            <label class="field full">보고서 내용 / 요약
-              <textarea id="aiArtContext" rows="5" placeholder="그림으로 표현할 성과·프로그램·키워드">${escapeHtml(contextSeed)}</textarea>
-            </label>
-            <details class="field full diagram-advanced">
-              <summary>고급 · 스타일 가이드 / 연출 지시</summary>
-              <textarea id="aiArtStyleGuide" rows="5" style="margin-top:8px">${escapeHtml(styleGuide)}</textarea>
-              <div class="row" style="gap:8px;margin:8px 0">
-                <button type="button" class="btn btn-sm" id="aiArtStyleReset">스타일 기본값</button>
-                <button type="button" class="btn btn-sm" id="aiArtContextReset">작성 틀 다시 넣기</button>
-              </div>
-              <input id="aiArtPrompt" placeholder="추가 연출 (선택)" />
-            </details>
+            <div class="art-studio-actions">
+              <button type="button" class="btn btn-primary btn-lg" id="artStudioCreate">${flaticonIcon("fi-rr-magic-wand")} 만들기</button>
+              <button type="button" class="btn btn-lg art-studio-dice" id="artStudioDice" title="같은 방향 · 다른 조합" ${lastGuide ? "" : "disabled"}>🎲 새로고침</button>
+            </div>
           </div>
-        </div>
-
-        <div class="diagram-cta report-make-cta">
-          <button type="button" class="btn btn-primary btn-lg" id="diagramBuildBtn">${flaticonIcon("fi-rr-magic-wand")} 도식 재료 PPT 만들기</button>
-          <p class="muted">선택: <strong id="diagramChoiceSummary">${escapeHtml(frame.name)} · ${escapeHtml(type.name)}</strong></p>
-          <p class="muted" style="margin:4px 0 0">본도식 + 빈 골격 + 도식 8종 키트가 한 파일로 저장됩니다.</p>
+          <div class="art-studio-live">
+            <div class="ai-art-progress diagram-build-progress" id="artStudioProgress" hidden>
+              <div class="ai-art-progress-meta">
+                <span class="muted" id="artStudioStatus">준비</span>
+                <span class="ai-art-progress-pct" id="artStudioPct">0%</span>
+              </div>
+              <div class="ai-art-progress-track" role="progressbar" aria-valuemin="0" aria-valuemax="100" id="artStudioBar">
+                <div class="ai-art-progress-fill" id="artStudioFill"></div>
+              </div>
+              <p class="ai-art-progress-step muted" id="artStudioStep"></p>
+            </div>
+            ${studioStageHtml({
+              layoutIds: lastPack.layoutIds,
+              diagramTypeId: lastPack.typeId,
+              visibleCount: lastGuide ? lastPack.layoutIds.length : 0,
+              phase: lastGuide ? 5 : 0,
+              variant: lastPack.variant,
+            })}
+          </div>
         </div>
       </section>
 
-      <section class="panel report-make-panel" data-art-panel="result" ${sub === "result" ? "" : "hidden"}>
-        <div class="diagram-result" id="diagramResult">
-          <div class="diagram-result-head">
-            <div>
-              <h3 class="panel-title" style="margin:0">3. 재료 PPT · 참고</h3>
-              <span class="muted" id="diagramResultMeta">도식을 만들거나 위에서 전체 재료 패키지를 받으세요.</span>
-            </div>
+      <section class="panel art-studio-result" id="artStudioResult" ${lastGuide ? "" : "hidden"}>
+        <div class="panel-head">
+          <div>
+            <h2 class="panel-title">${flaticonIcon("fi-rr-lightbulb-on", "panel-title-icon")} 레이아웃 조합 · 활용 제안</h2>
+            <p class="panel-desc" id="artStudioSummary">${escapeHtml(lastGuide?.summary || "")}</p>
           </div>
-          <div class="ai-art-progress diagram-build-progress" id="aiArtProgress" hidden aria-hidden="true">
-            <div class="ai-art-progress-meta">
-              <span class="muted" id="aiArtStatus"></span>
-              <span class="ai-art-progress-pct" id="aiArtProgressPct">0%</span>
-            </div>
-            <div class="ai-art-progress-track" role="progressbar" aria-valuemin="0" aria-valuemax="100" aria-valuenow="0" id="aiArtProgressBar">
-              <div class="ai-art-progress-fill" id="aiArtProgressFill"></div>
-            </div>
-            <p class="ai-art-progress-step muted" id="aiArtProgressStep"></p>
-          </div>
-          <ul class="diagram-build-log" id="diagramBuildLog" aria-live="polite"></ul>
-          <div class="diagram-canvas-wrap">
-            <div class="diagram-canvas phase-0" id="diagramCanvas" aria-label="도식 미리보기">
-              ${diagramPreviewWireHtml(selectedType)}
-            </div>
-          </div>
-          <div class="diagram-result-actions report-make-actions">
-            <button type="button" class="btn btn-primary" id="aiArtEditablePpt" disabled>도식 재료 PPT 다시 받기</button>
-            <button type="button" class="btn" id="aiArtRun">AI 참고 그림도 만들기 (선택)</button>
-            <button type="button" class="btn" id="aiArtPpt" ${arts.length ? "" : "disabled"}>참고 그림 PPT</button>
-            <span class="muted" id="diagramBuildDoneHint"></span>
+          <div class="row">
+            <button type="button" class="btn btn-primary" id="artStudioPptLayout">${flaticonIcon("fi-rr-download")} 레이아웃 PPT</button>
+            <button type="button" class="btn" id="artStudioPptDiagram">도식 PPT</button>
+            <button type="button" class="btn" id="artStudioPptAll">전체 패키지</button>
           </div>
         </div>
+        <ul class="diagram-build-log" id="artStudioLog" aria-live="polite"></ul>
+        <div class="art-studio-guide" id="artStudioGuide">
+          ${
+            lastGuide
+              ? `
+            ${lastGuide.reasoning ? `<p class="art-studio-reasoning">${escapeHtml(lastGuide.reasoning)}</p>` : ""}
+            ${
+              lastGuide.keyMessages?.length
+                ? `<ul class="art-studio-messages">${lastGuide.keyMessages.map((m) => `<li>${escapeHtml(m)}</li>`).join("")}</ul>`
+                : ""
+            }
+            <ol class="art-studio-workflow">${lastGuide.workflow.map((w) => `<li>${escapeHtml(w)}</li>`).join("")}</ol>
+            <div class="art-studio-layout-cards">
+              ${lastGuide.items
+                .map(
+                  (it) => `
+                <article class="art-studio-guide-card">
+                  <span class="badge">${escapeHtml(String(it.order))}</span>
+                  <strong>${escapeHtml(it.name)}</strong>
+                  <p>${escapeHtml(it.usage)}</p>
+                  <span class="muted">${escapeHtml(it.desc)}</span>
+                </article>`
+                )
+                .join("")}
+            </div>
+            <p class="muted art-studio-variant-note">스타일 변형 · ${escapeHtml(lastGuide.variantLabel)} — ${escapeHtml(lastGuide.variantHint)}</p>
+            ${
+              lastGuide.learnedSamples?.length
+                ? `<div class="style-learn-applied"><strong>반영된 학습 양식</strong><ul>${lastGuide.learnedSamples
+                    .map((s) => `<li>${escapeHtml(s.title)} <span class="muted">(${escapeHtml(STYLE_PROGRAMS.find((p) => p.id === s.program)?.label || s.program)})</span></li>`)
+                    .join("")}</ul></div>`
+                : ""
+            }`
+              : ""
+          }
+        </div>
+      </section>
+      </div>
 
-        ${
-          arts.length
-            ? `<div class="panel-head" style="margin-top:18px">
-          <h2 class="panel-title">AI 참고 그림 (비트맵)</h2>
-          <span class="muted">${arts.length}장 · 수치 수정은 편집용 PPT 권장</span>
+      <section class="panel style-learn-panel" data-art-tab-panel="learn" ${artTab === "learn" ? "" : "hidden"}>
+        <div class="panel-head">
+          <div>
+            <h2 class="panel-title">${flaticonIcon("fi-rr-layers", "panel-title-icon")} 양식학습 · 보고서 그림 레퍼런스</h2>
+            <p class="panel-desc">전문대학 혁신지원사업·RISE·신산업 등에서 쓰인 보고서 그림을 등록하면, 「그림 만들기」에서 자동 반영됩니다. (현재 ${allLearned.length}건 학습)</p>
+          </div>
         </div>
-        <div class="ai-art-grid">
-          ${arts
-            .map(
-              (a) => `
-            <article class="ai-art-card">
-              <label class="ai-art-check">
-                <input type="checkbox" data-art-pick="${escapeAttr(a.id)}" checked />
-                <span>PPT 포함</span>
-              </label>
-              <img src="data:image/png;base64,${a.imageBase64}" alt="${escapeAttr(a.title || "art")}" />
-              <div class="ai-art-meta">
-                <strong>${escapeHtml(a.title || "그림")}</strong>
-                <span class="muted">${escapeHtml(a.typeName || "")}${a.typeName ? " · " : ""}${escapeHtml((a.createdAt || "").slice(0, 16).replace("T", " "))}</span>
-              </div>
-              <div class="row">
-                <a class="btn btn-sm" download="${escapeAttr((a.title || "art").replace(/\s+/g, "_"))}.png" href="data:image/png;base64,${a.imageBase64}">PNG</a>
-                <button type="button" class="btn btn-sm btn-danger" data-del-art="${escapeAttr(a.id)}">삭제</button>
-              </div>
-            </article>`
-            )
-            .join("")}
-        </div>`
-            : `<div class="empty" style="margin-top:12px">참고 비트맵은 선택 사항입니다. 먼저 전체 재료 PPT 또는 도식 재료 PPT를 받으세요.</div>`
-        }
+        <div class="style-learn-stats">
+          ${STYLE_PROGRAMS.map(
+            (p) => `<span class="style-learn-stat"><em>${learnStats[p.id] || 0}</em>${escapeHtml(p.label)}</span>`
+          ).join("")}
+        </div>
+        <form class="style-learn-upload" id="styleLearnUploadForm">
+          <div class="wp-grid-2">
+            <label class="wp-field">
+              <span class="wp-label">사업·프로그램 분류</span>
+              <select name="program" class="wp-input wp-select" required>
+                ${STYLE_PROGRAMS.map((p) => `<option value="${escapeAttr(p.id)}">${escapeHtml(p.label)}</option>`).join("")}
+              </select>
+            </label>
+            <label class="wp-field">
+              <span class="wp-label">양식 제목</span>
+              <input name="title" class="wp-input" placeholder="예: RISE 거버넌스 추진체계도" />
+            </label>
+            <label class="wp-field">
+              <span class="wp-label">레이아웃 유형 (선택)</span>
+              <select name="layoutRef" class="wp-input wp-select">
+                <option value="">자동</option>
+                ${REPORT_LAYOUTS.map((l) => `<option value="${escapeAttr(l.id)}">${escapeHtml(l.name)}</option>`).join("")}
+              </select>
+            </label>
+            <label class="wp-field">
+              <span class="wp-label">보고서 그림 파일 (PNG·JPG)</span>
+              <input type="file" name="file" accept="image/png,image/jpeg,image/webp" required />
+            </label>
+          </div>
+          <button type="submit" class="btn btn-primary">${flaticonIcon("fi-rr-upload")} 학습에 추가</button>
+        </form>
+        <div class="style-learn-filter sub-tab-bar">
+          <button type="button" class="sub-tab-btn ${learnFilter === "all" ? "active" : ""}" data-learn-filter="all">전체 ${allLearned.length}</button>
+          ${STYLE_PROGRAMS.map(
+            (p) =>
+              `<button type="button" class="sub-tab-btn ${learnFilter === p.id ? "active" : ""}" data-learn-filter="${escapeAttr(p.id)}">${escapeHtml(p.label)} ${learnStats[p.id] || 0}</button>`
+          ).join("")}
+        </div>
+        <div id="styleLearnGallery">${learningGalleryHtml(allLearned, { filter: learnFilter })}</div>
+        <p class="muted style-learn-foot">※ 내장 ${DEFAULT_STYLE_SAMPLES?.length || 10}건 + 업로드 양식이 「만들기」 GPT 기획·레이아웃 조합에 반영됩니다.</p>
       </section>
 
       ${flaticonSearchHtml()}
     </div>
   `;
 
-  const showArtSub = (next) => {
-    const id = ["layout", "diagram", "result"].includes(next) ? next : "layout";
-    state._aiArtSub = id;
-    const step = id === "layout" ? 1 : id === "diagram" ? 2 : 3;
-    el.querySelectorAll("[data-art-sub]").forEach((btn) => {
-      const on = btn.dataset.artSub === id;
-      btn.classList.toggle("active", on);
-      btn.setAttribute("aria-selected", on ? "true" : "false");
-    });
-    el.querySelectorAll("[data-art-panel]").forEach((panel) => {
-      panel.hidden = panel.dataset.artPanel !== id;
-    });
-    el.querySelectorAll(".art-flow-step").forEach((li) => {
-      const btn = li.querySelector("[data-art-sub]");
-      if (!btn) return;
-      const sid = btn.dataset.artSub === "layout" ? 1 : btn.dataset.artSub === "diagram" ? 2 : 3;
-      li.classList.toggle("is-on", sid === step);
-      li.classList.toggle("is-done", sid < step);
-    });
+  const setStudioProgress = (pct, step, label) => {
+    const wrap = $("#artStudioProgress");
+    const fill = $("#artStudioFill");
+    const pctEl = $("#artStudioPct");
+    const stepEl = $("#artStudioStep");
+    const status = $("#artStudioStatus");
+    const n = Math.max(0, Math.min(100, Math.round(pct)));
+    if (wrap) {
+      wrap.hidden = false;
+      wrap.classList.toggle("is-done", n >= 100);
+    }
+    if (fill) fill.style.width = `${n}%`;
+    if (pctEl) pctEl.textContent = `${n}%`;
+    if (stepEl && step) stepEl.textContent = step;
+    if (status && label != null) status.textContent = label;
   };
 
-  el.querySelectorAll("[data-art-sub]").forEach((btn) => {
-    btn.addEventListener("click", () => showArtSub(btn.dataset.artSub));
-  });
-  bindFlaticonSearch(el);
-  bindLegoBuilder(el, {
-    onCompose: async ({ blocks, area, focus, statusEl, progressEl, fillEl, stepEl }) => {
-      state._legoBlocks = blocks;
-      if (progressEl) progressEl.hidden = false;
-      if (statusEl) statusEl.textContent = "작성 중…";
-      const steps = ["블록 배치 확인", "샘플 수치·문구 삽입", "PPT 생성"];
-      for (let i = 0; i < steps.length; i++) {
-        if (stepEl) stepEl.textContent = steps[i];
-        if (fillEl) fillEl.style.width = `${Math.round(((i + 1) / steps.length) * 100)}%`;
-        await new Promise((r) => setTimeout(r, 280));
+  const pushStudioLog = (text) => {
+    const log = $("#artStudioLog");
+    if (!log) return;
+    const li = document.createElement("li");
+    li.textContent = text;
+    li.className = "is-new";
+    log.appendChild(li);
+  };
+
+  const renderGuideDom = (guide) => {
+    const box = $("#artStudioGuide");
+    const sum = $("#artStudioSummary");
+    if (sum) sum.textContent = guide.summary || "";
+    if (!box) return;
+    box.innerHTML = `
+      ${guide.reasoning ? `<p class="art-studio-reasoning">${escapeHtml(guide.reasoning)}</p>` : ""}
+      ${
+        guide.keyMessages?.length
+          ? `<ul class="art-studio-messages">${guide.keyMessages.map((m) => `<li>${escapeHtml(m)}</li>`).join("")}</ul>`
+          : ""
       }
-      try {
-        await downloadLegoDraftPpt({
-          blocks,
-          area,
-          focus,
-          fileName: `연성대_레고레이아웃_${today()}`,
-        });
-        if (statusEl) statusEl.textContent = "PPT 다운로드 완료";
-        if (stepEl) stepEl.textContent = "완료 — 바로 활용하세요";
-        showArtSub("result");
-      } catch (err) {
-        if (statusEl) statusEl.textContent = "";
-        alert(err.message || "레고 초안 PPT 저장에 실패했습니다.");
-      }
-    },
+      <ol class="art-studio-workflow">${guide.workflow.map((w) => `<li>${escapeHtml(w)}</li>`).join("")}</ol>
+      <div class="art-studio-layout-cards">
+        ${guide.items
+          .map(
+            (it) => `
+          <article class="art-studio-guide-card">
+            <span class="badge">${escapeHtml(String(it.order))}</span>
+            <strong>${escapeHtml(it.name)}</strong>
+            <p>${escapeHtml(it.usage)}</p>
+            <span class="muted">${escapeHtml(it.desc)}</span>
+          </article>`
+          )
+          .join("")}
+      </div>
+      <p class="muted art-studio-variant-note">스타일 변형 · ${escapeHtml(guide.variantLabel)} — ${escapeHtml(guide.variantHint)}</p>
+      ${
+        guide.learnedSamples?.length
+          ? `<div class="style-learn-applied"><strong>반영된 학습 양식</strong><ul>${guide.learnedSamples
+              .map(
+                (s) =>
+                  `<li>${escapeHtml(s.title)} <span class="muted">(${escapeHtml(STYLE_PROGRAMS.find((p) => p.id === s.program)?.label || s.program)})</span></li>`
+              )
+              .join("")}</ul></div>`
+          : ""
+      }`;
+  };
+
+  const applyBriefToStudio = (id) => {
+    const b = state.aiBriefs.find((x) => x.id === id);
+    if (!b) return;
+    const a = b.analysis || {};
+    const f = reportFrameById(state._aiArtFrame || selectedFrame);
+    const ctx = [
+      frameContextGuide(f).split("【표현할 내용】")[0].trim(),
+      "【표현할 내용】",
+      a.projectName ? `핵심사업: ${a.projectName}` : "",
+      a.adminBrief,
+      a.summary,
+      (a.themes || []).join(", "),
+    ]
+      .filter(Boolean)
+      .join("\n\n");
+    const ta = $("#artStudioDirection");
+    if (ta) ta.value = ctx;
+    state._aiArtContextSeed = ctx;
+  };
+
+  el.querySelectorAll("[data-art-tab]").forEach((btn) => {
+    btn.addEventListener("click", () => {
+      state._aiArtTab = btn.dataset.artTab;
+      persist();
+      renderAiArt();
+    });
   });
+
+  el.querySelectorAll("[data-learn-filter]").forEach((btn) => {
+    btn.addEventListener("click", () => {
+      state._styleLearnFilter = btn.dataset.learnFilter;
+      renderAiArt();
+    });
+  });
+
+  $("#styleLearnUploadForm")?.addEventListener("submit", async (e) => {
+    e.preventDefault();
+    const fd = new FormData(e.target);
+    const file = fd.get("file");
+    try {
+      await ingestStyleSample(state, file, {
+        program: fd.get("program"),
+        title: fd.get("title"),
+        layoutRef: fd.get("layoutRef"),
+        uid,
+      });
+      persist();
+      alert("학습 양식에 추가했습니다. 「그림 만들기」에서 반영됩니다.");
+      state._aiArtTab = "learn";
+      renderAiArt();
+    } catch (err) {
+      alert(err.message || "업로드 실패");
+    }
+  });
+
+  el.querySelectorAll("[data-del-sample]").forEach((btn) => {
+    btn.addEventListener("click", () => {
+      if (!confirm("이 학습 양식을 삭제할까요?")) return;
+      removeLearnedSample(state, btn.dataset.delSample);
+      persist();
+      renderAiArt();
+    });
+  });
+
+  el.querySelectorAll("[data-art-frame]").forEach((btn) => {
+    btn.addEventListener("click", () => {
+      const f = reportFrameById(btn.dataset.artFrame);
+      state._aiArtFrame = f.id;
+      state._aiArtType = frameDefaultType(f);
+      state._aiArtContextSeed = frameContextGuide(f);
+      persist();
+      renderAiArt();
+    });
+  });
+
   el.querySelectorAll("[data-doc-kind]").forEach((btn) => {
     btn.addEventListener("click", () => {
       if (!isAdmin()) return;
@@ -7319,590 +8374,173 @@ function renderAiArt() {
     });
   });
 
-  const syncStyleGuideField = () => {
-    const t = reportArtTypeById(state._aiArtType || selectedType);
-    const f = reportFrameById(state._aiArtFrame || selectedFrame);
-    const guide = buildYeonsungStyleGuide(t, f);
-    state._aiArtStyleGuide = guide;
-    if ($("#aiArtStyleGuide")) $("#aiArtStyleGuide").value = guide;
-  };
-
-  const collectLayoutIds = () =>
-    el.querySelectorAll("[data-layout-id]:checked").map((inp) => inp.dataset.layoutId).filter(Boolean);
-
-  const syncLayoutCards = () => {
-    el.querySelectorAll(".layout-ppt-card").forEach((card) => {
-      const on = card.querySelector("input")?.checked;
-      card.classList.toggle("is-on", Boolean(on));
-    });
-    state._reportLayoutIds = collectLayoutIds();
-    const countEm = el.querySelector('.art-flow-step [data-art-sub="layout"] em');
-    if (countEm) countEm.textContent = `${state._reportLayoutIds.length}종 선택`;
-  };
-
-  el.querySelectorAll("[data-layout-id]").forEach((inp) => {
-    inp.addEventListener("change", syncLayoutCards);
+  $("#artStudioBrief")?.addEventListener("change", () => {
+    const id = $("#artStudioBrief").value;
+    state._aiArtBriefId = id || "";
+    if (id) applyBriefToStudio(id);
   });
+  if (state._aiArtBriefId) applyBriefToStudio(state._aiArtBriefId);
 
-  $("#layoutPptAll")?.addEventListener("click", () => {
-    el.querySelectorAll("[data-layout-id]").forEach((c) => {
-      c.checked = true;
-    });
-    syncLayoutCards();
-  });
-  $("#layoutPptNone")?.addEventListener("click", () => {
-    el.querySelectorAll("[data-layout-id]").forEach((c) => {
-      c.checked = false;
-    });
-    syncLayoutCards();
-  });
-
-  $("#artPackageDownload")?.addEventListener("click", async () => {
-    const status = $("#artPackageStatus");
-    const btn = $("#artPackageDownload");
-    const ids = collectLayoutIds().length ? collectLayoutIds() : REPORT_LAYOUTS.map((l) => l.id);
-    try {
-      if (btn) btn.disabled = true;
-      if (status) status.textContent = "전체 재료 PPT 작성 중…";
-      state._layoutChapterNo = ($("#layoutChapterNo")?.value || "3").trim();
-      state._reportLayoutIds = ids;
-      const plan = state._lastDiagramPlan || {};
-      await downloadReportArtPackagePpt({
-        layoutIds: ids,
-        chapterNo: state._layoutChapterNo,
-        typeId: state._aiArtType || selectedType,
-        title: ($("#aiArtTitle")?.value || "").trim() || reportArtTypeById(state._aiArtType || selectedType).name,
-        labels: plan.labels || plan,
-        docKindName: reportDocKindMeta().name,
-        fileName: `연성대_보고서_그림_전체재료_${today()}`,
-      });
-      if (status) status.textContent = `완료 · 양식 ${ids.length}종 + 도식 키트`;
-      showArtSub("result");
-    } catch (err) {
-      if (status) status.textContent = "";
-      alert(err.message || "전체 재료 PPT 저장에 실패했습니다.");
-    } finally {
-      if (btn) btn.disabled = false;
-    }
-  });
-
-  const layoutFloat = $("#layoutFloat");
-  const layoutFloatTitle = $("#layoutFloatTitle");
-  const layoutFloatStage = $("#layoutFloatStage");
-  const placeLayoutFloat = (card, clientX, clientY) => {
-    if (!layoutFloat) return;
-    const pad = 16;
-    const fw = layoutFloat.offsetWidth || 360;
-    const fh = layoutFloat.offsetHeight || 260;
-    let left = clientX + 18;
-    let top = clientY + 18;
-    if (left + fw > window.innerWidth - pad) left = clientX - fw - 12;
-    if (top + fh > window.innerHeight - pad) top = clientY - fh - 12;
-    left = Math.max(pad, left);
-    top = Math.max(pad, top);
-    layoutFloat.style.left = `${left}px`;
-    layoutFloat.style.top = `${top}px`;
-  };
-  const showLayoutFloat = (card, e) => {
-    if (!layoutFloat || !layoutFloatStage) return;
-    const id = card.dataset.layoutCard;
-    layoutFloatStage.innerHTML = layoutPreviewWireHtml(id);
-    if (layoutFloatTitle) layoutFloatTitle.textContent = card.dataset.layoutName || "";
-    layoutFloat.hidden = false;
-    layoutFloat.setAttribute("aria-hidden", "false");
-    layoutFloat.classList.add("is-open");
-    placeLayoutFloat(card, e.clientX, e.clientY);
-  };
-  const hideLayoutFloat = () => {
-    if (!layoutFloat) return;
-    layoutFloat.hidden = true;
-    layoutFloat.setAttribute("aria-hidden", "true");
-    layoutFloat.classList.remove("is-open");
-  };
-  el.querySelectorAll("[data-layout-card]").forEach((card) => {
-    card.addEventListener("mouseenter", (e) => showLayoutFloat(card, e));
-    card.addEventListener("mousemove", (e) => {
-      if (layoutFloat?.classList.contains("is-open")) placeLayoutFloat(card, e.clientX, e.clientY);
-    });
-    card.addEventListener("mouseleave", hideLayoutFloat);
-    card.addEventListener("focusin", (e) => showLayoutFloat(card, e));
-    card.addEventListener("focusout", (e) => {
-      if (!card.contains(e.relatedTarget)) hideLayoutFloat();
-    });
-  });
-
-  $("#layoutPptDownload")?.addEventListener("click", async () => {
-    const ids = collectLayoutIds();
-    const status = $("#layoutPptStatus");
-    const btn = $("#layoutPptDownload");
-    if (!ids.length) {
-      alert("내려받을 레이아웃을 하나 이상 선택해 주세요.");
+  const runStudioCreate = async ({ reroll = false } = {}) => {
+    const direction = ($("#artStudioDirection")?.value || "").trim();
+    if (!direction) {
+      alert("작성 방향·표현할 내용을 입력해 주세요.");
       return;
     }
-    try {
-      if (btn) btn.disabled = true;
-      if (status) status.textContent = "PPT 작성 중…";
-      state._layoutChapterNo = ($("#layoutChapterNo")?.value || "3").trim();
-      state._layoutFilePrefix = ($("#layoutFilePrefix")?.value || "연성대_보고서_양식_레이아웃").trim();
-      state._reportLayoutIds = ids;
-      await downloadReportLayoutPpt({
-        layoutIds: ids,
-        chapterNo: state._layoutChapterNo,
-        titlePrefix: state._layoutFilePrefix,
-        pack: ids.length > 1,
-      });
-      if (status) status.textContent = `${ids.length}종 레이아웃 다운로드 완료`;
-    } catch (err) {
-      if (status) status.textContent = "";
-      alert(err.message || "레이아웃 PPT 저장에 실패했습니다.");
-    } finally {
-      if (btn) btn.disabled = false;
-    }
-  });
+    state._aiArtContextSeed = direction;
+    if (!reroll) state._artStudioSeed = Date.now();
+    else state._artStudioSeed = (state._artStudioSeed || Date.now()) + 997 + Math.floor(Math.random() * 9000);
 
-  const refreshDiagramChoiceUi = () => {
-    const f = reportFrameById(state._aiArtFrame || selectedFrame);
-    const t = reportArtTypeById(state._aiArtType || selectedType);
-    const sum = $("#diagramChoiceSummary");
-    if (sum) sum.textContent = `${f.name} · ${t.name}`;
-    const canvas = $("#diagramCanvas");
-    if (canvas && !canvas.classList.contains("is-building")) {
-      canvas.innerHTML = diagramPreviewWireHtml(t.id);
-      canvas.className = "diagram-canvas phase-0";
-    }
-    const meta = $("#diagramResultMeta");
-    if (meta && !el.querySelector("#aiArtProgress:not([hidden])")) {
-      meta.textContent = `선택 반영 대기 · ${f.name} / ${t.name}`;
-    }
-  };
+    const themeId = state._aiArtFrame || selectedFrame;
+    const frameNow = reportFrameById(themeId);
+    const learnedForRun = pickSamplesForGeneration(state, { themeId, direction, limit: 5 });
+    const pack = composeStudioPack({ themeId, direction, seed: state._artStudioSeed, learnedSamples: learnedForRun });
+    state._artStudioPack = pack;
+    state._artStudioActiveLearned = learnedForRun;
+    state._reportLayoutIds = pack.layoutIds;
+    state._aiArtType = pack.typeId;
 
-  el.querySelectorAll("[data-art-frame]").forEach((btn) => {
-    btn.addEventListener("click", () => {
-      const f = reportFrameById(btn.dataset.artFrame);
-      state._aiArtFrame = f.id;
-      state._aiArtType = f.defaultType;
-      state._aiArtContextSeed = f.contextGuide;
-      el.querySelectorAll("[data-art-frame]").forEach((b) => {
-        const on = b.dataset.artFrame === f.id;
-        b.classList.toggle("active", on);
-        b.setAttribute("aria-pressed", on ? "true" : "false");
+    const live = el.querySelector(".art-studio-live");
+    if (live) {
+      const prog = live.querySelector("#artStudioProgress");
+      const oldStage = live.querySelector("#artStudioStage");
+      const stageHtml = studioStageHtml({
+        layoutIds: pack.layoutIds,
+        diagramTypeId: pack.typeId,
+        visibleCount: 0,
+        phase: 0,
+        variant: pack.variant,
       });
-      el.querySelectorAll("[data-art-type]").forEach((b) => {
-        const on = b.dataset.artType === f.defaultType;
-        b.classList.toggle("active", on);
-        b.setAttribute("aria-pressed", on ? "true" : "false");
-      });
-      if ($("#aiArtTitle")) $("#aiArtTitle").value = reportArtTypeById(f.defaultType).name;
-      const briefId = $("#aiArtBrief")?.value || "";
-      const ctxVal = $("#aiArtContext")?.value || "";
-      if ($("#aiArtContext") && (!briefId || ctxVal.includes("【작성 방향】"))) {
-        $("#aiArtContext").value = f.contextGuide;
-        state._aiArtContextSeed = f.contextGuide;
-      }
-      syncStyleGuideField();
-      refreshDiagramChoiceUi();
+      if (oldStage) oldStage.outerHTML = stageHtml;
+      else if (prog) prog.insertAdjacentHTML("afterend", stageHtml);
+    }
+
+    $("#artStudioResult")?.removeAttribute("hidden");
+    $("#artStudioLog").innerHTML = "";
+    $("#artStudioDice")?.removeAttribute("disabled");
+    const createBtn = $("#artStudioCreate");
+    const diceBtn = $("#artStudioDice");
+    if (createBtn) createBtn.disabled = true;
+    if (diceBtn) diceBtn.disabled = true;
+
+    const type = reportArtTypeById(pack.typeId);
+    const styleGuide =
+      buildYeonsungStyleGuide(type, frameNow) +
+      (learnedForRun.length ? `\n\n${buildLearnedStyleGuideBlock(learnedForRun)}` : "");
+    const title = type.name;
+
+    learnedForRun.forEach((s) => pushStudioLog(`학습 반영 · ${s.title}`));
+
+    const planPromise = planReportDiagram({
+      title,
+      context: direction,
+      prompt: `${pack.variant?.hint || ""} · 레이아웃 ${pack.layoutIds.length}종 · 학습 ${learnedForRun.length}건`,
+      styleGuide,
+      reportFrame: frameNow.id,
+      reportFrameName: frameNow.name,
+      reportType: type.id,
+      reportTypeName: type.name,
+      reportTypeDesc: type.desc,
+      reportTypeVisual: type.visual,
     });
-  });
-
-  el.querySelectorAll("[data-art-type]").forEach((btn) => {
-    btn.addEventListener("click", () => {
-      const t = reportArtTypeById(btn.dataset.artType);
-      state._aiArtType = t.id;
-      el.querySelectorAll("[data-art-type]").forEach((b) => {
-        const on = b.dataset.artType === t.id;
-        b.classList.toggle("active", on);
-        b.setAttribute("aria-pressed", on ? "true" : "false");
-      });
-      const titleEl = $("#aiArtTitle");
-      if (titleEl && (!titleEl.value.trim() || REPORT_ART_TYPES.some((x) => x.name === titleEl.value.trim()))) {
-        titleEl.value = t.name;
-      }
-      syncStyleGuideField();
-      refreshDiagramChoiceUi();
-    });
-  });
-
-  $("#aiArtStyleGuide")?.addEventListener("input", () => {
-    state._aiArtStyleGuide = $("#aiArtStyleGuide").value;
-  });
-  $("#aiArtContext")?.addEventListener("input", () => {
-    state._aiArtContextSeed = $("#aiArtContext").value;
-  });
-  $("#aiArtStyleReset")?.addEventListener("click", () => {
-    state._aiArtStyleGuide = "";
-    syncStyleGuideField();
-  });
-  $("#aiArtContextReset")?.addEventListener("click", () => {
-    const f = reportFrameById(state._aiArtFrame || selectedFrame);
-    state._aiArtContextSeed = f.contextGuide;
-    if ($("#aiArtContext")) $("#aiArtContext").value = f.contextGuide;
-  });
-
-  const applyBriefToArtForm = (id) => {
-    const b = state.aiBriefs.find((x) => x.id === id);
-    if (!b) return;
-    const a = b.analysis || {};
-    const f = reportFrameById(state._aiArtFrame || selectedFrame);
-    const ctx = [
-      f.contextGuide.split("【표현할 내용】")[0].trim(),
-      "【표현할 내용】",
-      a.projectName ? `핵심사업: ${a.projectName}` : "",
-      a.adminBrief,
-      a.summary,
-      a.overviewModel ? `개요·체계: ${a.overviewModel}` : "",
-      (a.statusAnalysis || []).length ? `현황: ${(a.statusAnalysis || []).join(" / ")}` : "",
-      (a.necessity || []).length ? `필요성: ${(a.necessity || []).join(" / ")}` : "",
-      (a.plan3y || []).length ? `3개년: ${(a.plan3y || []).join(" / ")}` : "",
-      (a.effectsQuant || []).length ? `정량효과: ${(a.effectsQuant || []).join(" / ")}` : "",
-      (a.themes || []).join(", "),
-    ]
-      .filter(Boolean)
-      .join("\n\n");
-    if ($("#aiArtContext")) $("#aiArtContext").value = ctx;
-    if ($("#aiArtTitle")) {
-      $("#aiArtTitle").value = (a.projectName || a.adminBrief || reportArtTypeById(state._aiArtType || selectedType).name).slice(0, 48);
-    }
-    if (a.suggestedDiagram) {
-      const hit = REPORT_ART_TYPES.find(
-        (t) => a.suggestedDiagram.includes(t.name) || t.name.includes(String(a.suggestedDiagram).replace(/모형|도$/g, ""))
-      );
-      if (hit) {
-        state._aiArtType = hit.id;
-        el.querySelectorAll("[data-art-type]").forEach((card) => {
-          const on = card.dataset.artType === hit.id;
-          card.classList.toggle("active", on);
-          card.setAttribute("aria-pressed", on ? "true" : "false");
-        });
-        syncStyleGuideField();
-      }
-    }
-  };
-
-  $("#aiArtBrief")?.addEventListener("change", () => {
-    const id = $("#aiArtBrief").value;
-    state._aiArtBriefId = id || "";
-    if (id) applyBriefToArtForm(id);
-  });
-  if (prefillBriefId) applyBriefToArtForm(prefillBriefId);
-
-  const setArtProgress = (pct, stepText, label) => {
-    const wrap = $("#aiArtProgress");
-    const fill = $("#aiArtProgressFill");
-    const bar = $("#aiArtProgressBar");
-    const pctEl = $("#aiArtProgressPct");
-    const stepEl = $("#aiArtProgressStep");
-    const status = $("#aiArtStatus");
-    const n = Math.max(0, Math.min(100, Math.round(pct)));
-    if (wrap) {
-      wrap.hidden = false;
-      wrap.setAttribute("aria-hidden", "false");
-      wrap.classList.toggle("is-done", n >= 100);
-      wrap.classList.toggle("is-error", false);
-    }
-    if (fill) fill.style.width = `${n}%`;
-    if (bar) bar.setAttribute("aria-valuenow", String(n));
-    if (pctEl) pctEl.textContent = `${n}%`;
-    if (stepEl && stepText != null) stepEl.textContent = stepText;
-    if (status && label != null) status.textContent = label;
-  };
-
-  const startArtProgress = (label) => {
-    const stages = [
-      { at: 8, step: "요청 준비 중…" },
-      { at: 22, step: "작성 방향·스타일 가이드 반영 중…" },
-      { at: 40, step: "도식 구조 설계 중…" },
-      { at: 58, step: "연성대 스타일 이미지 생성 중…" },
-      { at: 74, step: "레이아웃·색감 정리 중…" },
-      { at: 88, step: "거의 완료…" },
-    ];
-    let i = 0;
-    let current = 4;
-    setArtProgress(current, stages[0].step, label);
-    const timer = setInterval(() => {
-      if (i < stages.length) {
-        const target = stages[i].at;
-        current = Math.min(target, current + 2 + Math.floor(Math.random() * 3));
-        setArtProgress(current, stages[i].step, label);
-        if (current >= target) i += 1;
-      } else if (current < 92) {
-        current += 0.4;
-        setArtProgress(current, "서버 응답 대기 중…", label);
-      }
-    }, 420);
-    return {
-      finish(ok) {
-        clearInterval(timer);
-        if (ok) {
-          setArtProgress(100, "생성 완료", "완료");
-        } else {
-          const wrap = $("#aiArtProgress");
-          wrap?.classList.add("is-error");
-          setArtProgress(current, "생성 실패 — 다시 시도해 주세요.", "");
-        }
-      },
-    };
-  };
-
-  const pushBuildLog = (text) => {
-    const log = $("#diagramBuildLog");
-    if (!log) return;
-    const li = document.createElement("li");
-    li.textContent = text;
-    li.className = "is-new";
-    log.appendChild(li);
-    log.scrollTop = log.scrollHeight;
-  };
-
-  const sleep = (ms) => new Promise((r) => setTimeout(r, ms));
-
-  $("#diagramBuildBtn")?.addEventListener("click", async () => {
-    const btn = $("#diagramBuildBtn");
-    const dlBtn = $("#aiArtEditablePpt");
-    const hint = $("#diagramBuildDoneHint");
-    const canvas = $("#diagramCanvas");
-    const log = $("#diagramBuildLog");
-    const result = $("#diagramResult");
-    const type = reportArtTypeById(state._aiArtType || el.querySelector("[data-art-type].active")?.dataset.artType);
-    const frame = reportFrameById(state._aiArtFrame || selectedFrame);
-    const titleIn = ($("#aiArtTitle")?.value || type.name).trim();
-    const context = ($("#aiArtContext")?.value || "").trim();
-    const extraPrompt = ($("#aiArtPrompt")?.value || "").trim();
-    state._aiArtStyleGuide = ($("#aiArtStyleGuide")?.value || buildYeonsungStyleGuide(type, frame)).trim();
-    state._aiArtContextSeed = context;
-
-    showArtSub("result");
-    result?.scrollIntoView({ behavior: "smooth", block: "start" });
-    if (log) log.innerHTML = "";
-    if (hint) hint.textContent = "";
-    if (dlBtn) dlBtn.disabled = true;
-    if (canvas) {
-      canvas.innerHTML = diagramPreviewWireHtml(type.id);
-      canvas.className = "diagram-canvas is-building phase-0";
-    }
-    if ($("#diagramResultMeta")) {
-      $("#diagramResultMeta").textContent = `${frame.name} · ${type.name} · GPT 기획 중`;
-    }
 
     try {
-      if (btn) btn.disabled = true;
-      setArtProgress(6, "보고서 목적 파악", "GPT 도식 기획 중…");
-      pushBuildLog(`0단계 · GPT가 「${type.name}」 목적을 분석합니다`);
-      if (canvas) canvas.className = "diagram-canvas is-building phase-1";
-
-      let plan = null;
-      try {
-        plan = await planReportDiagram({
-          title: titleIn,
-          context,
-          prompt: extraPrompt,
-          styleGuide: state._aiArtStyleGuide,
-          reportFrame: frame.id,
-          reportFrameName: frame.name,
-          reportType: type.id,
-          reportTypeName: type.name,
-          reportTypeDesc: type.desc,
-          reportTypeVisual: type.visual,
-        });
-      } catch (planErr) {
-        pushBuildLog(`기획 경고 · ${planErr.message || "기획 API 실패"} — 기본 골격으로 진행`);
-      }
-
-      const title = (plan?.title || titleIn || type.name).trim();
-      if ($("#aiArtTitle") && plan?.title) $("#aiArtTitle").value = title;
-
-      setArtProgress(22, "핵심 메시지 정리", "GPT 도식 기획 중…");
-      if (canvas) canvas.className = "diagram-canvas is-building phase-2";
-      if (plan?.purpose) pushBuildLog(`목적 · ${plan.purpose}`);
-      if (plan?.reasoning) pushBuildLog(`사고 · ${plan.reasoning}`);
-      (plan?.keyMessages || []).forEach((m, i) => pushBuildLog(`메시지 ${i + 1} · ${m}`));
-      await sleep(280);
-
-      setArtProgress(45, "도식 칸에 내용 배치", "구조 매핑 중…");
-      if (canvas) canvas.className = "diagram-canvas is-building phase-3";
-      pushBuildLog(`3단계 · ${type.name} 칸에 내용 매핑`);
-      await sleep(320);
-
-      setArtProgress(68, "흑백 박스·화살표 구성", "도형 배치 중…");
-      if (canvas) canvas.className = "diagram-canvas is-building phase-4";
-      pushBuildLog("4단계 · 흑백 박스·블록화살표·단계배지 배치");
-      await sleep(280);
-
-      setArtProgress(86, "편집용 PPT 작성", "PPT 생성 중…");
-      if (canvas) canvas.className = "diagram-canvas is-building phase-5";
-      pushBuildLog("5단계 · GPT 기획 라벨로 편집용 PPT 작성");
-      await downloadEditableDiagramPpt({
-        typeId: type.id,
-        title,
-        fileName: `보고서도식_${title}`,
-        labels: plan?.labels || {},
+      const plan = await animateStudioBuild({
+        root: el,
+        layoutIds: pack.layoutIds,
+        diagramTypeId: pack.typeId,
+        variant: pack.variant,
+        learnedSamples: learnedForRun,
+        onProgress: (pct, label) => setStudioProgress(pct, label, reroll ? "다른 조합 생성 중…" : "학습 기반 그림 작성 중…"),
+        onStep: pushStudioLog,
+        planPromise,
       });
 
-      if (canvas) {
-        canvas.classList.remove("is-building");
-        canvas.classList.add("is-done");
-      }
-      setArtProgress(100, "작성 완료", "완료");
-      pushBuildLog("완료 · 한글에 삽입해 숫자·문구를 다듬으세요");
-      if ($("#diagramResultMeta")) {
-        $("#diagramResultMeta").textContent = plan?.purpose
-          ? `${frame.name} · ${type.name} · ${plan.purpose}`
-          : `${frame.name} · ${type.name} · 편집용 PPT 준비됨`;
-      }
-      if (dlBtn) dlBtn.disabled = false;
-      if (hint) {
-        hint.textContent = plan
-          ? "GPT 기획 반영 PPT가 저장되었습니다. 참고 그림도 같은 기획으로 만들 수 있습니다."
-          : "PPT가 저장되었습니다. 다시 받으려면 아래 버튼을 누르세요.";
-      }
+      state._lastDiagramPlan = plan || null;
       state._lastDiagramBuild = {
-        typeId: type.id,
-        title,
+        typeId: pack.typeId,
+        title: plan?.title || title,
         at: new Date().toISOString(),
         plan: plan || null,
       };
-      state._lastDiagramPlan = plan || null;
+
+      const guide = buildStudioUsageGuide({
+        layoutIds: pack.layoutIds,
+        plan,
+        theme: frameNow,
+        direction,
+        variant: pack.variant,
+        learnedSamples: learnedForRun,
+      });
+      state._artStudioGuide = guide;
+      renderGuideDom(guide);
+      if (plan?.purpose) pushStudioLog(`목적 · ${plan.purpose}`);
+      persist();
     } catch (err) {
-      const wrap = $("#aiArtProgress");
-      wrap?.classList.add("is-error");
-      setArtProgress(0, "작성 실패", "");
-      pushBuildLog(`오류 · ${err.message || "실패"}`);
-      alert(err.message || "보고서용 그림 작성에 실패했습니다.");
+      alert(err.message || "그림 양식 생성에 실패했습니다.");
     } finally {
-      if (btn) btn.disabled = false;
+      if (createBtn) createBtn.disabled = false;
+      if (diceBtn) diceBtn.disabled = false;
+    }
+  };
+
+  $("#artStudioCreate")?.addEventListener("click", () => runStudioCreate({ reroll: false }));
+  $("#artStudioDice")?.addEventListener("click", () => runStudioCreate({ reroll: true }));
+
+  $("#artStudioPptLayout")?.addEventListener("click", async () => {
+    const ids = state._artStudioPack?.layoutIds || state._reportLayoutIds || [];
+    if (!ids.length) return alert("먼저 「만들기」를 실행해 주세요.");
+    try {
+      await downloadReportLayoutPpt({
+        layoutIds: ids,
+        chapterNo: state._layoutChapterNo || "3",
+        titlePrefix: `연성대_TF_레이아웃_${today()}`,
+        pack: ids.length > 1,
+      });
+      pushStudioLog("레이아웃 PPT 저장 완료");
+    } catch (err) {
+      alert(err.message || "PPT 저장 실패");
     }
   });
 
-  $("#aiArtEditablePpt")?.addEventListener("click", async () => {
-    const btn = $("#aiArtEditablePpt");
-    const type = reportArtTypeById(state._aiArtType || el.querySelector("[data-art-type].active")?.dataset.artType);
-    const title = ($("#aiArtTitle")?.value || type.name).trim();
+  $("#artStudioPptDiagram")?.addEventListener("click", async () => {
     const plan = state._lastDiagramPlan;
+    const type = reportArtTypeById(state._artStudioPack?.typeId || state._aiArtType);
     try {
-      if (btn) btn.disabled = true;
       await downloadEditableDiagramPpt({
         typeId: type.id,
-        title: plan?.title || title,
-        fileName: `보고서도식_${plan?.title || title}`,
+        title: plan?.title || type.name,
+        fileName: `보고서도식_${plan?.title || type.name}`,
         labels: plan?.labels || {},
       });
-      if ($("#diagramBuildDoneHint")) $("#diagramBuildDoneHint").textContent = "편집용 PPT 다시 저장했습니다.";
+      pushStudioLog("도식 PPT 저장 완료");
     } catch (err) {
-      alert(err.message || "편집용 PPT 저장에 실패했습니다.");
-    } finally {
-      if (btn) btn.disabled = false;
+      alert(err.message || "도식 PPT 저장 실패");
     }
   });
 
-  $("#aiArtRun")?.addEventListener("click", async () => {
-    const btn = $("#aiArtRun");
-    const type = reportArtTypeById(state._aiArtType || el.querySelector("[data-art-type].active")?.dataset.artType);
-    const frame = reportFrameById(state._aiArtFrame || selectedFrame);
-    const title = ($("#aiArtTitle")?.value || type.name).trim();
-    const context = ($("#aiArtContext")?.value || "").trim();
-    const prompt = ($("#aiArtPrompt")?.value || "").trim();
-    const styleGuideText = ($("#aiArtStyleGuide")?.value || buildYeonsungStyleGuide(type, frame)).trim();
-    state._aiArtStyleGuide = styleGuideText;
-    if (!context && !prompt && !state._lastDiagramPlan?.imagePrompt) {
-      alert("보고서 내용 또는 연출 지시를 입력해 주세요. (또는 먼저「보고서용 그림 만들기」로 기획을 실행하세요)");
-      return;
-    }
-    let progress = null;
+  $("#artStudioPptAll")?.addEventListener("click", async () => {
+    const pack = state._artStudioPack;
+    if (!pack?.layoutIds?.length) return alert("먼저 「만들기」를 실행해 주세요.");
+    const plan = state._lastDiagramPlan;
+    const type = reportArtTypeById(pack.typeId);
     try {
-      if (btn) btn.disabled = true;
-      progress = startArtProgress(`${frame.name} · ${type.name} 생성 중…`);
-
-      let plan = state._lastDiagramPlan;
-      if (!plan?.imagePrompt && (context || prompt)) {
-        try {
-          plan = await planReportDiagram({
-            title,
-            context,
-            prompt,
-            styleGuide: styleGuideText,
-            reportFrame: frame.id,
-            reportFrameName: frame.name,
-            reportType: type.id,
-            reportTypeName: type.name,
-            reportTypeDesc: type.desc,
-            reportTypeVisual: type.visual,
-          });
-          state._lastDiagramPlan = plan;
-        } catch {
-          /* 이미지 API 자체 프롬프트 생성으로 폴백 */
-        }
-      }
-
-      const data = await generateYeonsungImage({
-        title: plan?.title || title,
-        context,
-        prompt,
-        plannedPrompt: plan?.imagePrompt || "",
-        purpose: plan?.purpose || "",
-        keyMessages: plan?.keyMessages || [],
-        styleGuide: styleGuideText,
-        reportFrame: frame.id,
-        reportFrameName: frame.name,
-        reportType: type.id,
-        reportTypeName: type.name,
-        reportTypeDesc: type.desc,
-        reportTypeVisual: type.visual,
+      await downloadReportArtPackagePpt({
+        layoutIds: pack.layoutIds,
+        chapterNo: state._layoutChapterNo || "3",
+        typeId: pack.typeId,
+        title: plan?.title || type.name,
+        labels: plan?.labels || plan,
+        docKindName: reportDocKindMeta().name,
+        fileName: `연성대_보고서_그림_패키지_${today()}`,
       });
-      progress.finish(true);
-      ensureAiArts();
-      state._aiArtFrame = frame.id;
-      state._aiArtType = type.id;
-      state._aiArtStyleGuide = styleGuideText;
-      state._aiArtContextSeed = context;
-      state.aiArts.unshift({
-        id: uid("art"),
-        title: data.title || title,
-        typeId: type.id,
-        typeName: `${frame.name} · ${type.name}`,
-        imageBase64: data.imageBase64,
-        prompt: data.prompt || "",
-        purpose: plan?.purpose || data.purpose || "",
-        createdAt: new Date().toISOString(),
-        by: sessionUser || "",
-      });
-      state.aiArts = state.aiArts.slice(0, 8);
-      persist();
-      await new Promise((r) => setTimeout(r, 450));
-      renderAiArt();
+      pushStudioLog("전체 패키지 PPT 저장 완료");
     } catch (err) {
-      progress?.finish(false);
-      alert(err.message || "그림 생성에 실패했습니다.");
-    } finally {
-      if (btn) btn.disabled = false;
+      alert(err.message || "패키지 PPT 저장 실패");
     }
   });
 
-  $("#aiArtPpt")?.addEventListener("click", async () => {
-    const picked = [...el.querySelectorAll("[data-art-pick]:checked")].map((c) => c.dataset.artPick);
-    const slides = state.aiArts.filter((a) => picked.includes(a.id));
-    if (!slides.length) {
-      alert("PPT에 넣을 그림을 선택해 주세요.");
-      return;
-    }
-    try {
-      $("#aiArtStatus").textContent = "PPT 작성 중…";
-      await downloadImagesAsPpt({
-        title: `연성대_보고서그림_${today()}`,
-        slides: slides.map((s) => ({ title: s.title, imageBase64: s.imageBase64 })),
-      });
-      $("#aiArtStatus").textContent = "PPT 다운로드 완료";
-    } catch (err) {
-      alert(err.message || "PPT 저장에 실패했습니다.");
-    }
-  });
-
-  el.querySelectorAll("[data-del-art]").forEach((btn) => {
-    btn.addEventListener("click", () => {
-      if (!confirm("이 그림을 삭제할까요?")) return;
-      state.aiArts = state.aiArts.filter((a) => a.id !== btn.dataset.delArt);
-      persist();
-      renderAiArt();
-    });
-  });
+  bindFlaticonSearch(el);
 }
 
 const REVIEW_TAG_PRESETS = [
@@ -8287,7 +8925,7 @@ function renderReview() {
             <label class="field full">평가 코멘트 <span class="muted">(${escapeHtml(activeNav?.label || "선택 파트")})</span>
               <textarea id="reviewCommentText" rows="3" placeholder="이 할당 파트에 대한 의견·판정·후속 조치를 적어 주세요."></textarea>
             </label>
-            <div class="row" style="gap:8px;flex-wrap:wrap;margin-top:8px">
+            <div class="row" style="gap:8px;flex-wrap:wrap;margin-top:8px;align-items:end">
               <label class="field" style="min-width:140px">판정
                 <select id="reviewCommentRating">
                   <option value="good">양호</option>
@@ -8295,7 +8933,13 @@ function renderReview() {
                   <option value="hold">보류·추가논의</option>
                 </select>
               </label>
-              <button type="button" class="btn btn-primary" id="reviewCommentAdd" style="align-self:end">코멘트 추가</button>
+              <label class="field" style="min-width:180px">사진 (모바일 촬영)
+                <input type="file" id="reviewCommentPhoto" accept="image/*" capture="environment" />
+              </label>
+              <label class="field" style="flex:1;min-width:200px">사진·그림 메모
+                <input id="reviewCommentPhotoCaption" placeholder="예: 이 부분 그림을 더 크게" />
+              </label>
+              <button type="button" class="btn btn-primary" id="reviewCommentAdd">코멘트 추가</button>
             </div>
           </div>`
               : ""
@@ -8304,27 +8948,7 @@ function renderReview() {
           <div class="review-comment-list">
             ${
               partComments.length
-                ? partComments
-                    .map(
-                      (c) => `
-              <article class="review-comment-card rating-${escapeAttr(c.rating || "good")}">
-                <header>
-                  <span class="review-rating-badge">${
-                    c.rating === "need" ? "보완 필요" : c.rating === "hold" ? "보류" : "양호"
-                  }</span>
-                  <span class="muted">${escapeHtml(c.by || "")} · ${escapeHtml(
-                        (c.createdAt || "").slice(0, 16).replace("T", " ")
-                      )}</span>
-                  ${
-                    admin
-                      ? `<button type="button" class="btn btn-sm btn-danger" data-del-comment="${escapeAttr(c.id)}">삭제</button>`
-                      : ""
-                  }
-                </header>
-                <p>${escapeHtml(c.text)}</p>
-              </article>`
-                    )
-                    .join("")
+                ? partComments.map((c) => renderReviewCommentCardHtml(c, { admin, largePhoto: true })).join("")
                 : `<div class="empty">이 파트에 대한 코멘트가 아직 없습니다.</div>`
             }
           </div>
@@ -8491,36 +9115,30 @@ function renderReview() {
     });
   });
 
-  $("#reviewCommentAdd")?.addEventListener("click", () => {
+  $("#reviewCommentAdd")?.addEventListener("click", async () => {
     if (!isAdmin()) return;
-    ensureReviewSession();
     const text = ($("#reviewCommentText")?.value || "").trim();
-    if (!text) {
-      alert("코멘트를 입력해 주세요.");
+    const photoFile = $("#reviewCommentPhoto")?.files?.[0];
+    if (!text && !(photoFile && photoFile.size)) {
+      alert("코멘트 또는 사진 중 하나는 입력해 주세요.");
       return;
     }
-    const rating = $("#reviewCommentRating")?.value || "good";
-    state.reviewSession.comments.unshift({
-      id: uid("rc"),
-      partId: state.reviewSession.activePartId,
-      text,
-      rating,
-      by: sessionUser || "",
-      createdAt: new Date().toISOString(),
-    });
-    state.reviewSession.comments = state.reviewSession.comments.slice(0, 200);
-    persist();
-    renderReview();
+    try {
+      await addReviewCommentEntry({
+        partId: state.reviewSession.activePartId,
+        round: activeRound,
+        text: text || "(사진 첨부)",
+        rating: $("#reviewCommentRating")?.value || "good",
+        photoFile,
+        photoCaption: ($("#reviewCommentPhotoCaption")?.value || "").trim(),
+      });
+      renderReview();
+    } catch (err) {
+      alert(err.message || "코멘트 저장에 실패했습니다.");
+    }
   });
 
-  el.querySelectorAll("[data-del-comment]").forEach((btn) => {
-    btn.addEventListener("click", () => {
-      if (!isAdmin()) return;
-      state.reviewSession.comments = state.reviewSession.comments.filter((c) => c.id !== btn.dataset.delComment);
-      persist();
-      renderReview();
-    });
-  });
+  bindReviewCommentDeletes(el);
 
   $("#reviewSessionSave")?.addEventListener("click", () => {
     if (!isAdmin()) return;
@@ -9338,10 +9956,12 @@ function renderMyWork() {
 
   el.innerHTML = `
     <div class="mywork-page">
+      ${processRailHtml({ compact: true, currentView: "my-work", dismissible: false })}
       ${scheduleFeedPanelHtml(who, admin, items)}
     </div>
   `;
 
+  bindProcessRail(el);
   bindScheduleFeedActions(el, refreshActiveScheduleSurface);
 }
 
@@ -9521,8 +10141,7 @@ function renderTfAll() {
 function renderAll() {
   $("#tfName").textContent = state.meta.tfName || "TF Pulse";
   applyRoleUi();
-  updateRemindBell();
-  updateRequestPlane();
+  updateAlarmButtons();
   renderView(activeViewName || "dashboard");
   renderSubNav(activeNavId || "home", activeViewName || "dashboard");
 }
@@ -9760,6 +10379,22 @@ function openScheduleModal(id) {
             ).join("")}
           </select>
         </label>
+        <label class="wp-field" id="schedCollectRoundField" ${currentGroup === "collect" ? "" : "hidden"}>
+          <span class="wp-label">연결 취합 차수</span>
+          <select name="collectionRound" id="schedCollectRound" class="wp-input wp-select">
+            <option value="">제목으로 자동 연결 (1차·2차·최종)</option>
+            ${[...(state.collections || [])]
+              .sort((a, b) => (Number(a.round) || 0) - (Number(b.round) || 0))
+              .map((c) => {
+                const selected =
+                  Number(item?.collectionRound || collectScheduleRound(item || { title: item?.title, workGroup: "collect" }) || 0) ===
+                  Number(c.round);
+                return `<option value="${escapeAttr(String(c.round))}" ${selected ? "selected" : ""}>${escapeHtml(c.name)} · 마감 ${escapeHtml(c.dueDate || "-")}</option>`;
+              })
+              .join("")}
+          </select>
+          <span class="muted" style="display:block;margin-top:4px;font-size:var(--text-xs)">일정표에는 마감만 수립됩니다. 참여자 파일 업로드는 보고서 통합에서 해당 차수 <strong>제출 요청</strong>을 등록한 뒤에 열립니다.</span>
+        </label>
 
         <div class="wp-grid-2">
           <label class="wp-field">
@@ -9823,6 +10458,11 @@ function openScheduleModal(id) {
         </label>
 
         <label class="wp-field">
+          <span class="wp-label">담당자에게 보이는 요청 말풍선</span>
+          <textarea name="askMessage" id="schedAskInput" rows="2" class="wp-input" placeholder="예: 관리자가 작성지침, 양식, 스타일 가이드 확인을 요청했어요!">${escapeHtml(item?.askMessage || "")}</textarea>
+          <span class="muted" style="display:block;margin-top:4px;font-size:var(--text-xs)">비워 두면 업무 그룹·제목에 맞춰 자동으로 안내합니다. 요청받은 담당자의 내 업무에 말풍선으로 표시됩니다.</span>
+        </label>
+        <label class="wp-field">
           <span class="wp-label">관리 목표값</span>
           <textarea name="goal" id="schedGoalInput" rows="2" class="wp-input" placeholder="관리 목표값">${escapeHtml(item?.goal || item?.note || "")}</textarea>
         </label>
@@ -9873,6 +10513,8 @@ function openScheduleModal(id) {
           <input name="driveUrl" class="wp-input" type="url" value="${escapeAttr(item?.driveUrl || "")}" placeholder="https://drive.google.com/..." />
         </label>
 
+        ${scheduleFormUploadSectionHtml(item)}
+
         ${datalistOptions(`schedDept_${dl}`, deptOpts)}
         ${datalistOptions(`schedProject_${dl}`, projectOpts)}
         ${datalistOptions(`schedDivision_${dl}`, divisionOpts)}
@@ -9884,7 +10526,7 @@ function openScheduleModal(id) {
         }
       </div>
     `,
-    onSubmit: (fd) => {
+    onSubmit: async (fd) => {
       const assignees = [...new Set(fd.getAll("assignees").map((v) => String(v).trim()).filter(Boolean))];
       const endDate = fd.get("endDate") || today();
       const sheetRaw = (fd.get("sheetUrl") || "").toString().trim();
@@ -9895,11 +10537,31 @@ function openScheduleModal(id) {
         : "";
       const owner = (fd.get("owner") || "").toString().trim() || currentUserName();
       const goal = (fd.get("goal") || "").toString().trim();
+      const workGroup = scheduleGroupOf({ workGroup: fd.get("workGroup"), title: fd.get("title"), type: fd.get("type") });
+      let sharedFiles =
+        item?.sharedFiles && typeof item.sharedFiles === "object" ? { ...item.sharedFiles } : {};
+
+      if (workGroup === "forms" && isAdmin()) {
+        for (const cat of SCHEDULE_FORM_UPLOAD_CATS) {
+          const file = fd.get(`sharedFile_${cat.id}`);
+          if (!file || !(file instanceof File) || file.size <= 0) continue;
+          if (file.size > RESOURCE_FILE_MAX_BYTES) {
+            alert(`${cat.label} 파일은 30MB 이하로 올려 주세요.`);
+            return false;
+          }
+          sharedFiles[cat.id] = {
+            fileName: file.name,
+            dataUrl: await readFileAsDataUrl(file),
+            uploadedAt: today(),
+          };
+        }
+      }
+
       const data = {
         title: fd.get("title").trim(),
         owner,
         createdBy: owner,
-        workGroup: scheduleGroupOf({ workGroup: fd.get("workGroup"), title: fd.get("title"), type: fd.get("type") }),
+        workGroup,
         dept: (fd.get("dept") || "").toString().trim(),
         project: (fd.get("project") || "").toString().trim(),
         status: fd.get("status") || "준비",
@@ -9909,14 +10571,19 @@ function openScheduleModal(id) {
         endDate,
         goal,
         note: goal,
+        askMessage: (fd.get("askMessage") || "").toString().trim(),
         prep: (fd.get("prep") || "").toString().trim(),
         carePoints: (fd.get("carePoints") || "").toString().trim(),
+        collectionRound: workGroup === "collect" ? Number(fd.get("collectionRound") || collectScheduleRound({ title: fd.get("title"), workGroup }) || 0) || "" : "",
         assignees,
         sheetUrl,
         driveUrl: (fd.get("driveUrl") || "").toString().trim(),
+        sharedFiles,
       };
       if (item) Object.assign(item, data);
       else state.schedule.push({ id: uid("s"), ...data });
+      const saved = item || state.schedule[state.schedule.length - 1];
+      if (workGroup === "forms" && isAdmin()) syncScheduleUploadsToResources(saved, sharedFiles);
       persist();
       refreshActiveScheduleSurface();
       return true;
@@ -9978,8 +10645,10 @@ function openScheduleModal(id) {
     setVal("#schedDivisionInput", tpl.division);
     setVal("#schedEndDate", addDaysIso(today(), tpl.dueOffsetDays));
     setVal("#schedGoalInput", tpl.goal);
+    setVal("#schedAskInput", tpl.askMessage || "");
     setVal("#schedPrepInput", tpl.prep);
     setVal("#schedCareInput", tpl.carePoints);
+    $("#schedWorkGroup")?.dispatchEvent(new Event("change"));
 
     $$(".schedule-guide-card").forEach((c) => c.classList.toggle("is-on", c.dataset.schedGuide === guideId));
 
@@ -10000,6 +10669,8 @@ function openScheduleModal(id) {
   $$("[data-sched-guide]").forEach((btn) => {
     btn.addEventListener("click", () => applyScheduleGuide(btn.dataset.schedGuide));
   });
+
+  bindScheduleFormUploadSection(currentGroup);
 
   $("#scheduleModalDelete")?.addEventListener("click", () => {
     if (!item || !confirm("삭제하시겠습니까?")) return;
@@ -10058,7 +10729,7 @@ function openResourceModal(id) {
         </label>
         <label class="field">분류
           <select name="category">
-            ${["지침", "서식", "정의서", "스타일", "기타"]
+            ${["지침", "서식", "집행기준", "스타일", "기타"]
               .map(
                 (c) =>
                   `<option value="${c}" ${item?.category === c ? "selected" : ""}>${c}</option>`
@@ -10066,32 +10737,73 @@ function openResourceModal(id) {
               .join("")}
           </select>
         </label>
-        <label class="field">파일명
-          <input name="fileName" value="${escapeAttr(item?.fileName || "")}" />
-        </label>
-        <label class="field full">링크(구글드라이브 등)
-          <input name="url" type="url" required value="${escapeAttr(item?.url || "")}" />
+        <label class="field full">파일 업로드
+          <input type="file" name="file" />
+          ${
+            item?.dataUrl || item?.url
+              ? `<span class="muted" style="display:block;margin-top:4px">등록된 파일: ${escapeHtml(item.fileName || "첨부됨")} · 참여자 다운로드 링크 자동 생성됨</span>`
+              : ""
+          }
+          <span class="muted" style="display:block;margin-top:4px">파일만 올리면 됩니다. 제목·파일명·다운로드 링크는 자동으로 채워집니다. (최대 30MB)</span>
         </label>
         <label class="field full">비고
           <input name="note" value="${escapeAttr(item?.note || "")}" />
         </label>
+        <details class="field full">
+          <summary class="muted" style="cursor:pointer">외부 링크로 등록 (선택 · 구글드라이브 등)</summary>
+          <label class="field full" style="margin-top:8px">링크
+            <input name="url" type="url" value="${escapeAttr(item?.url && !String(item.url).startsWith("data:") ? item.url : "")}" placeholder="https://drive.google.com/file/d/..." />
+          </label>
+          <label class="field full">파일명(표시용)
+            <input name="fileName" value="${escapeAttr(item?.fileName || "")}" placeholder="예: 교육부_보고서작성지침.pdf" />
+          </label>
+        </details>
       </div>
     `,
-    onSubmit: (fd) => {
-      const data = {
-        title: fd.get("title").trim(),
+    onSubmit: async (fd) => {
+      const file = fd.get("file");
+      let dataUrl = item?.dataUrl || "";
+      let fileName = fd.get("fileName").trim();
+      let title = fd.get("title").trim();
+      let url = fd.get("url").trim();
+
+      if (file && file instanceof File && file.size > 0) {
+        if (file.size > RESOURCE_FILE_MAX_BYTES) {
+          alert("파일은 30MB 이하로 올려 주세요.");
+          return false;
+        }
+        dataUrl = await readFileAsDataUrl(file);
+        if (!fileName) fileName = file.name;
+        if (!title) title = file.name.replace(/\.[^.]+$/, "");
+      }
+
+      if (!dataUrl && !url && !(item?.dataUrl || item?.url)) {
+        alert("파일을 선택해 주세요. (외부 링크만 쓸 경우 아래 「외부 링크로 등록」을 펼쳐 입력)");
+        return false;
+      }
+
+      if (!dataUrl) dataUrl = item?.dataUrl || "";
+      if (!url) url = item?.url && !String(item.url).startsWith("data:") ? item.url : "";
+
+      if (dataUrl) url = dataUrl;
+      else if (url && !fileName) fileName = title || "download";
+
+      const data = normalizeResourceEntry({
+        title: title || fileName.replace(/\.[^.]+$/, "") || "공통 자료",
         category: fd.get("category"),
-        fileName: fd.get("fileName").trim(),
-        url: fd.get("url").trim(),
+        fileName,
+        url,
         note: fd.get("note").trim(),
         uploadedAt: item?.uploadedAt || today(),
-      };
+        dataUrl,
+      });
       if (item) Object.assign(item, data);
       else state.resources.push({ id: uid("r"), ...data });
       saveAndRender("resources");
       return true;
     },
   });
+  window.setTimeout(bindResourceFileAutofill, 0);
 }
 
 function openMemberModal(id) {
@@ -10604,6 +11316,8 @@ async function resetSample() {
   ensureFoodHistory();
   ensureAiBriefs();
   ensureAiArts();
+  ensureReviewSession();
+  ensureCollectionPhases();
   persist();
   if (sessionUser && memberByName(sessionUser)) {
     renderAll();
@@ -10615,7 +11329,7 @@ async function resetSample() {
 
 /* ---------- Boot ---------- */
 
-const REPORT_DEADLINE = new Date("2026-09-30T16:00:00+09:00");
+const REPORT_DEADLINE = new Date("2026-09-15T16:00:00+09:00");
 let deadlineTimer = null;
 
 function formatDeadlineRemain(ms) {
@@ -10692,47 +11406,57 @@ async function boot() {
 
   $("#btnHome")?.addEventListener("click", () => setView("home"));
   $("#btnLogout")?.addEventListener("click", logout);
-  $("#btnRemindBell")?.addEventListener("click", () => openRemindPopup(true));
-  $("#btnRequestPlane")?.addEventListener("click", () => openRequestPopup(true));
+  $("#btnRemindBell")?.addEventListener("click", () => openUnifiedAlarmPopup({ mode: "schedule", browseAll: true }));
+  $("#btnRequestPlane")?.addEventListener("click", () => openUnifiedAlarmPopup({ mode: "comment", browseAll: true }));
   $("#remindCloseTop")?.addEventListener("click", () => {
     cancelRemindPopupAutoClose();
     closeRemindPopup();
   });
   $("#remindGoSchedule")?.addEventListener("click", () => {
     cancelRemindPopupAutoClose();
+    const goto = alarmPopupPhase === "comment" ? "my-work" : "schedule";
     closeRemindPopup();
-    setView("schedule");
+    setView(goto);
   });
   $("#requestCloseTop")?.addEventListener("click", () => {
-    cancelRequestPopupAutoClose();
-    closeRequestPopup();
+    cancelRemindPopupAutoClose();
+    closeRemindPopup();
   });
   $("#requestClose")?.addEventListener("click", () => {
-    cancelRequestPopupAutoClose();
-    closeRequestPopup();
+    cancelRemindPopupAutoClose();
+    closeRemindPopup();
   });
   $("#requestGoTab")?.addEventListener("click", () => {
-    cancelRequestPopupAutoClose();
-    closeRequestPopup();
+    cancelRemindPopupAutoClose();
+    closeRemindPopup();
     setView(isAdmin() ? "requests" : "my-work");
   });
   $("#remindBackdrop .remind-card")?.addEventListener(
     "pointerdown",
     () => {
       cancelRemindPopupAutoClose();
+      clearAlarmPhaseTransitionTimer();
     },
     { capture: true }
   );
   $("#requestBackdrop .remind-card")?.addEventListener(
     "pointerdown",
     () => {
-      cancelRequestPopupAutoClose();
+      cancelRemindPopupAutoClose();
     },
     { capture: true }
   );
   $("#remindDismissAll")?.addEventListener("click", () => {
     cancelRemindPopupAutoClose();
-    getUpcomingReminders({ includeDismissed: true }).forEach((s) => dismissReminder(s.id));
+    clearAlarmPhaseTransitionTimer();
+    if (alarmPopupPhase === "schedule") {
+      getUpcomingReminders({ includeDismissed: true }).forEach((s) => dismissReminder(s.id));
+      const commentItems = myCommentFeedItems();
+      if (alarmPopupMode === "unified" && commentItems.length) {
+        showAlarmPhase("comment", { browseAll: false, auto: true });
+        return;
+      }
+    }
     closeRemindPopup();
   });
   $("#remindBackdrop")?.addEventListener("click", (e) => {

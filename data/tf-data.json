@@ -1,87 +1,64 @@
 {
   "meta": {
-    "tfName": "2026 교육혁신 성과보고서 TF",
-    "reportTitle": "2026학년도 교육혁신 성과보고서",
-    "totalTargetPages": 80,
+    "tfName": "혁신지원사업 수정사업계획서 TF",
+    "reportTitle": "2026 전문대학 혁신지원사업 수정사업계획서",
+    "totalTargetPages": 72,
     "adminName": "권도희",
-    "reportDeadline": "2026-09-30T16:00:00+09:00",
-    "updatedAt": "2026-08-26T15:00:00"
+    "reportDeadline": "2026-09-15T16:00:00+09:00",
+    "updatedAt": "2026-08-27T13:40:00",
+    "reportDocKind": "plan"
   },
   "members": [
-    {
-      "id": "m1",
-      "name": "권도희",
-      "role": "admin",
-      "part": "총괄",
-      "contact": ""
-    },
-    {
-      "id": "m2",
-      "name": "문정환",
-      "role": "member",
-      "part": "현황·향후",
-      "contact": ""
-    },
-    {
-      "id": "m3",
-      "name": "최겨레",
-      "role": "member",
-      "part": "추진실적",
-      "contact": ""
-    },
-    {
-      "id": "m4",
-      "name": "박종진",
-      "role": "budget",
-      "part": "예산",
-      "contact": ""
-    }
+    { "id": "m1", "name": "권도희", "role": "admin", "part": "총괄·성과", "contact": "" },
+    { "id": "m2", "name": "문정환", "role": "member", "part": "여건·향후", "contact": "" },
+    { "id": "m3", "name": "최겨레", "role": "member", "part": "추진계획", "contact": "" },
+    { "id": "m4", "name": "박종진", "role": "budget", "part": "예산", "contact": "" }
   ],
   "parts": [
     {
       "id": "p1",
       "section": "Ⅰ",
-      "title": "서론",
+      "title": "사업 개요",
       "assigneeId": "m1",
       "pageStart": 1,
       "pageEnd": 8,
-      "note": "추진 배경·목적·구성"
+      "note": "수정 배경·목적·사업 구성"
     },
     {
       "id": "p2",
       "section": "Ⅱ",
-      "title": "현황분석",
+      "title": "여건 변화·수정 사유",
       "assigneeId": "m2",
       "pageStart": 9,
-      "pageEnd": 22,
-      "note": "여건·진단·시사점"
+      "pageEnd": 20,
+      "note": "대외 여건·내부 진단·수정 필요성"
     },
     {
       "id": "p3",
       "section": "Ⅲ",
-      "title": "추진실적",
+      "title": "수정 추진계획",
       "assigneeId": "m3",
-      "pageStart": 23,
-      "pageEnd": 48,
-      "note": "사업별 실적·산출물"
+      "pageStart": 21,
+      "pageEnd": 44,
+      "note": "핵심사업 재설계·연차별 계획"
     },
     {
       "id": "p4",
       "section": "Ⅳ",
-      "title": "성과분석",
+      "title": "예산 조정",
       "assigneeId": "m1",
-      "pageStart": 49,
-      "pageEnd": 68,
-      "note": "정량·정성 성과"
+      "pageStart": 45,
+      "pageEnd": 58,
+      "note": "비목 재배분·산출근거"
     },
     {
       "id": "p5",
       "section": "Ⅴ",
-      "title": "향후계획",
+      "title": "성과지표 조정",
       "assigneeId": "m2",
-      "pageStart": 69,
-      "pageEnd": 80,
-      "note": "개선과제·로드맵"
+      "pageStart": 59,
+      "pageEnd": 72,
+      "note": "핵심·자율 지표 목표 재설정"
     }
   ],
   "collections": [
@@ -89,42 +66,64 @@
       "round": 1,
       "name": "1차 취합",
       "dueDate": "2026-08-20",
-      "description": "초안 목차·분량 확정",
+      "description": "수정 목차·분량·핵심 메시지 초안",
+      "requestPhase": "closed",
+      "requestOpenedAt": "2026-08-12T09:00:00.000Z",
+      "requestOpenedBy": "권도희",
+      "requestClosedAt": "2026-08-20T16:00:00.000Z",
+      "requestClosedBy": "권도희",
+      "requestMessage": "관리자가 할당받은 보고서의 페이지를 작성하여 1차 업로드를 요청했어요!",
       "submissions": [
         {
           "partId": "p1",
           "pageCount": 8,
           "status": "submitted",
           "submittedAt": "2026-08-18",
-          "memo": "서론 초안 완료"
+          "submittedBy": "권도희",
+          "memo": "사업 개요·수정 취지 초안",
+          "partDone": true,
+          "checkFiles": [{ "id": "cf1", "name": "Ⅰ_사업개요_1차.hwp", "size": 412000, "type": "application/x-hwp" }]
         },
         {
           "partId": "p2",
-          "pageCount": 12,
+          "pageCount": 11,
           "status": "submitted",
           "submittedAt": "2026-08-19",
-          "memo": ""
+          "submittedBy": "문정환",
+          "memo": "여건 변화 초안 · 통계 출처 보강 예정",
+          "partDone": true,
+          "checkFiles": [{ "id": "cf2", "name": "Ⅱ_여건변화_1차.hwp", "size": 580000, "type": "application/x-hwp" }]
         },
         {
           "partId": "p3",
-          "pageCount": 18,
+          "pageCount": 20,
           "status": "submitted",
           "submittedAt": "2026-08-20",
-          "memo": "표 일부 보완 예정"
+          "submittedBy": "최겨레",
+          "memo": "핵심사업 3개 재설계 골격",
+          "partDone": true,
+          "checkFiles": [{ "id": "cf3", "name": "Ⅲ_수정추진계획_1차.hwp", "size": 920000, "type": "application/x-hwp" }]
         },
         {
           "partId": "p4",
-          "pageCount": 14,
+          "pageCount": 12,
           "status": "submitted",
           "submittedAt": "2026-08-18",
-          "memo": ""
+          "submittedBy": "권도희",
+          "memo": "비목 총액만 우선 기입",
+          "partDone": true,
+          "altSubmit": true,
+          "checkFiles": []
         },
         {
           "partId": "p5",
-          "pageCount": 8,
+          "pageCount": 9,
           "status": "submitted",
           "submittedAt": "2026-08-20",
-          "memo": ""
+          "submittedBy": "문정환",
+          "memo": "지표 목록 초안",
+          "partDone": true,
+          "checkFiles": [{ "id": "cf5", "name": "Ⅴ_성과지표_1차.hwp", "size": 310000, "type": "application/x-hwp" }]
         }
       ]
     },
@@ -132,93 +131,79 @@
       "round": 2,
       "name": "2차 취합",
       "dueDate": "2026-09-05",
-      "description": "본문 초안 취합",
+      "description": "본문 보완·수치·그림 반영",
+      "requestPhase": "open",
+      "requestOpenedAt": "2026-08-21T01:30:00.000Z",
+      "requestOpenedBy": "권도희",
+      "requestMessage": "관리자가 보완·수정한 원고를 2차 업로드하도록 요청했어요!",
       "submissions": [
         {
           "partId": "p1",
           "pageCount": 8,
           "status": "submitted",
-          "submittedAt": "2026-09-01",
-          "memo": ""
+          "submittedAt": "2026-08-25",
+          "submittedBy": "권도희",
+          "memo": "리뷰 코멘트 반영 완료",
+          "partDone": true,
+          "checkFiles": [{ "id": "cf21", "name": "Ⅰ_사업개요_2차.hwp", "size": 448000, "type": "application/x-hwp" }]
         },
         {
           "partId": "p2",
-          "pageCount": 14,
+          "pageCount": 13,
           "status": "draft",
           "submittedAt": "",
-          "memo": "작성중"
+          "memo": "ICC 매트릭스 그림 확대 작업 중",
+          "partDone": false,
+          "checkFiles": [{ "id": "cf22", "name": "Ⅱ_여건변화_2차초안.hwp", "size": 640000, "type": "application/x-hwp" }]
         },
         {
           "partId": "p3",
-          "pageCount": 20,
+          "pageCount": 22,
           "status": "draft",
           "submittedAt": "",
-          "memo": "실적 수치 보강중"
+          "memo": "연차별 로드맵 표 재작성",
+          "partDone": false,
+          "checkFiles": []
         },
         {
           "partId": "p4",
-          "pageCount": 10,
+          "pageCount": 6,
           "status": "pending",
           "submittedAt": "",
-          "memo": ""
+          "memo": "산출근거 엑셀 대기",
+          "partDone": false,
+          "checkFiles": []
         },
         {
           "partId": "p5",
           "pageCount": 0,
           "status": "pending",
           "submittedAt": "",
-          "memo": ""
+          "memo": "",
+          "partDone": false,
+          "checkFiles": []
         }
       ]
     },
     {
       "round": 3,
       "name": "최종 취합",
-      "dueDate": "2026-09-30",
-      "description": "최종 통합본 · 보고서 제출",
+      "dueDate": "2026-09-15",
+      "description": "수정사업계획서 최종본 · 9월 15일 제출",
+      "requestPhase": "planned",
       "submissions": [
-        {
-          "partId": "p1",
-          "pageCount": 0,
-          "status": "pending",
-          "submittedAt": "",
-          "memo": ""
-        },
-        {
-          "partId": "p2",
-          "pageCount": 0,
-          "status": "pending",
-          "submittedAt": "",
-          "memo": ""
-        },
-        {
-          "partId": "p3",
-          "pageCount": 0,
-          "status": "pending",
-          "submittedAt": "",
-          "memo": ""
-        },
-        {
-          "partId": "p4",
-          "pageCount": 0,
-          "status": "pending",
-          "submittedAt": "",
-          "memo": ""
-        },
-        {
-          "partId": "p5",
-          "pageCount": 0,
-          "status": "pending",
-          "submittedAt": "",
-          "memo": ""
-        }
+        { "partId": "p1", "pageCount": 0, "status": "pending", "submittedAt": "", "memo": "" },
+        { "partId": "p2", "pageCount": 0, "status": "pending", "submittedAt": "", "memo": "" },
+        { "partId": "p3", "pageCount": 0, "status": "pending", "submittedAt": "", "memo": "" },
+        { "partId": "p4", "pageCount": 0, "status": "pending", "submittedAt": "", "memo": "" },
+        { "partId": "p5", "pageCount": 0, "status": "pending", "submittedAt": "", "memo": "" }
       ]
     }
   ],
   "schedule": [
     {
       "id": "s1",
-      "title": "TF 킥오프 회의",
+      "title": "TF 킥오프 회의 (지침 및 서식 안내)",
       "date": "2026-07-15",
       "endDate": "2026-07-15",
       "type": "meeting",
@@ -227,7 +212,23 @@
       "createdBy": "권도희",
       "owner": "권도희",
       "assignees": ["문정환", "최겨레", "박종진"],
-      "note": "역할·일정·서식 공유"
+      "goal": "수정사업계획서 공통 서식·작성지침·스타일 가이드 공유",
+      "note": "수정사업계획서 공통 서식·작성지침·스타일 가이드 공유",
+      "askMessage": "관리자가 작성지침, 양식, 스타일 가이드 확인을 요청했어요!",
+      "comments": [
+        {
+          "id": "sc1",
+          "author": "권도희",
+          "text": "교육부 혁신지원사업 수정계획 안내문 기준으로 표지·목차를 맞춰 주세요. 구 성과보고서 서식은 쓰지 않습니다.",
+          "createdAt": "2026-07-15T10:20:00.000Z"
+        },
+        {
+          "id": "sc2",
+          "author": "문정환",
+          "text": "스타일 가이드 확인했습니다. 그림 캡션은 본문 9pt 고딕으로 통일할게요.",
+          "createdAt": "2026-07-15T14:05:00.000Z"
+        }
+      ]
     },
     {
       "id": "s2",
@@ -236,11 +237,22 @@
       "endDate": "2026-08-20",
       "type": "deadline",
       "workGroup": "collect",
+      "collectionRound": 1,
       "status": "완료",
       "createdBy": "권도희",
       "owner": "권도희",
       "assignees": ["문정환", "최겨레", "박종진"],
-      "note": "초안 분량 확정 · 전원 제출"
+      "goal": "수정 목차·분량 확정",
+      "note": "초안 분량 확정 · 전원 제출",
+      "askMessage": "관리자가 할당받은 보고서의 페이지를 작성하여 1차 업로드를 요청했어요!",
+      "comments": [
+        {
+          "id": "sc3",
+          "author": "권도희",
+          "text": "1차 취합 완료. 8/27 리뷰회의에서 중복·누락만 보고 2차로 넘깁니다.",
+          "createdAt": "2026-08-20T17:10:00.000Z"
+        }
+      ]
     },
     {
       "id": "s3",
@@ -252,8 +264,30 @@
       "status": "완료",
       "createdBy": "권도희",
       "owner": "권도희",
-      "assignees": ["문정환", "최겨레"],
-      "note": "중복·누락 점검"
+      "assignees": ["문정환", "최겨레", "박종진"],
+      "goal": "1차본 중복·누락·수정 포인트 확정",
+      "note": "화이트보드에 그림 확대 합의 · 2차 반영",
+      "askMessage": "관리자가 리뷰회의에 참석해 담당 파트 점검·수정을 요청했어요!",
+      "comments": [
+        {
+          "id": "sc4",
+          "author": "권도희",
+          "text": "Ⅱ 여건분석 ICC 매트릭스는 회의 사진 기준으로 그림을 더 크게. Ⅲ 연차 로드맵은 1페이지로 키우기로 함.",
+          "createdAt": "2026-08-27T11:40:00.000Z"
+        },
+        {
+          "id": "sc5",
+          "author": "최겨레",
+          "text": "핵심사업 3 명칭이 운영계획서와 다릅니다. 정의서 기준으로 통일하고 2차에 반영하겠습니다.",
+          "createdAt": "2026-08-27T12:05:00.000Z"
+        },
+        {
+          "id": "sc6",
+          "author": "문정환",
+          "text": "취업률 산식 분모를 재학생 기준으로 할지 공시 기준으로 할지 한 줄 각주로 남기겠습니다.",
+          "createdAt": "2026-08-27T13:12:00.000Z"
+        }
+      ]
     },
     {
       "id": "s4",
@@ -262,91 +296,131 @@
       "endDate": "2026-09-05",
       "type": "deadline",
       "workGroup": "collect",
+      "collectionRound": 2,
       "status": "진행",
       "createdBy": "권도희",
       "owner": "권도희",
       "assignees": ["문정환", "최겨레", "박종진"],
-      "note": "본문 초안 취합"
+      "goal": "리뷰 반영본·수치·그림 취합",
+      "note": "본문 보완 · 9월 5일까지",
+      "askMessage": "관리자가 보완·수정한 원고를 2차 업로드하도록 요청했어요!",
+      "comments": [
+        {
+          "id": "sc7",
+          "author": "권도희",
+          "text": "2차 미제출 파트는 9/3 오전까지 진행 상황만이라도 코멘트 남겨 주세요. 최종 제출은 아직 요청 전입니다.",
+          "createdAt": "2026-08-26T09:00:00.000Z"
+        },
+        {
+          "id": "sc8",
+          "author": "박종진",
+          "text": "Ⅳ 예산 산출근거 엑셀은 9/2 오후에 공유 예정입니다. 한글본은 그 다음 날 올립니다.",
+          "createdAt": "2026-08-26T16:22:00.000Z"
+        }
+      ]
     },
     {
       "id": "s5",
-      "title": "예산안 확정 회의",
-      "date": "2026-09-12",
-      "endDate": "2026-09-12",
+      "title": "예산 조정안 점검 회의",
+      "date": "2026-09-08",
+      "endDate": "2026-09-08",
       "type": "meeting",
       "workGroup": "budget",
       "status": "준비",
       "createdBy": "권도희",
       "owner": "권도희",
       "assignees": ["박종진", "문정환"],
-      "note": "총 50억 편성 확정"
+      "goal": "비목 재배분·산출근거 확정",
+      "note": "기자재 5억 이관 여부 결정",
+      "askMessage": "관리자가 담당 예산 편성·산출근거 입력을 요청했어요!",
+      "comments": [
+        {
+          "id": "sc9",
+          "author": "권도희",
+          "text": "산학 기자재 5억을 비교과 운영비로 일부 이관하는 안을 시나리오 2개로 준비해 주세요.",
+          "createdAt": "2026-08-25T10:00:00.000Z"
+        }
+      ]
     },
     {
       "id": "s6",
-      "title": "성과지표 확정",
-      "date": "2026-09-20",
-      "endDate": "2026-09-20",
+      "title": "성과지표 수정안 확정",
+      "date": "2026-09-10",
+      "endDate": "2026-09-10",
       "type": "deadline",
       "workGroup": "kpi",
       "status": "준비",
       "createdBy": "권도희",
       "owner": "권도희",
       "assignees": ["문정환", "최겨레"],
-      "note": "핵심·자율 지표 수치 확정"
+      "goal": "핵심·자율 지표 목표·산식 확정",
+      "note": "비교과 이수자 목표 하향 여부",
+      "askMessage": "관리자가 성과지표 목표·실적 입력을 요청했어요!",
+      "comments": [
+        {
+          "id": "sc10",
+          "author": "문정환",
+          "text": "비교과 이수자 1,500명은 올해 실적 추세상 무리입니다. 1,300명 안을 회의에 올리겠습니다.",
+          "createdAt": "2026-08-27T09:30:00.000Z"
+        }
+      ]
     },
     {
       "id": "s7",
-      "title": "최종 통합·보고서 제출",
-      "date": "2026-09-30",
-      "endDate": "2026-09-30",
-      "type": "milestone",
+      "title": "혁신지원사업 수정사업계획서 제출",
+      "date": "2026-09-15",
+      "endDate": "2026-09-15",
+      "type": "deadline",
       "workGroup": "collect",
+      "collectionRound": 3,
       "status": "준비",
       "createdBy": "권도희",
       "owner": "권도희",
       "assignees": ["문정환", "최겨레", "박종진"],
-      "note": "최종 제출일 오후 4시"
+      "goal": "최종본 통합·제출 (오후 4시)",
+      "note": "최종 제출일 9월 15일 오후 4시 · 아직 제출 요청 전",
+      "askMessage": ""
     }
   ],
   "driveLinks": [
     {
       "id": "d1",
-      "title": "TF 공유 폴더 (루트)",
+      "title": "수정사업계획서 TF 공유 폴더",
       "url": "https://drive.google.com/drive/folders/example-root",
       "category": "공유폴더",
-      "note": "전체 문서·산출물"
+      "note": "서식·초안·취합본"
     },
     {
       "id": "d2",
       "title": "파트별 원고 폴더",
       "url": "https://drive.google.com/drive/folders/example-drafts",
       "category": "원고",
-      "note": "담당자별 초안 업로드"
+      "note": "담당자별 1·2차 초안"
     },
     {
       "id": "d3",
       "title": "취합본·버전 이력",
       "url": "https://drive.google.com/drive/folders/example-versions",
       "category": "취합본",
-      "note": "1·2·최종 취합본"
+      "note": "1차 확정본 · 2차 작업본"
     }
   ],
   "resources": [
     {
       "id": "r1",
-      "title": "교육부 보고서 작성 지침",
+      "title": "혁신지원사업 수정사업계획 작성 지침",
       "category": "지침",
       "url": "https://drive.google.com/file/d/example-guideline",
-      "fileName": "교육부_보고서작성지침.pdf",
+      "fileName": "2026_혁신지원_수정계획_작성지침.pdf",
       "uploadedAt": "2026-07-10",
-      "note": "필수 확인"
+      "note": "교육부 안내 · 필수 확인"
     },
     {
       "id": "r2",
-      "title": "보고서 스타일 가이드",
+      "title": "수정계획서 스타일 가이드",
       "category": "스타일",
       "url": "https://drive.google.com/file/d/example-style",
-      "fileName": "보고서_스타일가이드.pdf",
+      "fileName": "수정계획서_스타일가이드.pdf",
       "uploadedAt": "2026-07-10",
       "note": "글꼴·여백·표·그림 규칙"
     },
@@ -355,40 +429,49 @@
       "title": "공통 표지·목차 서식",
       "category": "서식",
       "url": "https://drive.google.com/file/d/example-template",
-      "fileName": "공통서식_표지목차.docx",
+      "fileName": "수정계획서_표지목차.hwp",
       "uploadedAt": "2026-07-11",
       "note": "표지·목차·머리말 통일본"
     },
     {
       "id": "r4",
-      "title": "페이지 할당·담당 표 (엑셀)",
+      "title": "페이지 할당·담당 표",
       "category": "서식",
       "url": "https://drive.google.com/file/d/example-assign",
       "fileName": "페이지할당표.xlsx",
       "uploadedAt": "2026-07-12",
-      "note": "앱 데이터와 동기화용"
+      "note": "Ⅰ~Ⅴ 담당·분량"
     },
     {
       "id": "r5",
-      "title": "용어·지표 정의서",
+      "title": "용어·지표 정의서 (수정)",
       "category": "정의서",
       "url": "https://drive.google.com/file/d/example-glossary",
-      "fileName": "용어_지표_정의서.pdf",
-      "uploadedAt": "2026-07-10",
-      "note": "핵심 용어·성과지표 정의"
+      "fileName": "용어_지표_정의서_수정.pdf",
+      "uploadedAt": "2026-08-21",
+      "note": "리뷰회의 후 산식 각주 보강"
+    },
+    {
+      "id": "r6",
+      "title": "집행기준 요약",
+      "category": "집행기준",
+      "url": "https://drive.google.com/file/d/example-exec",
+      "fileName": "혁신지원_집행기준_요약.pdf",
+      "uploadedAt": "2026-07-11",
+      "note": "비목 이관 시 확인"
     }
   ],
   "budget": {
     "total": 5000000000,
-    "note": "총 사업비 50억 (테스트 편성)",
+    "note": "수정계획 · 총 사업비 50억 유지, 비목 재배분 검토 중",
     "yearLabel": "1차년도 ('25.3 ~ '26.2)",
     "inputMode": "plan",
     "expensePlan": [
       { "name": "인건비", "planned": 800000000 },
       { "name": "장학금", "planned": 600000000 },
-      { "name": "교육·연구 프로그램 개발·운영비", "planned": 1500000000 },
+      { "name": "교육·연구 프로그램 개발·운영비", "planned": 1650000000 },
       { "name": "교육·연구환경개선비", "planned": 700000000 },
-      { "name": "실험·실습장비 및 기자재 구입·운영비", "planned": 500000000 },
+      { "name": "실험·실습장비 및 기자재 구입·운영비", "planned": 350000000 },
       { "name": "그 밖의 사업운영경비", "planned": 500000000 },
       { "name": "간접비", "planned": 400000000 }
     ],
@@ -398,28 +481,30 @@
         "no": "1",
         "area": "1. 전략",
         "content": "가. 교육혁신전략",
-        "activity": "TF 운영·기획 총괄",
+        "activity": "TF 운영·수정계획 총괄",
         "expenseType": "인건비",
         "dept": "기획처",
         "workDept": "기획처",
         "assigneeId": "m4",
         "planned": 800000000,
         "spent": 320000000,
-        "calcText": "인건비 8억 (TF·기획 인력)"
+        "calcText": "인건비 8억 (TF·기획 인력)",
+        "adminNote": "인건비는 동결. 산출근거에 전임/비전임 인원 구성을 한 줄 보강해 주세요."
       },
       {
         "id": "b2",
         "no": "2",
         "area": "2. 고등직업교육",
         "content": "가. 핵심역량 기반 교육과정 체계혁신",
-        "activity": "교과·비교과 프로그램 운영",
+        "activity": "수정 핵심사업 프로그램 운영",
         "expenseType": "교육·연구 프로그램 개발·운영비",
         "dept": "교무처",
         "workDept": "교무처",
         "assigneeId": "m3",
-        "planned": 1500000000,
+        "planned": 1650000000,
         "spent": 450000000,
-        "calcText": "프로그램 운영비 15억"
+        "calcText": "프로그램 운영비 16.5억 (기자재 이관분 1.5억 포함 검토)",
+        "adminNote": "기자재 이관 1.5억이 확정되면 산출식을 두 줄로 나눠 주세요."
       },
       {
         "id": "b3",
@@ -440,14 +525,15 @@
         "no": "4",
         "area": "3. 산학지역",
         "content": "나. 산학공동 직무특화 교육 혁신",
-        "activity": "실습환경·기자재",
+        "activity": "실습환경·기자재 (규모 조정)",
         "expenseType": "실험·실습장비 및 기자재 구입·운영비",
         "dept": "산학협력처",
         "workDept": "산학협력처",
         "assigneeId": "m2",
-        "planned": 500000000,
+        "planned": 350000000,
         "spent": 0,
-        "calcText": "기자재 5억"
+        "calcText": "기자재 3.5억 (당초 5억에서 하향 검토)",
+        "adminNote": "미집행 사유를 수정 사유(Ⅱ)와 문장이 맞게 맞춰 주세요."
       },
       {
         "id": "b5",
@@ -468,7 +554,7 @@
         "no": "6",
         "area": "5. 사업관리 및 운영",
         "content": "다. 재정관리",
-        "activity": "운영경비·간접비",
+        "activity": "운영경비",
         "expenseType": "그 밖의 사업운영경비",
         "dept": "기획처",
         "workDept": "기획처",
@@ -503,9 +589,10 @@
       "baseline": 62,
       "baselineNote": "전년도 공시 취업률",
       "formula": "actual / target * 100",
-      "target": 70,
-      "actual": 66.5,
-      "unit": "%"
+      "target": 68,
+      "actual": 64.2,
+      "unit": "%",
+      "note": "당초 70%에서 68%로 하향 검토. 산식 분모(공시/재학생) 각주 필요."
     },
     {
       "id": "k2",
@@ -515,9 +602,10 @@
       "baseline": 1200,
       "baselineNote": "전년도 이수 실적",
       "formula": "actual",
-      "target": 1500,
+      "target": 1300,
       "actual": 980,
-      "unit": "명"
+      "unit": "명",
+      "note": "1,500→1,300 하향안. 9/10 지표 회의에서 확정."
     },
     {
       "id": "k3",
@@ -529,15 +617,29 @@
       "formula": "actual / target * 100",
       "target": 4.3,
       "actual": 4.22,
-      "unit": "점"
+      "unit": "점",
+      "note": "목표는 유지. 조사 시점(1학기 말)을 본문에 명시."
+    },
+    {
+      "id": "k4",
+      "catalogId": "",
+      "scope": "autonomy",
+      "name": "산학연계 교과 이수 학생 수",
+      "baseline": 420,
+      "baselineNote": "전년도 실적",
+      "formula": "actual",
+      "target": 500,
+      "actual": 310,
+      "unit": "명",
+      "note": "기자재 축소와 연동. 목표 450 대안도 검토."
     }
   ],
   "requests": [
     {
       "id": "req_seed_1",
       "groupId": "g_seed_1",
-      "title": "2차 취합본 드라이브 업로드",
-      "memo": "담당 파트 본문 초안을 공유폴더에 올려 주세요.",
+      "title": "2차 원고 · 리뷰 반영본 업로드",
+      "memo": "8/27 리뷰회의 정리(그림 확대, 용어 통일)를 반영한 한글 파일을 9/5까지 올려 주세요.",
       "requester": "권도희",
       "recipient": "문정환",
       "dueDate": "2026-09-05",
@@ -547,8 +649,8 @@
     {
       "id": "req_seed_2",
       "groupId": "g_seed_1",
-      "title": "2차 취합본 드라이브 업로드",
-      "memo": "담당 파트 본문 초안을 공유폴더에 올려 주세요.",
+      "title": "2차 원고 · 리뷰 반영본 업로드",
+      "memo": "핵심사업 명칭을 정의서와 맞추고, 연차 로드맵 표를 1페이지로 확대해 업로드해 주세요.",
       "requester": "권도희",
       "recipient": "최겨레",
       "dueDate": "2026-09-05",
@@ -558,8 +660,8 @@
     {
       "id": "req_seed_3",
       "groupId": "g_seed_1",
-      "title": "2차 취합본 드라이브 업로드",
-      "memo": "담당 파트 본문 초안을 공유폴더에 올려 주세요.",
+      "title": "2차 원고 · 예산 산출근거 한글본",
+      "memo": "엑셀 산출근거를 확정한 뒤 Ⅳ장 한글 파일로 올려 주세요. 이관 시나리오는 각주로.",
       "requester": "권도희",
       "recipient": "박종진",
       "dueDate": "2026-09-05",
@@ -569,24 +671,108 @@
     {
       "id": "req_seed_4",
       "groupId": "g_seed_2",
-      "title": "예산 항목 산출근거 보완",
-      "memo": "50억 편성안 중 미입력 산출근거를 채워 주세요.",
+      "title": "기자재→프로그램비 이관 시나리오",
+      "memo": "5억→3.5억 하향과 1.5억 이관안 두 가지 표를 9/8 회의 전까지 공유해 주세요.",
       "requester": "권도희",
       "recipient": "박종진",
-      "dueDate": "2026-09-12",
+      "dueDate": "2026-09-08",
       "status": "대기",
-      "createdAt": "2026-08-22"
+      "createdAt": "2026-08-25"
     },
     {
       "id": "req_seed_5",
       "groupId": "g_seed_3",
-      "title": "성과지표 실적 수치 입력",
-      "memo": "핵심·자율 지표의 실적값을 업데이트해 주세요.",
+      "title": "성과지표 목표·산식 각주",
+      "memo": "취업률 분모, 비교과 1,300명안을 지표 정의서와 Ⅴ장에 동시에 반영해 주세요.",
       "requester": "권도희",
       "recipient": "문정환",
-      "dueDate": "2026-09-20",
-      "status": "대기",
+      "dueDate": "2026-09-10",
+      "status": "진행",
       "createdAt": "2026-08-22"
+    },
+    {
+      "id": "req_seed_6",
+      "groupId": "g_seed_4",
+      "title": "스타일 가이드 재확인 (캡션·여백)",
+      "memo": "2차본부터 그림 캡션 9pt, 좌우 여백 25mm로 다시 맞춰 주세요. 1차본은 통과입니다.",
+      "requester": "권도희",
+      "recipient": "최겨레",
+      "dueDate": "2026-09-03",
+      "status": "대기",
+      "createdAt": "2026-08-27"
     }
-  ]
+  ],
+  "reviewSession": {
+    "title": "1차 취합본 중간 윤독 · 수정계획 포인트",
+    "date": "2026-08-27",
+    "notes": "공통: 구 성과보고서 톤을 버리고 수정계획서 문장(왜 고치는지 → 무엇을 고치는지)으로 통일. 그림은 회의에서 합의한 페이지만 확대. 최종 제출(9/15) 요청은 2차 마감 후 별도 등록.",
+    "activePartId": "p2",
+    "comments": [
+      {
+        "id": "rc1",
+        "partId": "p1",
+        "round": 1,
+        "text": "서론의 ‘성과 확산’ 표현을 ‘수정 추진 방향’으로 교체. 페이지 수는 유지.",
+        "rating": "good",
+        "by": "권도희",
+        "createdAt": "2026-08-27T11:10:00.000Z"
+      },
+      {
+        "id": "rc2",
+        "partId": "p2",
+        "round": 1,
+        "text": "ICC 매트릭스·여건 도식을 회의 화이트보드 구도대로 크게. 이 부분 그림을 더 크게 넣기로 함.",
+        "rating": "need",
+        "by": "권도희",
+        "createdAt": "2026-08-27T11:18:00.000Z",
+        "photoCaption": "이 부분 그림을 더 크게 넣기로 함",
+        "photoName": "review-icc.jpg"
+      },
+      {
+        "id": "rc3",
+        "partId": "p3",
+        "round": 1,
+        "text": "핵심사업 명칭 불일치. 정의서 기준으로 통일하고 로드맵 표를 1페이지 확대.",
+        "rating": "need",
+        "by": "권도희",
+        "createdAt": "2026-08-27T11:25:00.000Z"
+      },
+      {
+        "id": "rc4",
+        "partId": "p4",
+        "round": 1,
+        "text": "총액 50억 유지는 OK. 기자재 하향 시나리오를 표 하나로 추가.",
+        "rating": "hold",
+        "by": "권도희",
+        "createdAt": "2026-08-27T11:32:00.000Z"
+      },
+      {
+        "id": "rc5",
+        "partId": "p5",
+        "round": 1,
+        "text": "비교과 이수자 목표 하향 근거를 한 문단. 취업률 산식 각주.",
+        "rating": "need",
+        "by": "권도희",
+        "createdAt": "2026-08-27T11:38:00.000Z"
+      },
+      {
+        "id": "rc6",
+        "partId": "p2",
+        "round": 2,
+        "text": "2차 초안 봤습니다. 통계 출처 연도를 2025 공시로 맞춰 주세요.",
+        "rating": "need",
+        "by": "권도희",
+        "createdAt": "2026-08-26T15:40:00.000Z"
+      }
+    ]
+  },
+  "tfTopics": [
+    {
+      "id": "yeonu-2026",
+      "name": "혁신지원사업 수정사업계획서",
+      "desc": "2026 전문대학 혁신지원사업 수정사업계획 · 9월 15일 제출",
+      "memberIds": ["m1", "m2", "m3", "m4"]
+    }
+  ],
+  "activeTfTopicId": "yeonu-2026"
 }
