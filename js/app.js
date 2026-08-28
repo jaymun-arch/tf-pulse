@@ -4961,6 +4961,15 @@ function scheduleFeedPanelHtml(who, admin, items) {
     <section class="panel work-feed-panel mywork-schedule-panel is-timeline">
       <header class="tf-timeline-hero">
         <h2>${escapeHtml(admin ? `${who}님이 보낸 요청입니다` : `${who}님, 받은 요청입니다`)}</h2>
+        ${
+          admin
+            ? `<button type="button" class="request-add-btn" id="addSchedule" title="업무 등록하기" aria-label="업무 등록하기">
+                <svg viewBox="0 0 24 24" width="20" height="20" aria-hidden="true">
+                  <path fill="currentColor" d="M3 17.25V21h3.75L17.81 9.94l-3.75-3.75L3 17.25zm17.71-10.21a1 1 0 0 0 0-1.41l-2.34-2.34a1 1 0 0 0-1.41 0l-1.83 1.83 3.75 3.75 1.83-1.83z"/>
+                </svg>
+              </button>`
+            : ""
+        }
       </header>
       ${
         sorted.length

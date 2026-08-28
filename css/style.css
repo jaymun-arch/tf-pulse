@@ -10605,6 +10605,32 @@ body.view-home .page-hero {
 .mywork-schedule-panel.is-timeline {
   padding: 8px 12px 18px;
 }
+.mywork-schedule-panel .tf-timeline-hero {
+  position: relative;
+  padding-right: 48px;
+  padding-left: 48px;
+}
+.mywork-schedule-panel .request-add-btn {
+  position: absolute;
+  top: 2px;
+  right: 2px;
+  width: 40px;
+  height: 40px;
+  border: 0;
+  border-radius: 50%;
+  background: transparent;
+  color: var(--ink-soft);
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  cursor: pointer;
+}
+.mywork-schedule-panel .request-add-btn:hover,
+.mywork-schedule-panel .request-add-btn:focus-visible {
+  background: var(--bg-chip);
+  color: var(--ink);
+  outline: none;
+}
 
 .tf-timeline-rail {
   position: relative;
