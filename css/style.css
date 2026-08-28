@@ -10653,6 +10653,39 @@ body.view-home .page-hero {
   margin-top: 14px;
 }
 
+.tf-sched-page .tf-sched-hero {
+  display: flex;
+  align-items: flex-start;
+  justify-content: space-between;
+  gap: 16px;
+  text-align: left;
+}
+.tf-sched-page .tf-sched-hero-main {
+  flex: 1;
+  min-width: 0;
+}
+.tf-sched-page .tf-sched-hero-main p {
+  margin-left: 0;
+}
+.tf-sched-page .tf-sched-hero-actions {
+  flex-shrink: 0;
+  padding-top: 2px;
+}
+.tf-sched-page .tf-sched-hero-actions .btn {
+  margin-top: 0;
+  white-space: nowrap;
+}
+.tf-sched-page .tf-timeline-row.is-editable {
+  cursor: pointer;
+  border-radius: 12px;
+  transition: background 0.15s ease;
+}
+.tf-sched-page .tf-timeline-row.is-editable:hover,
+.tf-sched-page .tf-timeline-row.is-editable:focus-visible {
+  background: var(--bg);
+  outline: none;
+}
+
 .tf-timeline-panel {
   padding: 8px 12px 18px;
 }

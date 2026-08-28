@@ -4132,7 +4132,7 @@ function renderSchedule() {
     return `
       <li>
         ${showMonth ? `<p class="tf-timeline-month">${escapeHtml(formatKorYearMonth(due))}</p>` : ""}
-        <div class="tf-timeline-row tone-${tone}${overdue ? " is-overdue" : ""}" data-tf-row data-guide="${escapeAttr(tpl?.id || "")}" data-sched="${escapeAttr(s?.id || "")}">
+        <div class="tf-timeline-row tone-${tone}${overdue ? " is-overdue" : ""}${s ? " is-editable" : ""}" data-tf-row data-guide="${escapeAttr(tpl?.id || "")}" data-sched="${escapeAttr(s?.id || "")}"${s ? ` role="button" tabindex="0" aria-label="${escapeAttr(s.title || tpl?.title || "업무")} 수정"` : ""}>
           <span class="tf-timeline-rail" aria-hidden="true"><i></i></span>
           <span class="tf-timeline-due">
             <em>마감일정</em>
@@ -4176,10 +4176,14 @@ function renderSchedule() {
 
   el.innerHTML = `
     <div class="tf-sched-page">
-      <header class="tf-timeline-hero">
-        <h2>마감 순으로 등록된 일정을 봅니다</h2>
-        <p>기본·추가를 나누지 않고 한 목록에서 작성합니다. 단계별 마감을 넣으면 요청업무 등록 시 날짜·내용이 기본값으로 채워집니다.</p>
-        <button type="button" class="btn btn-primary" id="addSchedule">일정 추가</button>
+      <header class="tf-timeline-hero tf-sched-hero">
+        <div class="tf-sched-hero-main">
+          <h2>마감 순으로 등록된 일정을 봅니다</h2>
+          <p>기본·추가를 나누지 않고 한 목록에서 작성합니다. 단계별 마감을 넣으면 요청업무 등록 시 날짜·내용이 기본값으로 채워집니다.</p>
+        </div>
+        <div class="tf-sched-hero-actions">
+          <button type="button" class="btn btn-primary" id="addSchedule">일정 추가</button>
+        </div>
       </header>
       <section class="panel tf-timeline-panel">
         ${
@@ -4217,11 +4221,28 @@ function renderSchedule() {
   };
 
   el.querySelectorAll("[data-tf-row]").forEach((row) => {
-    row.querySelector("[data-tf-save]")?.addEventListener("click", () => saveRow(row));
+    const openRowEdit = () => {
+      const schedId = row.dataset.sched;
+      if (schedId) {
+        openScheduleModal(schedId);
+        return;
+      }
+      const guideId = row.dataset.guide;
+      if (guideId) {
+        const existing = tfScheduleForGuide(guideId);
+        if (existing) openScheduleModal(existing.id);
+      }
+    };
+    row.querySelector("[data-tf-save]")?.addEventListener("click", (e) => {
+      e.stopPropagation();
+      saveRow(row);
+    });
     row.querySelector("[data-tf-status]")?.addEventListener("change", (e) => {
+      e.stopPropagation();
       applyStatusTone(row, e.target.value);
     });
     row.querySelector("[data-tf-date]")?.addEventListener("change", (e) => {
+      e.stopPropagation();
       const iso = e.target.value;
       const label = row.querySelector("[data-tf-date-label]");
       if (label) label.textContent = iso ? formatKorDate(iso) : "날짜 선택";
@@ -4241,9 +4262,25 @@ function renderSchedule() {
         timingEl.remove();
       }
     });
+    row.querySelectorAll("input, select, button, a, label").forEach((el) => {
+      el.addEventListener("click", (e) => e.stopPropagation());
+    });
+    if (row.dataset.sched || row.dataset.guide) {
+      row.addEventListener("click", openRowEdit);
+      row.addEventListener("keydown", (e) => {
+        if (e.key === "Enter" || e.key === " ") {
+          if (e.target.closest("input, select, button, a")) return;
+          e.preventDefault();
+          openRowEdit();
+        }
+      });
+    }
   });
   el.querySelectorAll("[data-tf-edit]").forEach((btn) => {
-    btn.addEventListener("click", () => openScheduleModal(btn.dataset.tfEdit));
+    btn.addEventListener("click", (e) => {
+      e.stopPropagation();
+      openScheduleModal(btn.dataset.tfEdit);
+    });
   });
   $("#addSchedule")?.addEventListener("click", () => openScheduleModal());
 }
