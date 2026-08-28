@@ -108,7 +108,7 @@ const VIEW_META = {
   review: { title: "윤독", desc: "검토사항 기록" },
   requests: { title: "요청", desc: "작업 요청·진행" },
   budget: { title: "예산 통합", desc: "영역·비목별 통계" },
-  schedule: { title: "일정", desc: "달력·마감" },
+  schedule: { title: "TF 일정", desc: "기본 마감을 넣으면 요청업무에 그대로 반영됩니다" },
   drive: { title: "드라이브", desc: "문서 링크" },
   resources: { title: "양식", desc: "공통양식·가이드" },
   food: { title: "오늘 뭐먹지", desc: "메뉴 돌림판·투표" },
@@ -155,9 +155,9 @@ const NAV_GROUPS = {
   setup: {
     label: "Setting",
     adminOnly: true,
-    views: ["members", "parts", "drive"],
-    labels: { members: "구성원", parts: "목차·할당", drive: "드라이브" },
-    defaultView: "members",
+    views: ["schedule", "members", "parts", "drive"],
+    labels: { schedule: "TF 일정", members: "구성원", parts: "목차·할당", drive: "드라이브" },
+    defaultView: "schedule",
   },
 };
 
@@ -244,18 +244,13 @@ function allocatedTotal() {
   return state.parts.reduce((sum, p) => sum + pagesOf(p), 0);
 }
 
-/** 취합 진도판 상태: 미착수 / 작성중 / 제출 */
+/** 취합 진도: 미제출 / 제출 */
 function submissionBoardStatus(sub) {
-  if (!sub) return { id: "todo", label: "미착수", cls: "pending" };
+  if (!sub) return { id: "todo", label: "미제출", cls: "pending" };
   if (sub.status === "submitted" || sub.partDone) {
     return { id: "done", label: "제출", cls: "ok" };
   }
-  const hasPages = Number(sub.pageCount) > 0;
-  const hasFile =
-    (Array.isArray(sub.checkFiles) && sub.checkFiles.some((f) => f && f.name)) ||
-    Boolean(sub.altSubmit);
-  if (hasPages || hasFile) return { id: "wip", label: "작성중", cls: "warn" };
-  return { id: "todo", label: "미착수", cls: "pending" };
+  return { id: "todo", label: "미제출", cls: "pending" };
 }
 
 function latestCollection() {
@@ -351,15 +346,98 @@ function buildTeamCollectionBoard(col = latestCollection()) {
 
 function collectionSummary(round) {
   const col = state.collections.find((c) => c.round === round);
-  if (!col) return { submitted: 0, pending: 0, pages: 0, totalParts: 0 };
-  const submitted = col.submissions.filter((s) => s.status === "submitted").length;
-  const pages = col.submissions.reduce((sum, s) => sum + (Number(s.pageCount) || 0), 0);
+  if (!col) return { submitted: 0, pending: 0, pages: 0, allocPages: 0, totalParts: 0 };
+  const submitted = col.submissions.filter((s) => submissionBoardStatus(s).id === "done").length;
+  const allocPages = col.submissions.reduce((sum, s) => {
+    const p = partById(s.partId);
+    return sum + (p ? pagesOf(p) : 0);
+  }, 0);
+  const pages = col.submissions.reduce((sum, s) => {
+    if (submissionBoardStatus(s).id !== "done") return sum;
+    const p = partById(s.partId);
+    return sum + (p ? pagesOf(p) : Number(s.pageCount) || 0);
+  }, 0);
   return {
     submitted,
     pending: col.submissions.length - submitted,
     pages,
+    allocPages,
     totalParts: col.submissions.length,
   };
+}
+
+function submissionsInPartOrder(col) {
+  return [...(col?.submissions || [])].sort((a, b) => {
+    const pa = partById(a.partId);
+    const pb = partById(b.partId);
+    return String(pa?.section || "").localeCompare(String(pb?.section || ""), "ko", { numeric: true });
+  });
+}
+
+function markPartSubmitted(sub) {
+  if (!sub) return;
+  const p = partById(sub.partId);
+  sub.pageCount = p ? pagesOf(p) : Number(sub.pageCount) || 0;
+  sub.status = "submitted";
+  sub.submittedAt = today();
+  sub.partDone = true;
+  sub.submittedBy = sessionUser || memberById(p?.assigneeId)?.name || "";
+}
+
+function safeZipFileName(text, fallback = "파트") {
+  const raw = String(text || fallback).replace(/[\\/:*?"<>|]/g, "_").replace(/\s+/g, "_");
+  return raw.slice(0, 60) || fallback;
+}
+
+function orderedCollectionHangulFiles(col) {
+  const files = [];
+  submissionsInPartOrder(col).forEach((s, i) => {
+    const p = partById(s.partId);
+    const hangul = normalizeCheckFiles(s).filter((f) => isHangulFileName(f.name) && f.dataUrl);
+    hangul.forEach((f, j) => {
+      const n = String(i + 1).padStart(2, "0");
+      const extra = hangul.length > 1 ? `_${j + 1}` : "";
+      const ext = (f.name.match(/\.(hwp|hwpx)$/i) || ["", "hwp"])[1].toLowerCase();
+      const base = safeZipFileName(p ? `${p.section}_${p.title}` : s.partId);
+      files.push({
+        ...f,
+        partLabel: p ? `${p.section}. ${p.title}` : s.partId,
+        zipName: `${n}_${base}${extra}.${ext}`,
+      });
+    });
+  });
+  return files;
+}
+
+async function downloadMergedHangulZip(col) {
+  if (!col) return;
+  const files = orderedCollectionHangulFiles(col);
+  if (!files.length) {
+    alert("이 기기에서 올린 한글 파일이 없습니다. 담당자가 내업무에서 파일을 올리면 목차 순서대로 묶을 수 있습니다.");
+    return;
+  }
+  try {
+    const JSZip = (await import("https://cdn.jsdelivr.net/npm/jszip@3.10.1/+esm")).default;
+    const zip = new JSZip();
+    const indexLines = [`${col.name || "취합"} 한글 파일 순서`, ""];
+    files.forEach((f, i) => {
+      const b64 = String(f.dataUrl || "").split(",")[1];
+      if (!b64) return;
+      zip.file(f.zipName, b64, { base64: true });
+      indexLines.push(`${i + 1}. ${f.partLabel} — ${f.name}`);
+    });
+    zip.file("00_취합순서.txt", indexLines.join("\n"));
+    const blob = await zip.generateAsync({ type: "blob" });
+    const a = document.createElement("a");
+    a.href = URL.createObjectURL(blob);
+    a.download = `${safeZipFileName(col.name, "취합")}_한글취합본.zip`;
+    document.body.appendChild(a);
+    a.click();
+    a.remove();
+    window.setTimeout(() => URL.revokeObjectURL(a.href), 2000);
+  } catch (err) {
+    alert(err?.message || "파일을 묶지 못했습니다. 네트워크 후 다시 시도해 주세요.");
+  }
 }
 
 function areaCategory(area) {
@@ -628,18 +706,20 @@ function budgetSummary() {
 function markDirty(dirty = true) {
   const hint = $("#saveHint");
   const dot = $("#saveDot");
+  const wrap = $("#saveDotWrap");
   if (hint) {
-    if (dirty) {
-      hint.textContent = "저장 중…";
-      hint.classList.add("dirty");
-    } else {
-      hint.textContent = "저장됨";
-      hint.classList.remove("dirty");
-    }
+    hint.textContent = dirty ? "저장중" : "공유됨";
+    hint.classList.toggle("dirty", dirty);
   }
   if (dot) {
     dot.classList.toggle("ok", !dirty);
     dot.classList.toggle("dirty", dirty);
+    dot.classList.toggle("busy", dirty);
+  }
+  if (wrap) {
+    wrap.classList.toggle("is-saving", dirty);
+    wrap.classList.toggle("is-saved", !dirty);
+    wrap.classList.toggle("is-shared", !dirty);
   }
 }
 
@@ -815,21 +895,73 @@ function membersForActiveTopic() {
   return filtered.length ? filtered : state.members || [];
 }
 
+function liveTfMilestones() {
+  const defaults = [
+    { id: "kickoff", short: "킥오프", label: "TF 킥오프", date: "2026-07-15", tip: "서식·지침 공유" },
+    { id: "round1", short: "1차", label: "1차 원고취합", date: "2026-08-20", tip: "1차 초안 취합" },
+    { id: "round2", short: "2차", label: "2차 원고취합", date: "2026-09-05", tip: "리뷰 반영본 취합" },
+    { id: "budget", short: "예산", label: "예산 조정", date: "2026-09-08", tip: "편성·산출근거" },
+    { id: "kpi", short: "성과", label: "성과지표 수정", date: "2026-09-10", tip: "목표·산식" },
+    { id: "final", short: "최종", label: "수정계획서 제출", date: "2026-09-15", tip: "최종 제출" },
+  ];
+  const dueOf = (s, fallback) => (s ? scheduleDueIso(s) || fallback : fallback);
+  const forms = typeof tfScheduleForGuide === "function" ? tfScheduleForGuide("forms") : null;
+  const r1 = scheduleForCollectionRound(1);
+  const r2 = scheduleForCollectionRound(2);
+  const r3 =
+    scheduleForCollectionRound(3) ||
+    (state.schedule || []).find((s) => scheduleGroupOf(s) === "collect" && /최종|제출/.test(s.title || ""));
+  const budget = typeof tfScheduleForGuide === "function" ? tfScheduleForGuide("budget") : null;
+  const kpi = typeof tfScheduleForGuide === "function" ? tfScheduleForGuide("kpi") : null;
+  const pick = (s, def) => ({
+    ...def,
+    date: dueOf(s, def.date),
+    label: s?.title || def.label,
+    tip: s?.goal || s?.note || s?.askMessage || def.tip,
+  });
+  return [
+    pick(forms, defaults[0]),
+    pick(r1, defaults[1]),
+    pick(r2, defaults[2]),
+    pick(budget, defaults[3]),
+    pick(kpi, defaults[4]),
+    pick(r3, defaults[5]),
+  ];
+}
+
+function reportDeadlineIso() {
+  const miles = liveTfMilestones();
+  return miles[miles.length - 1]?.date || "2026-09-15";
+}
+
+function reportDeadlineDate() {
+  const iso = reportDeadlineIso();
+  const d = new Date(`${iso}T16:00:00+09:00`);
+  return Number.isNaN(d.getTime()) ? new Date("2026-09-15T16:00:00+09:00") : d;
+}
+
+function formatReportDeadlineWhen(iso = reportDeadlineIso()) {
+  const d = parseIsoDate(iso) || reportDeadlineDate();
+  if (!d) return "제출일 미정";
+  return `${d.getFullYear()}년 ${d.getMonth() + 1}월 ${d.getDate()}일 오후 4시`;
+}
+
 function milestoneProgressFromState() {
   ensureBudget();
   ensureKpis();
   const cols = state.collections || [];
   const r1 = cols.find((c) => c.round === 1);
   const r2 = cols.find((c) => c.round === 2);
+  const r3 = cols.find((c) => c.round === 3);
   const roundDone = (col) => {
     if (!col?.submissions?.length) return false;
     return col.submissions.every((s) => submissionBoardStatus(s).id === "done");
   };
+  const finalDone = roundDone(r3);
   const roundSummary = (col, emptyLabel) => {
     if (!col?.submissions?.length) return emptyLabel;
     const done = col.submissions.filter((s) => submissionBoardStatus(s).id === "done").length;
-    const wip = col.submissions.filter((s) => submissionBoardStatus(s).id === "wip").length;
-    return `${col.name || "취합"} · 제출 ${done}/${col.submissions.length}${wip ? ` · 작성중 ${wip}` : ""}`;
+    return `${col.name || "취합"} · 제출 ${done}/${col.submissions.length}`;
   };
   const mode = getBudgetInputMode();
   const budItems = state.budget?.items || [];
@@ -842,7 +974,7 @@ function milestoneProgressFromState() {
     kpis.length > 0 &&
     kpis.every((k) => Number(k.target) > 0 && Number(k.actual) >= Number(k.target) * 0.8);
   const kpiHit = kpis.filter((k) => Number(k.target) > 0 && Number(k.actual) >= Number(k.target) * 0.8).length;
-  const finalDone = roundDone(cols.find((c) => c.round >= 3)) || false;
+  const miles = liveTfMilestones();
   const todayIso = typeof today === "function" ? today() : new Date().toISOString().slice(0, 10);
   return computeMilestoneProgress({
     hasKickoff: true,
@@ -852,15 +984,22 @@ function milestoneProgressFromState() {
     kpiDone,
     finalDone,
     todayIso,
+    milestones: miles,
     summaries: {
       kickoff: "역할·일정·서식 공유 완료",
       round1: roundSummary(r1, "1차 취합 대기"),
       round2: roundSummary(r2, "2차 취합 대기"),
       budget: `총 ${totalBudget ? `${Math.round(totalBudget / 1e8)}억` : "—"} · 산출근거 ${budgetFilled}/${budItems.length}`,
       kpi: `지표 ${kpiHit}/${kpis.length} 목표 80% 이상`,
-      final: finalDone ? "최종 통합 제출 완료" : "최종 제출일 9/30 오후 4시",
+      final: finalDone ? "최종 통합 제출 완료" : `최종 제출일 ${formatMileDateSafe(miles[5]?.date)} 오후 4시`,
     },
   });
+}
+
+function formatMileDateSafe(iso) {
+  if (!iso || String(iso).length < 10) return "—";
+  const [, m, d] = String(iso).split("-");
+  return `${Number(m)}/${Number(d)}`;
 }
 
 function ensureAiBriefs() {
@@ -1092,17 +1231,15 @@ function openCollectionRequestModal(round) {
         ? "관리자가 보완·수정한 원고를 2차 업로드하도록 요청했어요!"
         : "관리자가 최종 통합본 확인 및 보고서 제출을 요청했어요!");
   openModal({
-    kicker: "제출 요청",
-    title: `${col.name} 제출 요청을 등록합니다.`,
-    submitLabel: "제출 요청 등록",
+    kicker: "취합 공지",
+    title: `${col.name} 공지를 올립니다.`,
+    submitLabel: "공지 올리기",
     bodyHtml: `
-      <p class="schedule-comment-lead">일정표의 마감은 이미 수립된 상태입니다. 이제 참여자에게 <strong>작성 파일 업로드</strong>를 요청합니다.</p>
-      ${collectStepperHtml(col)}
+      <p class="schedule-comment-lead">담당자는 <strong>내업무</strong>에서 한글 파일을 올립니다. 영역·분량은 이미 할당되어 있어 제출하면 취합 현황이 자동으로 집계됩니다.</p>
       <label class="wp-field" style="margin-top:12px">
         <span class="wp-label">담당자에게 보이는 요청 말풍선</span>
         <textarea name="askMessage" rows="3" class="wp-input">${escapeHtml(defaultAsk)}</textarea>
       </label>
-      <p class="muted" style="margin:8px 0 0;font-size:var(--text-xs)">등록 후 담당자는 내 업무에서 파일을 올리고, 보고서 통합에서 취합됩니다.</p>
     `,
     onSubmit: (fd) => {
       const ask = (fd.get("askMessage") || "").toString().trim() || defaultAsk;
@@ -1333,12 +1470,13 @@ function resolveViewName(name) {
   if (name === "ai-brief") return "collections";
   // 제거된 하위메뉴 → 통합 화면으로 흡수
   if (name === "tf-all") return "collections";
-  if (name === "schedule") return "my-work";
+  if (name === "schedule" && !isAdmin()) return "my-work";
   if (name === "review") return "collections";
   if (name === "resources") return "collections";
   // 그룹 id로 들어오면 기본(또는 마지막) 뷰로
   if (NAV_GROUPS[name]) {
     const g = NAV_GROUPS[name];
+    if (name === "setup") return g.defaultView || "schedule";
     const remembered = lastViewByNav[name];
     if (remembered && g.views.includes(remembered)) return remembered;
     return g.defaultView;
@@ -1375,7 +1513,9 @@ function renderSubNav(navId, viewName) {
           ? `area-${v === "collections" ? "report" : v}`
           : v === "my-work" || v === "ai-art" || v === "food" || v === "requests"
             ? `area-${v}`
-            : "";
+            : navId === "setup"
+              ? "area-setup"
+              : "";
       return `<button type="button" class="sub-tab-btn ${on ? "active" : ""} ${area}" data-view="${escapeAttr(v)}" aria-pressed="${on ? "true" : "false"}">${escapeHtml(label)}</button>`;
     })
     .join("");
@@ -1386,7 +1526,7 @@ function renderSubNav(navId, viewName) {
 
 function setView(name) {
   let viewName = resolveViewName(name);
-  if (!isAdmin() && (viewName === "parts" || viewName === "members")) {
+  if (!isAdmin() && (viewName === "parts" || viewName === "members" || viewName === "schedule")) {
     viewName = "dashboard";
   }
   let navId = navGroupOf(viewName);
@@ -1421,14 +1561,17 @@ function setView(name) {
   let desc = meta.desc;
   if (viewName === "collections") {
     desc = isAdmin()
-      ? "제출 요청을 열고, 취합 현황을 확인합니다."
-      : "제출 요청이 열린 차수에 파일을 올리고 제출합니다.";
+      ? "취합 현황을 보고, 리뷰를 남기고, 한글 파일을 목차 순서로 묶습니다."
+      : "담당 영역은 내업무에서 올리고, 여기서 현황과 리뷰를 확인합니다.";
   }
   if (viewName === "dashboard") {
     desc = "아래 순서를 따라 내업무부터 시작하면 됩니다.";
   }
   if (viewName === "guide") {
     desc = "칸을 누르면 해당 화면으로 바로 이동합니다.";
+  }
+  if (viewName === "schedule") {
+    desc = "기본 마감을 넣으면 요청업무 등록 시 날짜와 내용이 이 일정 기준으로 채워집니다.";
   }
   if (viewName === "budget") {
     const modeMeta = budgetModeMeta();
@@ -1444,10 +1587,15 @@ function setView(name) {
   $("#viewDesc").textContent = desc;
   const hero = $("#pageHero");
   if (hero) {
-    hero.hidden = viewName === "dashboard";
-    hero.classList.toggle("is-merged-away", viewName === "dashboard");
+    hero.hidden = true;
+    hero.classList.add("is-merged-away");
   }
+  const processHost = $("#pageHeroProcess");
+  if (processHost) processHost.innerHTML = "";
+  const remindHost = $("#pageHeroRemind");
+  if (remindHost) remindHost.innerHTML = "";
   document.body.classList.toggle("view-home", viewName === "dashboard");
+  $("#userRoleBadge")?.classList.toggle("is-on", resolvedNav === "setup");
   renderView(viewName);
 }
 
@@ -1466,10 +1614,11 @@ function applyRoleUi() {
   const badge = $("#userRoleBadge");
   const label = $("#userNameLabel");
   if (badge) {
-    badge.textContent = roleLabel(currentMember()?.role);
+    badge.hidden = !admin;
+    badge.textContent = "관리";
     badge.classList.toggle("is-admin", admin);
-    badge.classList.toggle("is-budget", budgetMgr);
-    badge.classList.toggle("is-food", foodMgr);
+    badge.classList.toggle("is-budget", false);
+    badge.classList.toggle("is-food", false);
   }
   if (label) label.textContent = sessionUser || "";
 }
@@ -1633,6 +1782,7 @@ function enterAs(name) {
 function logout() {
   sessionUser = null;
   localStorage.removeItem(USER_KEY);
+  updateAlarmButtons();
   showLoginGate();
 }
 
@@ -1849,8 +1999,12 @@ function openDayDeadlineDetail(isoDate) {
   const target = dayDeadlineDetailTarget(ctx);
   if (target.round != null) activeRound = target.round;
   if (target.view === "schedule" && target.scheduleId) {
-    setView("schedule");
-    queueMicrotask(() => openScheduleModal(target.scheduleId));
+    if (isAdmin()) {
+      setView("schedule");
+      queueMicrotask(() => openScheduleModal(target.scheduleId));
+    } else {
+      setView("my-work");
+    }
     return;
   }
   setView(target.view);
@@ -2029,6 +2183,11 @@ function bindHeatDayInteractions(root, { onEmptyClick } = {}) {
     btn.addEventListener("blur", () => {
       clearHide();
       hideTimer = setTimeout(() => hideHeatDayTip(), 120);
+    });
+    btn.addEventListener("pointerdown", (e) => {
+      if (e.pointerType !== "touch" && e.pointerType !== "pen") return;
+      clearHide();
+      showHeatDayTip(btn, btn.dataset.calDay);
     });
     btn.addEventListener("click", () => {
       const iso = btn.dataset.calDay;
@@ -2270,7 +2429,8 @@ function formatKorDate(iso) {
 
 const ALARM_AUTO_WAIT_SEC = 5;
 let alarmPopupMode = "unified";
-let alarmPopupPhase = "schedule";
+let alarmPopupPhase = "unified";
+let alarmPopupBrowseAll = false;
 let alarmPhaseTransitionTimer = null;
 
 function loadRemindState() {
@@ -2319,7 +2479,6 @@ function getUpcomingReminders({ includeDismissed = false } = {}) {
       if (includeDismissed) return true;
       if (map[`dismiss:${s.id}`]) return false;
       if (map[`snooze:${s.id}`] === todayIso) return false;
-      if (map.hideForever) return false;
       if (map.hideToday === todayIso) return false;
       return true;
     })
@@ -2329,28 +2488,48 @@ function getUpcomingReminders({ includeDismissed = false } = {}) {
 function updateRemindBell() {
   const bell = $("#btnRemindBell");
   const countEl = $("#remindBellCount");
-  if (!bell || !sessionUser) return;
-  const pending = getUpcomingReminders();
-  if (pending.length > 0) {
+  if (!bell) return;
+  if (!sessionUser) {
+    bell.hidden = true;
+    bell.classList.remove("has-pending", "nudge");
+    return;
+  }
+  const groups = reminderGroups();
+  const pending = groups.overdue.length + groups.today.length + groups.week.length;
+  if (pending > 0) {
     bell.hidden = false;
-    bell.classList.toggle("has-pending", true);
-    countEl.textContent = String(pending.length);
+    bell.classList.add("nudge");
+    bell.classList.toggle("has-pending", groups.overdue.length > 0);
+    if (countEl) countEl.textContent = String(pending);
+    bell.setAttribute("aria-label", `지연·일주일 안 일정 ${pending}건`);
   } else {
     bell.hidden = true;
-    bell.classList.remove("has-pending");
+    bell.classList.remove("has-pending", "nudge");
   }
 }
 
 function updateCommentBell() {
   const btn = $("#btnRequestPlane");
   const countEl = $("#requestPlaneCount");
-  if (!btn || !sessionUser) return;
-  const feed = myCommentFeedItems();
-  if (feed.length > 0) {
+  if (!btn) return;
+  if (!sessionUser) {
+    btn.hidden = true;
+    btn.classList.remove("nudge");
+    return;
+  }
+  const comments = myCommentFeedItems().length;
+  const received = (state.schedule || []).filter(
+    (s) => (s.status || "") !== "완료" && scheduleOriginOf(s).kind === "received"
+  ).length;
+  const pending = comments + received;
+  if (pending > 0) {
     btn.hidden = false;
-    countEl.textContent = String(feed.length);
+    btn.classList.add("nudge");
+    if (countEl) countEl.textContent = String(pending);
+    btn.setAttribute("aria-label", `요청·코멘트 ${pending}건`);
   } else {
     btn.hidden = true;
+    btn.classList.remove("nudge");
   }
 }
 
@@ -2359,56 +2538,105 @@ function updateAlarmButtons() {
   updateCommentBell();
 }
 
-function remindTaskCardHtml(s, sourceLabel = "") {
-  const days = s.daysUntil ?? daysUntil(s.endDate || s.date);
-  const from =
-    sourceLabel ||
-    (s.createdBy === sessionUser ? "내가요청" : s.createdBy || "TF 일정");
-  const timing =
-    days < 0
-      ? ` · <span class="remind-yoy is-late">${Math.abs(days)}일 지남</span>`
-      : days === 0
-        ? ""
-        : ` · ${days}일 남음`;
-  const glow = days < 0 ? " is-overdue-glow" : days === 0 ? " is-approaching" : "";
+function remindFromOwnerHtml(s, who = sessionUser) {
+  const origin = scheduleOriginOf(s, who);
+  const assignees = scheduleAssigneesOf(s);
+  const owner = s.owner || s.createdBy || "";
+  const assignedOthers = assignees.some((name) => name && name !== who);
+  if (origin.kind === "sent" && assignedOthers) {
+    return `<span class="from-owner is-offered">내가요청</span>`;
+  }
+  if (owner === who && (!assignees.length || assignees.every((name) => name === who))) {
+    return `<span class="from-owner is-solo">나혼자</span>`;
+  }
+  if (owner && owner !== who) {
+    return `<span class="from-owner">${escapeHtml(owner)}으로부터</span>`;
+  }
+  return origin.kind === "sent"
+    ? `<span class="from-owner is-offered">내가요청</span>`
+    : `<span class="from-owner is-solo">나혼자</span>`;
+}
+
+function remindDeptOwnerTagsHtml(s) {
+  const dept = s.dept || s.division || "";
+  const owner = s.owner || s.createdBy || "";
+  return `${
+    dept ? `<span class="kind-tag dept-tag">${escapeHtml(dept)}</span>` : ""
+  }${owner ? `<span class="kind-tag owner-tag">${escapeHtml(owner)}</span>` : ""}`;
+}
+
+function scheduleYoyHint(s) {
+  const last = String(s?.lastYearDueDate || "").slice(0, 10);
+  if (last) {
+    const due = parseIsoDate(scheduleDueIso(s));
+    const prev = parseIsoDate(last);
+    if (due && prev) {
+      const projected = new Date(due.getFullYear(), prev.getMonth(), prev.getDate());
+      if (projected.getMonth() !== prev.getMonth()) projected.setDate(0);
+      const drift = Math.round((due - projected) / 86400000);
+      if (drift > 0) return { text: `작년 이맘때보다 ${drift}일 지연`, tone: "is-late" };
+      if (drift < 0) return { text: `작년 이맘때보다 ${Math.abs(drift)}일 미리 처리`, tone: "is-early" };
+      return { text: "작년과 같은 시기", tone: "" };
+    }
+  }
+  return { text: "작년 대비 자료 없음", tone: "" };
+}
+
+function formatKorDateTime(iso) {
+  const raw = String(iso || "").trim();
+  if (!raw) return "";
+  const d = new Date(raw);
+  if (Number.isNaN(d.getTime())) return formatCommentStamp(raw);
+  return `${d.getMonth() + 1}월 ${d.getDate()}일 ${String(d.getHours()).padStart(2, "0")}:${String(d.getMinutes()).padStart(2, "0")}`;
+}
+
+function remindTaskCardHtml(s) {
+  const yoy = scheduleYoyHint(s);
+  const due = scheduleDueIso(s);
+  const program = typeLabel(s.type) || "일반업무";
   return `
-    <button type="button" class="remind-item${glow}" data-goto-schedule="${escapeAttr(s.id)}">
+    <button type="button" class="remind-item" data-goto-schedule="${escapeAttr(s.id)}">
+      <span class="remind-from-row">${remindFromOwnerHtml(s)}</span>
+      <strong>${escapeHtml(s.title)}${remindDeptOwnerTagsHtml(s)}</strong>
+      <span class="remind-item-meta">${escapeHtml(formatKorDate(due))} · ${escapeHtml(program)} · <span class="remind-yoy ${yoy.tone}">${escapeHtml(yoy.text)}</span></span>
+    </button>`;
+}
+
+function remindScheduleCommentCardHtml(s) {
+  const comments = scheduleCommentsOf(s);
+  const latest = [...comments].sort((a, b) => String(b.createdAt || "").localeCompare(String(a.createdAt || "")))[0];
+  const author = latest?.author || latest?.by || "작성자";
+  const preview = String(latest?.text || latest?.body || "").replace(/\s+/g, " ").trim();
+  return `
+    <button type="button" class="remind-item remind-comment-item" data-goto-schedule-comment="${escapeAttr(s.id)}">
       <span class="remind-from-row">
-        <span class="from-owner">${escapeHtml(from)}</span>
-        <span class="origin-tag solo">${escapeHtml(typeLabel(s.type))}</span>
-        ${s.createdBy ? `<span class="origin-tag offered">${escapeHtml(s.createdBy)}</span>` : ""}
+        ${remindFromOwnerHtml(s)}
+        <span class="origin-tag comment">코멘트</span>
       </span>
-      <strong>${escapeHtml(s.title)}</strong>
-      <span class="remind-item-meta">${escapeHtml(formatKorDate(s.date))}${
-        s.endDate && s.endDate !== s.date ? ` ~ ${escapeHtml(formatKorDate(s.endDate))}` : ""
-      }${s.note ? ` · ${escapeHtml(s.note)}` : ""}${timing}</span>
+      <strong>${escapeHtml(s.title)}${remindDeptOwnerTagsHtml(s)}<span class="remind-comment-badge">코멘트 ${comments.length}</span></strong>
+      ${
+        latest
+          ? `<span class="remind-item-meta remind-comment-preview">${escapeHtml(author)} · ${escapeHtml(formatKorDateTime(latest.createdAt))} · ${escapeHtml(preview || "(내용 없음)")}</span>`
+          : `<span class="remind-item-meta">코멘트가 있습니다.</span>`
+      }
     </button>`;
 }
 
 function remindFeedCardHtml(r) {
-  const days = r.dueDate ? daysUntil(r.dueDate) : null;
-  const timing =
-    days != null && days < 0
-      ? ` · <span class="remind-yoy is-late">${Math.abs(days)}일 지남</span>`
-      : days != null && days <= 3
-        ? ` · <span class="remind-yoy">${days}일 남음</span>`
-        : "";
-  const glow = days != null && days < 0 ? " is-overdue-glow" : "";
-  const kindLabel =
-    { review: "윤독", budget: "예산", kpi: "성과지표", file: "파일", request: "요청" }[r.kind] || "코멘트";
+  const preview = String(r.memo || "").replace(/\s+/g, " ").trim();
   const gotoAttr = r.requestId
     ? `data-goto-request="${escapeAttr(r.requestId)}"`
-    : `data-goto-view="${escapeAttr(r.goto || "requests")}"`;
+    : `data-goto-view="${escapeAttr(r.goto || "my-work")}"`;
   return `
-    <button type="button" class="remind-item remind-comment-item${glow}" ${gotoAttr}>
+    <button type="button" class="remind-item remind-comment-item" ${gotoAttr}>
       <span class="remind-from-row">
-        <span class="from-owner">${escapeHtml(r.requester || "관리자")}로부터</span>
-        <span class="origin-tag comment">${escapeHtml(kindLabel)}</span>
+        <span class="from-owner">${escapeHtml(r.requester || "관리자")}으로부터</span>
+        <span class="origin-tag comment">코멘트</span>
       </span>
-      <strong>${escapeHtml(r.title)}</strong>
-      <span class="remind-item-meta remind-comment-preview">${escapeHtml(r.requester || "관리자")} · ${
-        r.dueDate ? escapeHtml(formatKorDate(r.dueDate)) : "기한 없음"
-      }${timing}${r.memo ? ` · ${escapeHtml(String(r.memo).slice(0, 80))}` : ""}</span>
+      <strong>${escapeHtml(r.title)}<span class="remind-comment-badge">코멘트</span></strong>
+      <span class="remind-item-meta remind-comment-preview">${escapeHtml(r.requester || "관리자")}${
+        r.dueDate ? ` · ${escapeHtml(formatKorDate(r.dueDate))}` : ""
+      }${preview ? ` · ${escapeHtml(preview.slice(0, 80))}` : ""}</span>
     </button>`;
 }
 
@@ -2418,7 +2646,7 @@ function bindRemindListActions(root) {
       cancelRemindPopupAutoClose();
       clearAlarmPhaseTransitionTimer();
       closeRemindPopup();
-      setView("schedule");
+      setView("my-work");
     });
   });
   root?.querySelectorAll("[data-goto-request]").forEach((el) => {
@@ -2440,10 +2668,18 @@ function bindRemindListActions(root) {
 }
 
 function renderScheduleRemindList(root, items = getUpcomingReminders()) {
+  renderUnifiedRemindList(root, items, []);
+}
+
+function renderCommentRemindList(root, feed = myCommentFeedItems()) {
+  renderUnifiedRemindList(root, [], feed);
+}
+
+function renderUnifiedRemindList(root, scheduleItems = getUpcomingReminders(), commentItems = myCommentFeedItems()) {
   if (!root) return;
-  const overdue = items.filter((s) => s.daysUntil < 0);
-  const todayItems = items.filter((s) => s.daysUntil === 0);
-  const soon = items.filter((s) => s.daysUntil > 0 && s.daysUntil <= 7);
+  const overdue = scheduleItems.filter((s) => s.daysUntil < 0);
+  const todayItems = scheduleItems.filter((s) => s.daysUntil === 0);
+  const soon = scheduleItems.filter((s) => s.daysUntil > 0 && s.daysUntil <= 7);
   const overdueNote = "빨리 처리하거나, 처리 일정을 재수립하거나, 완료 여부를 점검하세요";
 
   const section = (tone, title, count, cards, { glow = false, note = "" } = {}) => {
@@ -2459,6 +2695,7 @@ function renderScheduleRemindList(root, items = getUpcomingReminders()) {
       </section>`;
   };
 
+  const commentCards = commentItems.slice(0, 8).map((r) => remindFeedCardHtml(r));
   root.innerHTML = [
     section(
       "overdue",
@@ -2484,34 +2721,50 @@ function renderScheduleRemindList(root, items = getUpcomingReminders()) {
       soon.length,
       soon.slice(0, 5).map((s) => remindTaskCardHtml(s, s.createdBy || "일정"))
     ),
+    commentCards.length ? commentCards.join("") : "",
   ]
     .filter(Boolean)
     .join("");
 
   if (!root.innerHTML.trim()) {
-    root.innerHTML = `<div class="empty">지금 챙길 일정이 없습니다.</div>`;
+    root.innerHTML = `<div class="empty">지금 확인할 알림이 없습니다.</div>`;
   }
   bindRemindListActions(root);
 }
 
-function renderCommentRemindList(root, feed = myCommentFeedItems()) {
-  if (!root) return;
-  if (!feed.length) {
-    root.innerHTML = `<div class="empty">확인할 코멘트·피드백이 없습니다.</div>`;
+function animateRemindConfirmCount(total, { urgent = false } = {}) {
+  const el = $("#remindConfirmCount");
+  if (!el) return;
+  if (animateRemindConfirmCount._raf) {
+    cancelAnimationFrame(animateRemindConfirmCount._raf);
+    animateRemindConfirmCount._raf = 0;
+  }
+  const end = Math.max(0, Number(total) || 0);
+  el.classList.toggle("is-urgent", urgent);
+  if (!end) {
+    el.hidden = true;
+    el.textContent = "";
     return;
   }
-  root.innerHTML = `
-    <section class="remind-section is-comment">
-      <h3>
-        <span class="remind-section-label"><span class="feedback-bird" aria-hidden="true">🐦</span>코멘트 · 피드백</span>
-        <span class="remind-count">${feed.length}건</span>
-      </h3>
-      ${feed.slice(0, 8).map((r) => remindFeedCardHtml(r)).join("")}
-    </section>`;
-  bindRemindListActions(root);
+  el.hidden = false;
+  el.textContent = "0";
+  const start = performance.now();
+  const duration = Math.min(1100, 420 + end * 40);
+  const tick = (now) => {
+    const t = Math.min(1, (now - start) / duration);
+    const eased = 1 - (1 - t) ** 3;
+    el.textContent = String(Math.round(end * eased));
+    if (t < 1) {
+      animateRemindConfirmCount._raf = requestAnimationFrame(tick);
+    } else {
+      el.textContent = String(end);
+      animateRemindConfirmCount._raf = 0;
+    }
+  };
+  animateRemindConfirmCount._raf = requestAnimationFrame(tick);
 }
 
-function updateAlarmPopupChrome({ phase, mode, scheduleCount = 0, commentCount = 0, transitionSec = 0 } = {}) {
+function updateAlarmPopupChrome({ scheduleCount = 0, commentCount = 0 } = {}) {
   const kicker = $("#remindKicker");
   const who = $("#remindWho");
   const title = $("#remindTitle");
@@ -2519,49 +2772,38 @@ function updateAlarmPopupChrome({ phase, mode, scheduleCount = 0, commentCount =
   const hint = $("#remindPhaseHint");
   const hideOpts = document.querySelector("#remindBackdrop .remind-hide-opts");
   const goBtn = $("#remindGoSchedule");
+  const total = scheduleCount + commentCount;
+  const overdue = getUpcomingReminders().filter((s) => s.daysUntil < 0).length;
+  const todayN = getUpcomingReminders().filter((s) => s.daysUntil === 0).length;
 
   if (who) who.textContent = `${sessionUser || "작성자"}님`;
-
-  if (phase === "schedule") {
-    if (kicker) kicker.textContent = "일정 리마인드";
-    if (title) title.innerHTML = `<span class="name-honorific">${escapeHtml(sessionUser || "작성자")}님</span>, 지금 챙길 일정입니다.`;
-    if (desc) {
-      const overdue = getUpcomingReminders().filter((s) => s.daysUntil < 0).length;
-      const todayN = getUpcomingReminders().filter((s) => s.daysUntil === 0).length;
-      desc.textContent = `${isAdmin() ? "등록·수정 권한" : "조회 권한"}으로 접속 · 일정 ${scheduleCount}건${commentCount && mode === "unified" ? ` · 이어서 코멘트 ${commentCount}건` : ""}${overdue ? ` · 지연 ${overdue}건` : ""}${todayN ? ` · 오늘 ${todayN}건` : ""}`;
-    }
-    if (goBtn) goBtn.textContent = "일정 보기";
-    if (hideOpts) hideOpts.hidden = false;
-  } else {
-    if (kicker) kicker.textContent = "코멘트 리마인드";
-    if (title) title.innerHTML = `<span class="name-honorific">${escapeHtml(sessionUser || "작성자")}님</span>, 확인할 코멘트가 있습니다.`;
-    if (desc) desc.textContent = `요청·리뷰·예산·성과지표 등 코멘트 ${commentCount}건을 확인해 주세요.`;
-    if (goBtn) goBtn.textContent = "내 업무 보기";
-    if (hideOpts) hideOpts.hidden = true;
+  if (kicker) {
+    kicker.textContent = "알림";
+    kicker.classList.add("remind-kicker-glow");
   }
-
+  if (title) {
+    title.innerHTML = `<span class="name-honorific">${escapeHtml(sessionUser || "작성자")}님</span>, 확인할 알림이 있습니다.`;
+  }
+  if (desc) {
+    desc.textContent = "닫아도 상단 알람에서 다시 볼 수 있습니다.";
+  }
+  if (goBtn) goBtn.textContent = "내 업무 보기";
+  if (hideOpts) hideOpts.hidden = false;
   if (hint) {
-    if (transitionSec > 0 && phase === "schedule" && mode === "unified" && commentCount > 0) {
-      hint.hidden = false;
-      hint.textContent = `코멘트 리마인드로 이어집니다 · ${transitionSec}초`;
-    } else if (mode === "unified" && phase === "comment" && scheduleCount > 0) {
-      hint.hidden = false;
-      hint.textContent = "일정 확인 후 · 코멘트 리마인드";
-    } else {
-      hint.hidden = true;
-      hint.textContent = "";
-    }
+    hint.hidden = true;
+    hint.textContent = "";
   }
+  animateRemindConfirmCount(total, { urgent: overdue > 0 || todayN > 0 });
 }
 
 function renderRemindList() {
   const root = $("#remindList");
   if (!root) return;
-  if (alarmPopupPhase === "comment") {
-    renderCommentRemindList(root);
-  } else {
-    renderScheduleRemindList(root);
-  }
+  renderUnifiedRemindList(
+    root,
+    getUpcomingReminders({ includeDismissed: alarmPopupBrowseAll }),
+    myCommentFeedItems()
+  );
 }
 
 function dismissReminder(id) {
@@ -2636,108 +2878,54 @@ function startRemindPopupAutoClose({ dismissScheduleOnClose = false } = {}) {
   }, 1000);
 }
 
-function startAlarmPhaseTransition(scheduleCount, commentCount) {
-  clearAlarmPhaseTransitionTimer();
-  clearRemindPopupAutoClose();
-  let left = ALARM_AUTO_WAIT_SEC;
-  updateAlarmPopupChrome({
-    phase: "schedule",
-    mode: alarmPopupMode,
-    scheduleCount,
-    commentCount,
-    transitionSec: left,
-  });
-  alarmPhaseTransitionTimer = window.setInterval(() => {
-    left -= 1;
-    updateAlarmPopupChrome({
-      phase: "schedule",
-      mode: alarmPopupMode,
-      scheduleCount,
-      commentCount,
-      transitionSec: left,
-    });
-    if (left <= 0) {
-      clearAlarmPhaseTransitionTimer();
-      showAlarmPhase("comment", { browseAll: false, auto: true });
-    }
-  }, 1000);
+function showAlarmPhase(_phase, { browseAll = false, auto = false } = {}) {
+  showUnifiedAlarm({ browseAll, auto });
 }
 
-function showAlarmPhase(phase, { browseAll = false, auto = false } = {}) {
-  alarmPopupPhase = phase;
+function showUnifiedAlarm({ browseAll = false, auto = false } = {}) {
+  alarmPopupMode = "unified";
+  alarmPopupPhase = "unified";
+  alarmPopupBrowseAll = browseAll;
   const scheduleItems = getUpcomingReminders({ includeDismissed: browseAll });
   const commentItems = myCommentFeedItems();
   updateAlarmPopupChrome({
-    phase,
-    mode: alarmPopupMode,
     scheduleCount: scheduleItems.length,
     commentCount: commentItems.length,
   });
-  renderRemindList();
+  renderUnifiedRemindList($("#remindList"), scheduleItems, commentItems);
 
   const hideToday = $("#remindHideToday");
-  const hideForever = $("#remindHideForever");
   if (hideToday) hideToday.checked = false;
-  if (hideForever) hideForever.checked = false;
 
   $("#remindBackdrop").hidden = false;
   updateAlarmButtons();
 
   clearRemindPopupAutoClose();
   clearAlarmPhaseTransitionTimer();
-
-  if (!auto) return;
-
-  if (
-    alarmPopupMode === "unified" &&
-    phase === "schedule" &&
-    scheduleItems.length > 0 &&
-    commentItems.length > 0
-  ) {
-    startAlarmPhaseTransition(scheduleItems.length, commentItems.length);
-    return;
-  }
-
-  if (phase === "comment" || (phase === "schedule" && !commentItems.length)) {
-    startRemindPopupAutoClose({
-      dismissScheduleOnClose: phase === "schedule" && !commentItems.length,
-    });
+  if (auto) {
+    startRemindPopupAutoClose({ dismissScheduleOnClose: true });
   }
 }
 
-function openUnifiedAlarmPopup({ mode = "unified", browseAll = false } = {}) {
-  alarmPopupMode = mode;
+function openUnifiedAlarmPopup({ browseAll = false } = {}) {
+  alarmPopupMode = "unified";
   clearAlarmPhaseTransitionTimer();
   clearRemindPopupAutoClose();
 
   const scheduleItems = getUpcomingReminders({ includeDismissed: browseAll });
   const commentItems = myCommentFeedItems();
 
-  if (mode === "schedule") {
-    showAlarmPhase("schedule", { browseAll, auto: false });
-    return;
-  }
-  if (mode === "comment") {
-    showAlarmPhase("comment", { browseAll, auto: false });
-    return;
-  }
-
   const map = loadRemindState();
   if (!browseAll) {
-    if (map.hideForever) return;
     if (map.hideToday === today()) return;
-  }
-  if (!browseAll && !scheduleItems.length && !commentItems.length) {
-    closeRemindPopup({ skipHideOpts: true });
-    updateAlarmButtons();
-    return;
+    if (!scheduleItems.length && !commentItems.length) {
+      closeRemindPopup({ skipHideOpts: true });
+      updateAlarmButtons();
+      return;
+    }
   }
 
-  if (scheduleItems.length) {
-    showAlarmPhase("schedule", { browseAll, auto: !browseAll });
-  } else if (commentItems.length) {
-    showAlarmPhase("comment", { browseAll, auto: !browseAll });
-  }
+  showUnifiedAlarm({ browseAll, auto: !browseAll });
 }
 
 function openRemindPopup(browseAll = false) {
@@ -2747,9 +2935,9 @@ function openRemindPopup(browseAll = false) {
 function closeRemindPopup({ skipHideOpts = false } = {}) {
   clearRemindPopupAutoClose();
   clearAlarmPhaseTransitionTimer();
-  if (!skipHideOpts && alarmPopupPhase === "schedule") {
+  if (!skipHideOpts) {
     const map = loadRemindState();
-    if ($("#remindHideForever")?.checked) map.hideForever = true;
+    delete map.hideForever;
     if ($("#remindHideToday")?.checked) map.hideToday = today();
     saveRemindState(map);
   }
@@ -2857,7 +3045,7 @@ function updateRequestPlane() {
 }
 
 function renderRequestPopupList(items) {
-  renderCommentRemindList($("#requestList"), items);
+  renderUnifiedRemindList($("#requestList"), [], items);
 }
 
 function completeRequest(id) {
@@ -2999,8 +3187,8 @@ function processGuideDismissed() {
 function processStepsForRole() {
   if (isAdmin()) {
     return [
-      { n: "1", title: "일정 수립", desc: "내업무에서 할 일과 마감을 넣습니다", view: "my-work" },
-      { n: "2", title: "제출 요청", desc: "보고서 통합에서 차수 요청을 엽니다", view: "collections" },
+      { n: "1", title: "일정 수립", desc: "Setting에서 TF 기본 일정을 넣습니다", view: "schedule" },
+      { n: "2", title: "취합 공지", desc: "보고서 통합에서 차수 공지를 올립니다", view: "collections" },
       { n: "3", title: "취합·리뷰", desc: "제출을 확인하고 리뷰회의를 남깁니다", view: "collections" },
       { n: "4", title: "사용방법", desc: "역할별 권한·메뉴를 확인합니다", view: "guide" },
     ];
@@ -3018,7 +3206,7 @@ function processRailHtml({ compact = false, currentView = "", dismissible = true
   const steps = processStepsForRole();
   const kicker = isAdmin() ? "관리자 진행 순서" : "처음이라면 이 순서로";
   const title = isAdmin()
-    ? "일정 → 제출 요청 → 취합"
+    ? "일정 → 취합 공지 → 묶기"
     : "내업무 확인 → 업로드 → 제출";
   return `
     <section class="process-rail ${compact ? "is-compact" : ""}" aria-label="${escapeAttr(kicker)}">
@@ -3067,6 +3255,121 @@ function bindProcessRail(root) {
   });
 }
 
+const REMIND_CARD_META = [
+  { id: "overdue", label: "지연", hint: "마감 지남 · 미완료", tone: "later" },
+  { id: "today", label: "오늘까지 반드시 처리", hint: "오늘 마감", tone: "today" },
+  { id: "week", label: "이번주 내 처리", hint: "7일 이내", tone: "week" },
+  { id: "month", label: "이번달 내 처리", hint: "한 달 이내", tone: "earlier" },
+];
+
+function scheduleDueIso(s) {
+  return (s?.endDate || s?.date || "").slice(0, 10);
+}
+
+function reminderBucketOf(s) {
+  if ((s?.status || "") === "완료") return "later";
+  const due = scheduleDueIso(s);
+  if (!due) return "later";
+  const days = daysUntil(due);
+  if (days < 0) return "overdue";
+  if (days === 0) return "today";
+  if (days <= 7) return "week";
+  if (days <= 31) return "month";
+  return "later";
+}
+
+function reminderGroups() {
+  const who = sessionUser;
+  const groups = { overdue: [], today: [], week: [], month: [] };
+  (state.schedule || [])
+    .filter((s) => (s.status || "") !== "완료" && scheduleVisibleToUser(s, who))
+    .forEach((s) => {
+      const bucket = reminderBucketOf(s);
+      if (groups[bucket]) groups[bucket].push(s);
+    });
+  Object.keys(groups).forEach((key) => {
+    groups[key].sort((a, b) => scheduleDueIso(a).localeCompare(scheduleDueIso(b)));
+  });
+  return groups;
+}
+
+function processRemindHtml() {
+  const groups = reminderGroups();
+  const preview = [...groups.overdue, ...groups.today, ...groups.week];
+  const detailOpen = Boolean(state._remindDetailOpen);
+  return `
+    <section class="yoy-board" aria-label="처리 리마인더">
+      <div class="yoy-board-head">
+        <h2 class="yoy-board-title">처리 리마인더</h2>
+        <p class="muted">마감이 지났는데 완료가 아니면 지연으로 모입니다.</p>
+      </div>
+      <div class="yoy-stat-cards remind-stat-cards">
+        ${REMIND_CARD_META.map((card) => {
+          const items = groups[card.id] || [];
+          return `
+          <button type="button" class="yoy-stat ${card.tone}" data-remind-pick="${card.id}" title="${escapeAttr(card.label)}">
+            <p class="yoy-stat-label">${escapeHtml(card.label)}</p>
+            <p class="yoy-stat-value"><strong>${items.length}</strong><span>건</span></p>
+            <p class="yoy-stat-desc">${escapeHtml(card.hint)}</p>
+          </button>`;
+        }).join("")}
+      </div>
+      ${
+        preview.length
+          ? `<div class="remind-detail">
+              <button type="button" class="btn btn-ghost btn-sm remind-detail-toggle" id="remindDetailToggle" aria-expanded="${detailOpen ? "true" : "false"}">
+                ${detailOpen ? "상세 접기" : `상세 보기 ${preview.length}건`}
+              </button>
+              ${
+                detailOpen
+                  ? `<ul class="remind-detail-list">
+                      ${preview
+                        .map((s) => {
+                          const bucket = reminderBucketOf(s);
+                          const meta = REMIND_CARD_META.find((c) => c.id === bucket);
+                          return `<li>
+                            <button type="button" class="remind-detail-row" data-remind-open="${escapeAttr(s.id)}">
+                              <span class="yoy-stat-label ${meta?.tone || ""}">${escapeHtml(meta?.label || "")}</span>
+                              <strong>${escapeHtml(s.title || "일정")}</strong>
+                              <span>${escapeHtml(formatKorDate(scheduleDueIso(s)))}</span>
+                            </button>
+                          </li>`;
+                        })
+                        .join("")}
+                    </ul>`
+                  : ""
+              }
+            </div>`
+          : ""
+      }
+    </section>`;
+}
+
+function bindProcessRemind(root) {
+  if (!root) return;
+  root.querySelectorAll("[data-remind-pick]").forEach((btn) => {
+    btn.addEventListener("click", () => {
+      state._remindFocus = btn.dataset.remindPick;
+      setView("my-work");
+    });
+  });
+  $("#remindDetailToggle", root)?.addEventListener("click", () => {
+    state._remindDetailOpen = !state._remindDetailOpen;
+    const host = $("#pageHeroRemind");
+    if (host) {
+      host.innerHTML = processRemindHtml();
+      bindProcessRemind(host);
+    }
+  });
+  root.querySelectorAll("[data-remind-open]").forEach((btn) => {
+    btn.addEventListener("click", () => {
+      const item = (state.schedule || []).find((s) => s.id === btn.dataset.remindOpen);
+      setView("my-work");
+      window.setTimeout(() => openScheduleUploadForItem(item), 80);
+    });
+  });
+}
+
 function renderDashboard() {
   const el = $("#view-dashboard");
   ensureReportDoc();
@@ -3094,15 +3397,13 @@ function renderDashboard() {
       </div>
       <aside class="yeonu-hero-aside report-deadline" aria-live="polite">
         <p class="deadline-label">보고서 제출일시</p>
-        <p class="deadline-when">2026년 9월 15일 오후 4시</p>
+        <p class="deadline-when">${escapeHtml(formatReportDeadlineWhen())}</p>
         <p class="deadline-remain">
           잔여
           <strong id="homeDeadlineRemain">—</strong>
         </p>
       </aside>
     </section>
-
-    ${processRailHtml({ currentView: "dashboard", dismissible: true })}
 
     ${marathonTrackHtml(mile, escapeHtml)}
 
@@ -3150,7 +3451,6 @@ function renderDashboard() {
   };
   tickHomeDeadline();
   bindMarathonRunner(el);
-  bindProcessRail(el);
 
   el.querySelectorAll("[data-goto]").forEach((btn) => {
     btn.addEventListener("click", () => setView(btn.dataset.goto));
@@ -3348,7 +3648,6 @@ function isHangulFileName(name = "") {
 function checkRequestSummary(sub) {
   const files = normalizeCheckFiles(sub).filter((f) => isHangulFileName(f.name));
   if (files.length) return `한글 ${files.length}개`;
-  if (sub.altSubmit) return "별도제출";
   return "미업로드";
 }
 
@@ -3360,7 +3659,6 @@ function openCheckRequestModal(partId, editable = true) {
   let files = normalizeCheckFiles(sub)
     .filter((f) => isHangulFileName(f.name))
     .map((f) => ({ ...f }));
-  let altSubmit = Boolean(sub.altSubmit);
   const MAX_FILE_BYTES = 30 * 1024 * 1024;
 
   const renderFiles = () => {
@@ -3436,50 +3734,38 @@ function openCheckRequestModal(partId, editable = true) {
   };
 
   openModal({
-    title: `한글 파일 업로드 · ${part ? `${part.section}. ${part.title}` : partId}`,
+    title: `한글 파일 올리기 · ${part ? `${part.section}. ${part.title}` : partId}`,
+    submitLabel: editable ? "올리고 제출" : "닫기",
     bodyHtml: `
-      <div class="check-tabs" role="tablist">
-        <button type="button" class="check-tab active" data-check-tab="file">한글 파일 업로드</button>
-      </div>
       <div class="check-pane active" data-check-pane="file">
         <div class="check-paste ${editable ? "" : "is-readonly"}" id="checkFileZone">
-          <strong>작성한 한글 파일을 업로드하세요</strong>
+          <strong>담당 영역 한글 파일을 올리세요</strong>
           <span class="muted">.hwp / .hwpx · 개당 30MB · 최대 3개 · <span id="checkFileCount">${files.length}/3</span></span>
           ${
             editable
               ? `<input type="file" id="checkDocFile" multiple hidden accept=".hwp,.hwpx,application/x-hwp,application/haansofthwp" />
-                 <button type="button" class="btn btn-sm" id="checkDocPick">한글 파일 선택</button>`
+                 <button type="button" class="btn btn-sm btn-primary" id="checkDocPick">한글 파일 선택</button>`
               : ""
           }
         </div>
         <div class="check-file-list" id="checkFileList"></div>
-        <label class="alt-submit-check ${editable ? "" : "is-readonly"}">
-          <input type="checkbox" id="altSubmitCheck" name="altSubmit" ${altSubmit ? "checked" : ""} ${editable ? "" : "disabled"} />
-          <span>한글 파일 없이 <strong>별도제출</strong>로 처리합니다</span>
-        </label>
-        <p class="muted" style="margin:8px 0 0">별도제출을 체크하면 파일 없이도 저장·제출할 수 있습니다.</p>
+        <p class="muted" style="margin:10px 0 0">올리면 할당 분량(${part ? pagesOf(part) : 0}p)으로 자동 제출되고, 보고서 통합에서 집계됩니다.</p>
       </div>
     `,
     onSubmit: () => {
       if (!editable) return true;
-      const checked = Boolean($("#altSubmitCheck")?.checked);
-      if (!files.length && !checked) {
-        alert("한글 파일을 업로드하거나 별도제출을 선택해 주세요.");
+      if (!files.length) {
+        alert("한글 파일을 올려 주세요.");
         return false;
       }
       sub.checkFiles = files.slice(0, 3);
-      sub.altSubmit = checked;
+      sub.altSubmit = false;
       sub.checkImages = [];
-      saveAndRender("collections");
+      markPartSubmitted(sub);
+      saveAndRender(activeViewName === "my-work" ? "my-work" : "collections");
       return true;
     },
   });
-
-  const submitBtn = $("#modalSubmit");
-  if (submitBtn) {
-    submitBtn.textContent = editable ? "저장" : "닫기";
-    if (!editable) submitBtn.classList.add("btn-ghost");
-  }
 
   renderFiles();
   $("#checkDocPick")?.addEventListener("click", () => $("#checkDocFile")?.click());
@@ -3497,27 +3783,16 @@ function renderCollections() {
   const rounds = collectionsNewestFirst();
   const col = state.collections.find((c) => c.round === activeRound);
   const summary = collectionSummary(activeRound);
-  const target = allocatedTotal() || state.meta.totalTargetPages || 1;
-  const pct = Math.min(100, Math.round((summary.pages / target) * 100));
-  const boardRows = col ? buildTeamCollectionBoard(col) : [];
-  const boardTodo = boardRows.filter((r) => r.status.id === "todo").length;
-  const boardWip = boardRows.filter((r) => r.status.id === "wip").length;
-  const boardDone = boardRows.filter((r) => r.status.id === "done").length;
-  const doc = reportDocKindMeta();
   const allSubmitted = col ? isCollectionFullySubmitted(col) : false;
   const phase = col ? collectionPhaseOf(col) : "planned";
   const phaseOpen = phase === "open";
+  const showBoard = col && isCollectionRequestOpened(col);
+  const showReview = showBoard && (allSubmitted || phase === "closed");
+  const submitPct = summary.totalParts ? Math.round((summary.submitted / summary.totalParts) * 100) : 0;
+  const ordered = col ? submissionsInPartOrder(col) : [];
+  const hangulReady = col ? orderedCollectionHangulFiles(col).length : 0;
 
   el.innerHTML = `
-    ${processRailHtml({ compact: true, currentView: "collections", dismissible: false })}
-    <div class="panel hub-doc-banner is-compact" data-kind="${escapeAttr(getReportDocKind())}" style="margin-bottom:10px">
-      <div class="hub-doc-banner-main">
-        <span class="hub-doc-kicker">작성 기준</span>
-        <strong class="hub-doc-title" style="font-size:1.15rem">${escapeHtml(doc.name)}</strong>
-        <p class="hub-doc-desc muted" style="margin:0">취합도 이 기준에 맞춰 작성합니다. 홈에서 관리자가 바꿀 수 있습니다.</p>
-      </div>
-    </div>
-
     <div class="round-tabs">
       ${rounds
         .map((c) => {
@@ -3525,47 +3800,43 @@ function renderCollections() {
           const opened = isCollectionRequestOpened(c);
           const waiting = !opened;
           const on = c.round === activeRound;
-          const label = waiting ? "요청 전" : `${s.pages}p`;
-          return `<button type="button" class="round-tab ${on ? "active" : ""} ${waiting ? "is-waiting" : ""} ${opened ? "is-opened" : ""}" data-round="${c.round}" title="${escapeAttr(waiting ? collectionWaitingMessage(c) : c.name)}">
+          const label = waiting ? "공지 전" : `${s.submitted}/${s.totalParts}`;
+          return `<button type="button" class="round-tab ${on ? "active" : ""} ${waiting ? "is-waiting" : ""} ${opened ? "is-opened" : ""}" data-round="${c.round}">
             ${escapeHtml(c.name)} · ${escapeHtml(label)}
           </button>`;
         })
         .join("")}
-      <button class="btn btn-sm admin-only" id="addRound" style="margin-left:auto">차수 추가</button>
     </div>
 
-    ${col ? collectStepperHtml(col) : ""}
-    ${col ? collectPipelineHtml() : ""}
-
     ${
-      col && collectionPhaseOf(col) === "planned"
+      col && phase === "planned"
         ? `<div class="collect-phase-banner is-planned collect-waiting-panel">
             <div>
               <p class="collect-waiting-kicker">${escapeHtml(col.name)}</p>
               <strong>${escapeHtml(collectionWaitingMessage(col))}</strong>
-              <p class="muted">일정표에 마감만 수립된 상태입니다. 관리자가 내 업무에서 해당 차수 <strong>제출 요청</strong>을 등록하면 이 탭이 활성화되고 파일을 업로드할 수 있습니다.</p>
+              <p class="muted">관리자가 취합 공지를 올리면 담당자는 <strong>내업무</strong>에서 한글 파일을 올립니다.</p>
             </div>
-            ${isAdmin() ? `<button type="button" class="btn btn-primary" id="openCollectRequest">제출 요청 등록</button>` : ""}
+            ${isAdmin() ? `<button type="button" class="btn btn-primary" id="openCollectRequest">취합 공지 올리기</button>` : ""}
           </div>`
         : ""
     }
     ${
-      col && collectionPhaseOf(col) === "open"
+      col && phase === "open"
         ? `<div class="collect-phase-banner is-open">
             <div>
-              <strong>업로드 취합 중</strong>
-              <p class="muted">${escapeHtml(col.requestMessage || "참여자가 담당 파트 한글 파일을 올리고 제출합니다.")}</p>
+              <strong>취합 중 · ${summary.submitted}/${summary.totalParts} 제출</strong>
+              <p class="muted">${escapeHtml(col.requestMessage || "담당자는 내업무에서 한글 파일을 올리면 됩니다.")}</p>
             </div>
             ${isAdmin() ? `<button type="button" class="btn" id="closeCollectRequest">취합 마감</button>` : ""}
           </div>`
         : ""
     }
     ${
-      col && collectionPhaseOf(col) === "closed"
+      col && phase === "closed"
         ? `<div class="collect-phase-banner is-closed">
             <div>
               <strong>취합 마감</strong>
-              <p class="muted">이 차수 업로드는 닫혔습니다. 다음 차수 제출 요청을 등록할 수 있습니다.</p>
+              <p class="muted">아래 현황·리뷰를 확인하고, 한글 파일을 목차 순서로 묶을 수 있습니다.</p>
             </div>
           </div>`
         : ""
@@ -3574,147 +3845,69 @@ function renderCollections() {
     ${
       !col
         ? `<div class="empty">취합 차수가 없습니다.</div>`
-        : !isCollectionRequestOpened(col)
+        : !showBoard
         ? ""
         : `
-      <div class="metrics" style="grid-template-columns:repeat(4,1fr)">
-        <div class="stat accent">
-          <div class="label">${escapeHtml(col.name)} 작성 페이지</div>
-          <div class="value">${summary.pages}</div>
-          <div class="sub">목표 대비 ${pct}% · 마감 ${escapeHtml(col.dueDate || "-")}</div>
+      <section class="collect-progress panel">
+        <div class="collect-progress-head">
+          <strong>취합 현황</strong>
+          <span>제출 ${summary.submitted}/${summary.totalParts} · 할당 ${summary.pages}/${summary.allocPages}p</span>
         </div>
-        <div class="stat">
-          <div class="label">미착수</div>
-          <div class="value">${boardTodo}</div>
-          <div class="sub">아직 시작 전</div>
-        </div>
-        <div class="stat">
-          <div class="label">작성중</div>
-          <div class="value">${boardWip}</div>
-          <div class="sub">페이지·파일 진행 중</div>
-        </div>
-        <div class="stat">
-          <div class="label">제출</div>
-          <div class="value">${boardDone}<small>/${summary.totalParts}</small></div>
-          <div class="sub"><div class="progress" style="margin-top:6px"><span style="width:${summary.totalParts ? Math.round((boardDone / summary.totalParts) * 100) : 0}%"></span></div></div>
-        </div>
+        <div class="progress collect-progress-bar"><span style="width:${submitPct}%"></span></div>
+      </section>
+
+      <div class="collect-board">
+        ${ordered
+          .map((s) => {
+            const p = partById(s.partId);
+            const m = p ? memberById(p.assigneeId) : null;
+            const alloc = p ? pagesOf(p) : 0;
+            const editable = canEditSubmission(s.partId);
+            const canUpload = editable && phaseOpen;
+            const isMine = myPartIds().includes(s.partId);
+            const boardSt = submissionBoardStatus(s);
+            const reviewComments = showReview ? partReviewComments(s.partId, activeRound) : [];
+            return `
+            <article class="collect-row is-${boardSt.id} ${isMine ? "is-mine" : ""}">
+              <div class="collect-row-main">
+                <strong>${escapeHtml(p ? `${p.section}. ${p.title}` : s.partId)}</strong>
+                <span>${escapeHtml(m?.name || "미지정")} · 할당 ${alloc}p${isMine ? " · 내 담당" : ""}</span>
+              </div>
+              <span class="badge ${boardSt.cls}">${escapeHtml(boardSt.label)}</span>
+              <button type="button" class="btn btn-sm ${canUpload ? "btn-primary" : ""}" data-check="${s.partId}" data-editable="${canUpload ? "1" : "0"}">
+                ${canUpload ? "파일 올리기" : escapeHtml(checkRequestSummary(s))}
+              </button>
+              ${
+                showReview
+                  ? `<button type="button" class="btn btn-sm ${reviewComments.length ? "btn-primary" : ""}" data-part-review="${s.partId}">
+                      ${reviewComments.length ? `리뷰 ${reviewComments.length}` : "리뷰"}
+                    </button>`
+                  : ""
+              }
+            </article>`;
+          })
+          .join("")}
       </div>
 
-      ${
-        !isAdmin()
-          ? `<p class="muted" style="margin:0 0 10px">본인 담당 파트만 입력·제출할 수 있습니다. 다른 파트는 <strong>조회</strong>만 됩니다.</p>`
-          : `<p class="muted" style="margin:0 0 10px">진도판: <strong>미착수 → 작성중 → 제출</strong>. 담당·상태만으로도 누가 남았는지 보입니다.</p>`
-      }
-
-      ${
-        allSubmitted
-          ? `<div class="collection-review-ready">
-              <strong>전 파트 제출 완료</strong>
-              <span class="muted">리뷰회의에서 영역별 정리 코멘트·사진을 담당자에게 남길 수 있습니다.</span>
-            </div>`
-          : ""
-      }
-
-      <div class="panel">
-        <div class="panel-head">
-          <div>
-            <h2>${escapeHtml(col.name)} 파트별 진도</h2>
-            <p class="muted">${escapeHtml(col.description || "")}</p>
-          </div>
-          <button class="btn btn-sm admin-only" id="editRoundMeta">차수 정보 수정</button>
+      <section class="collect-merge-bar">
+        <div>
+          <strong>한글 파일 묶기</strong>
+          <p class="muted">목차 순서대로 하나의 ZIP으로 내려받습니다. 이 기기에서 올린 파일만 포함됩니다.</p>
         </div>
-        <div class="table-wrap">
-          <table>
-            <thead>
-              <tr>
-                <th>파트</th>
-                <th>담당</th>
-                <th>할당</th>
-                <th>작성 페이지</th>
-                <th>상태</th>
-                <th>제출일</th>
-                <th>한글 파일</th>
-                ${allSubmitted ? `<th>리뷰 코멘트</th>` : ""}
-                <th></th>
-              </tr>
-            </thead>
-            <tbody>
-              ${col.submissions
-                .map((s) => {
-                  const p = partById(s.partId);
-                  const m = p ? memberById(p.assigneeId) : null;
-                  const alloc = p ? pagesOf(p) : 0;
-                  const editable = canEditSubmission(s.partId);
-                  const canUpload = editable && phaseOpen;
-                  const isMine = myPartIds().includes(s.partId);
-                  const hasFile =
-                    normalizeCheckFiles(s).some((f) => isHangulFileName(f.name)) || Boolean(s.altSubmit);
-                  const boardSt = submissionBoardStatus(s);
-                  const submitter = s.submittedBy || (s.status === "submitted" ? m?.name : "");
-                  const reviewComments = allSubmitted ? partReviewComments(s.partId, activeRound) : [];
-                  const reviewPhotoCount = reviewComments.filter((c) => c.photoDataUrl).length;
-                  const tags = [
-                    editable && !isAdmin() ? '<span class="badge admin">내 담당</span>' : "",
-                    isMine && !editable ? "" : "",
-                    submitter
-                      ? `<span class="badge meeting">제출: ${escapeHtml(submitter)}</span>`
-                      : "",
-                  ]
-                    .filter(Boolean)
-                    .join(" ");
-                  return `
-                  <tr class="${editable ? "" : "row-locked"} ${boardSt.id === "todo" ? "row-todo" : ""}">
-                    <td>
-                      <strong>${escapeHtml(p ? `${p.section}. ${p.title}` : s.partId)}</strong>
-                      ${tags ? `<div class="part-tags">${tags}</div>` : ""}
-                    </td>
-                    <td>${escapeHtml(m?.name || "-")}</td>
-                    <td>${alloc}p</td>
-                    <td>
-                      <input class="inline-input" type="number" min="0" value="${Number(s.pageCount) || 0}" data-pages="${s.partId}" ${canUpload ? "" : "disabled"} />
-                    </td>
-                    <td><span class="badge ${boardSt.cls}">${escapeHtml(boardSt.label)}</span></td>
-                    <td class="muted">${escapeHtml(s.submittedAt || "-")}</td>
-                    <td>
-                      <button type="button" class="btn btn-sm check-open-btn ${hasFile ? "has-check" : ""}" data-check="${s.partId}" data-editable="${canUpload ? "1" : "0"}">
-                        ${escapeHtml(checkRequestSummary(s))}
-                      </button>
-                    </td>
-                    ${
-                      allSubmitted
-                        ? `<td>
-                      <button type="button" class="btn btn-sm ${reviewComments.length ? "btn-primary" : ""}" data-part-review="${s.partId}" title="리뷰회의 코멘트">
-                        ${reviewComments.length ? `코멘트 ${reviewComments.length}${reviewPhotoCount ? ` · 📷${reviewPhotoCount}` : ""}` : "코멘트"}
-                      </button>
-                    </td>`
-                        : ""
-                    }
-                    <td>${
-                      canUpload
-                        ? `<button class="btn btn-sm btn-primary" data-save-sub="${s.partId}">제출</button>`
-                        : editable && !phaseOpen
-                          ? `<span class="muted">${phase === "closed" ? "마감" : "요청 전"}</span>`
-                          : `<span class="muted">조회</span>`
-                    }</td>
-                  </tr>`;
-                })
-                .join("")}
-            </tbody>
-          </table>
-        </div>
-      </div>
+        <button type="button" class="btn btn-primary" id="mergeHangulZip" ${hangulReady ? "" : "disabled"}>${hangulReady ? `순서대로 묶기 (${hangulReady})` : "묶을 파일 없음"}</button>
+      </section>
 
       ${
-        allSubmitted
+        showReview
           ? `<div class="panel collection-review-panel">
         <div class="panel-head">
           <div>
-            <h2>${escapeHtml(col.name)} 리뷰회의 · 영역별 정리</h2>
-            <p class="muted">담당자에게 전달할 회의 정리·사진입니다. 사진이 첨부된 항목은 해당 영역 그림을 크게 반영하기로 한 내용입니다.</p>
+            <h2>회의 리뷰</h2>
+            <p class="muted">전체 취합본을 보고 영역별로 정리합니다.</p>
           </div>
         </div>
         <div class="collection-review-grid">
-          ${col.submissions
+          ${ordered
             .map((s) => {
               const p = partById(s.partId);
               const m = p ? memberById(p.assigneeId) : null;
@@ -3730,7 +3923,7 @@ function renderCollections() {
                 ${
                   comments.length
                     ? comments.map((c) => renderReviewCommentCardHtml(c, { admin: isAdmin(), largePhoto: true })).join("")
-                    : `<p class="muted empty-inline">회의 정리 코멘트 없음</p>`
+                    : `<p class="muted empty-inline">아직 리뷰가 없습니다</p>`
                 }
               </div>
             </article>`;
@@ -3739,13 +3932,10 @@ function renderCollections() {
         </div>
       </div>`
           : ""
-      }
-
-      ${isAdmin() ? renderAiBriefSectionHtml(activeRound) : ""}`
+      }`
     }
   `;
 
-  bindProcessRail(el);
   el.querySelectorAll("[data-round]").forEach((btn) => {
     btn.addEventListener("click", () => {
       activeRound = Number(btn.dataset.round);
@@ -3753,36 +3943,9 @@ function renderCollections() {
     });
   });
 
-  $("#addRound")?.addEventListener("click", () => {
-    if (!isAdmin()) return;
-    const next = Math.max(0, ...state.collections.map((c) => c.round)) + 1;
-    state.collections.push({
-      round: next,
-      name: `${next}차 취합`,
-      dueDate: "",
-      description: "",
-      requestPhase: "planned",
-      submissions: state.parts.map((p) => ({
-        partId: p.id,
-        pageCount: 0,
-        status: "pending",
-        submittedAt: "",
-        memo: "",
-        checkImages: [],
-        checkFiles: [],
-        partDone: false,
-      })),
-    });
-    activeRound = next;
-    saveAndRender("collections");
-  });
-
-  $("#editRoundMeta")?.addEventListener("click", () => {
-    if (!isAdmin()) return;
-    openRoundModal(activeRound);
-  });
   $("#openCollectRequest")?.addEventListener("click", () => openCollectionRequestModal(activeRound));
   $("#closeCollectRequest")?.addEventListener("click", () => closeCollectionRequest(activeRound));
+  $("#mergeHangulZip")?.addEventListener("click", () => downloadMergedHangulZip(col));
 
   el.querySelectorAll("[data-part-review]").forEach((btn) => {
     btn.addEventListener("click", () => openPartReviewCommentModal(btn.dataset.partReview, activeRound));
@@ -3795,34 +3958,6 @@ function renderCollections() {
       openCheckRequestModal(btn.dataset.check, btn.dataset.editable === "1");
     });
   });
-
-  el.querySelectorAll("[data-save-sub]").forEach((btn) => {
-    btn.addEventListener("click", () => {
-      const partId = btn.dataset.saveSub;
-      if (!canEditSubmission(partId)) return;
-      const colRef = state.collections.find((c) => c.round === activeRound);
-      if (collectionPhaseOf(colRef) !== "open") {
-        alert("관리자가 이 차수 제출 요청을 등록한 뒤에 업로드·제출할 수 있습니다.");
-        return;
-      }
-      const sub = colRef.submissions.find((s) => s.partId === partId);
-      const pagesInput = el.querySelector(`[data-pages="${partId}"]`);
-      const hasHwp = normalizeCheckFiles(sub).some((f) => isHangulFileName(f.name));
-      if (!hasHwp && !sub.altSubmit) {
-        alert("한글 파일을 업로드하거나, 업로드 화면에서 별도제출을 선택한 뒤 저장해 주세요.");
-        openCheckRequestModal(partId, true);
-        return;
-      }
-      sub.pageCount = Number(pagesInput.value) || 0;
-      sub.status = "submitted";
-      sub.submittedAt = today();
-      sub.partDone = true;
-      sub.submittedBy = sessionUser || memberById(partById(partId)?.assigneeId)?.name || "";
-      saveAndRender("collections");
-    });
-  });
-
-  if (isAdmin()) bindAiBriefPanel(el);
 }
 
 function isSchedulePast(item) {
@@ -3833,186 +3968,147 @@ function isSchedulePast(item) {
 
 function renderSchedule() {
   const el = $("#view-schedule");
-  const admin = isAdmin();
-  const items = [...state.schedule].sort((a, b) => a.date.localeCompare(b.date));
-  if (!state._calCursor) state._calCursor = today().slice(0, 7) + "-01";
-  if (!state._calSelected) state._calSelected = today();
-  if (!state._calRange) {
-    const weeks = state._calWeeks || 4;
-    state._calRange =
-      weeks <= 1 ? "week" : weeks <= 2 ? "fortnight" : weeks <= 4 ? "month" : weeks <= 8 ? "twoMonth" : "threeMonth";
-  }
-  const cursor = parseIsoDate(state._calCursor);
-  const mode = state._calRange;
-  const stepIndex = HEAT_RANGE_STEPS.indexOf(mode);
-  const selected = state._calSelected;
-  const bandFilter = state._scheduleFilter || null;
-  const { start, end } = getHeatVisibleRange(mode, cursor);
-  const counts = countOpenByUrgencyInRange(toIsoDate(start), toIsoDate(end));
-  const nearest = nearestDeadlineItem(items);
-  const who = sessionUser || "작성자";
-
-  let dayItems = [];
-  let detailTitle = "";
-  if (bandFilter) {
-    const list = items.filter((s) => {
-      if ((s.status || "") === "완료") return false;
-      const due = (s.endDate || s.date || "").slice(0, 10);
-      if (due < toIsoDate(start) || due > toIsoDate(end)) return false;
-      if (bandFilter === "all") return true;
-      return scheduleUrgency(s) === bandFilter || (bandFilter === "gray" && scheduleUrgency(s) === "ok");
-    });
-    dayItems = list.sort((a, b) => heatBandRank(dayHeatBand([b])) - heatBandRank(dayHeatBand([a])));
-    detailTitle =
-      bandFilter === "urgent"
-        ? "긴급 업무"
-        : bandFilter === "warn"
-          ? "주의 업무"
-          : bandFilter === "check"
-            ? "체크 업무"
-            : bandFilter === "gray"
-              ? "그 외 업무"
-              : "기간 내 업무";
-  } else if (selected) {
-    dayItems = eventsOnDate(selected).filter((s) => (s.status || "") !== "완료");
-    detailTitle = `${formatKorDate(selected)} 일정`;
-  }
-
-  const peakIso = nearest ? nearest.endDate || nearest.date : "";
+  if (!el) return;
+  if (!isAdmin()) return;
+  const templates = SCHEDULE_GUIDE_TEMPLATES;
+  const extras = extraTfSchedules();
+  const rowHtml = (s, tpl) => {
+    const due = s ? scheduleDueIso(s) : "";
+    const status = s?.status || "준비";
+    const days = due ? daysUntil(due) : null;
+    const timing =
+      days == null ? "" : days < 0 ? `${Math.abs(days)}일 지남` : days === 0 ? "오늘" : `${days}일 남음`;
+    return `
+      <tr data-guide="${escapeAttr(tpl?.id || "")}" data-sched="${escapeAttr(s?.id || "")}">
+        <td>${
+          tpl
+            ? `<span class="tf-sched-step">${tpl.step ? `<em>${escapeHtml(tpl.step)}</em>` : ""}${escapeHtml(tpl.short)}</span>`
+            : `<span class="muted">추가</span>`
+        }</td>
+        <td>
+          <input class="wp-input" data-tf-title value="${escapeAttr(s?.title || tpl?.title || "")}" placeholder="업무명" />
+        </td>
+        <td>
+          <input class="wp-input" type="date" data-tf-date value="${escapeAttr(due)}" />
+          ${timing ? `<span class="muted tf-sched-timing">${escapeHtml(timing)}</span>` : ""}
+        </td>
+        <td>
+          <select class="wp-input wp-select" data-tf-status>
+            ${["준비", "진행", "완료"]
+              .map((st) => `<option value="${st}" ${status === st ? "selected" : ""}>${st}</option>`)
+              .join("")}
+          </select>
+        </td>
+        <td>
+          <div class="row">
+            <button type="button" class="btn btn-sm btn-primary" data-tf-save>저장</button>
+            ${
+              s
+                ? `<button type="button" class="btn btn-sm" data-tf-edit="${escapeAttr(s.id)}">상세</button>`
+                : ""
+            }
+          </div>
+        </td>
+      </tr>`;
+  };
 
   el.innerHTML = `
-    <div class="heatmap-dash schedule-pulse">
-      <header class="page-hero heatmap-hero">
-        <p class="load-kicker">TF Pulse</p>
-        <h2 class="load-title"><span class="name-honorific">${escapeHtml(who)}님</span> 오늘의 업무를 확인해 보세요.</h2>
-        <p class="load-desc">긴급은 지연·오늘 · 주의는 일주일 안 · 체크는 이번 달 안</p>
-      </header>
-
-      <div class="urgency-strip" aria-label="마감 요약">
-        <button type="button" class="urgency-pill critical ${bandFilter === "urgent" ? "filter-on" : ""}" data-sched-filter="urgent"><strong>${counts.urgent}</strong><span>긴급</span></button>
-        <button type="button" class="urgency-pill watch ${bandFilter === "warn" ? "filter-on" : ""}" data-sched-filter="warn"><strong>${counts.warn}</strong><span>주의</span></button>
-        <button type="button" class="urgency-pill calm ${bandFilter === "check" ? "filter-on" : ""}" data-sched-filter="check"><strong>${counts.check}</strong><span>체크</span></button>
-        ${
-          peakIso
-            ? `<p class="urgency-peak">가장 급한 마감 · <button type="button" class="linkish" id="schedPeakDay">${escapeHtml(formatKorDate(peakIso))}</button></p>`
-            : ""
-        }
-      </div>
-
-      <section class="panel heatmap-panel">
-        <div class="range-navigator">
-          <div class="range-zoom">
-            <button type="button" class="btn btn-sm zoom-btn" id="calRangeMinus" ${stepIndex <= 0 ? "disabled" : ""} aria-label="기간 줄이기">−</button>
-            <div class="range-track" role="group" aria-label="기간 설정">
-              ${HEAT_RANGE_STEPS.map(
-                (step, i) =>
-                  `<button type="button" class="range-step ${mode === step ? "active" : ""} ${i < stepIndex ? "passed" : ""}" data-cal-range="${step}">${HEAT_RANGE_META[step].label}</button>`
-              ).join("")}
-            </div>
-            <button type="button" class="btn btn-sm zoom-btn" id="calRangePlus" ${
-              stepIndex >= HEAT_RANGE_STEPS.length - 1 ? "disabled" : ""
-            } aria-label="기간 늘리기">+</button>
+    <div class="tf-sched-page">
+      <section class="panel">
+        <div class="panel-head">
+          <div>
+            <h2 class="panel-title">TF 기본 일정</h2>
+            <p class="muted">단계별 마감을 넣으면 관리자가 요청업무를 등록할 때 이 날짜·내용이 기본값으로 채워집니다.</p>
           </div>
-          <div class="cal-nav">
-            <button type="button" class="btn btn-sm" id="calPrev" aria-label="한 달 전">‹</button>
-            <div class="cal-range">
-              ${escapeHtml(heatRangeCaption(mode, cursor))}
-              <span class="range-hint">${escapeHtml(HEAT_RANGE_META[mode].hint)}</span>
-            </div>
-            <button type="button" class="btn btn-sm" id="calNext" aria-label="한 달 후">›</button>
-            <button type="button" class="btn btn-sm" id="calToday">오늘</button>
-          </div>
+          <button type="button" class="btn btn-primary" id="addSchedule">일정 추가</button>
         </div>
-        <div class="heat-legend" aria-hidden="true">
-          <span class="leg-swatch urgent"></span><span>긴급</span>
-          <span class="leg-swatch warn"></span><span>주의</span>
-          <span class="leg-swatch check"></span><span>체크</span>
-          <span class="leg-swatch gray"></span><span>그 외</span>
+        <div class="table-wrap">
+          <table class="tf-sched-table">
+            <thead>
+              <tr>
+                <th>단계</th>
+                <th>업무</th>
+                <th>마감</th>
+                <th>상태</th>
+                <th></th>
+              </tr>
+            </thead>
+            <tbody>
+              ${templates.map((tpl) => rowHtml(tfScheduleForGuide(tpl.id), tpl)).join("")}
+            </tbody>
+          </table>
         </div>
-        ${buildHeatCalendarHtml(cursor, { mode, selectedIso: selected, bandFilter })}
       </section>
-
       ${
-        dayItems.length || bandFilter
-          ? `<section class="panel day-detail">
-        <div class="panel-head"><h2 class="panel-title">${escapeHtml(detailTitle)}</h2></div>
-        <div class="work-feed">${
-          dayItems.length
-            ? dayItems.map((s) => workFeedRowHtml(s, admin)).join("")
-            : `<div class="empty">해당 조건의 일정이 없습니다.</div>`
-        }</div>
+        extras.length
+          ? `<section class="panel">
+        <div class="panel-head">
+          <h2 class="panel-title">추가 일정</h2>
+          <p class="muted" style="margin:0">1·2·최종 취합처럼 단계에 더해 잡은 일정입니다.</p>
+        </div>
+        <div class="table-wrap">
+          <table class="tf-sched-table">
+            <thead>
+              <tr>
+                <th>구분</th>
+                <th>업무</th>
+                <th>마감</th>
+                <th>상태</th>
+                <th></th>
+              </tr>
+            </thead>
+            <tbody>
+              ${extras
+                .map((s) =>
+                  rowHtml(s, {
+                    id: "",
+                    step: "",
+                    short: scheduleGroupLabel(scheduleGroupOf(s)),
+                    title: s.title,
+                  })
+                )
+                .join("")}
+            </tbody>
+          </table>
+        </div>
       </section>`
           : ""
       }
-
-      ${buildScheduleRiskChartHtml(items)}
-
-      ${scheduleFeedPanelHtml(who, admin, bandFilter ? dayItems : items)}
     </div>
   `;
 
-  const shiftMonth = (delta) => {
-    const d = addMonthsDate(parseIsoDate(state._calCursor), delta);
-    state._calCursor = toIsoDate(d);
-    renderSchedule();
-  };
-
-  $("#calPrev")?.addEventListener("click", () => shiftMonth(-1));
-  $("#calNext")?.addEventListener("click", () => shiftMonth(1));
-  $("#calToday")?.addEventListener("click", () => {
-    state._calCursor = `${today().slice(0, 7)}-01`;
-    state._calSelected = today();
-    state._scheduleFilter = null;
-    renderSchedule();
-  });
-  el.querySelectorAll("[data-cal-range]").forEach((btn) => {
-    btn.addEventListener("click", () => {
-      state._calRange = btn.dataset.calRange;
-      renderSchedule();
-    });
-  });
-  $("#calRangeMinus")?.addEventListener("click", () => {
-    const i = Math.max(0, HEAT_RANGE_STEPS.indexOf(state._calRange) - 1);
-    state._calRange = HEAT_RANGE_STEPS[i];
-    renderSchedule();
-  });
-  $("#calRangePlus")?.addEventListener("click", () => {
-    const i = Math.min(HEAT_RANGE_STEPS.length - 1, HEAT_RANGE_STEPS.indexOf(state._calRange) + 1);
-    state._calRange = HEAT_RANGE_STEPS[i];
-    renderSchedule();
-  });
-  bindHeatDayInteractions(el, {
-    onEmptyClick: (iso) => {
-      state._calSelected = iso;
-      state._scheduleFilter = null;
-      renderSchedule();
-    },
-  });
-  el.querySelectorAll("[data-sched-filter]").forEach((btn) => {
-    btn.addEventListener("click", () => {
-      const next = btn.dataset.schedFilter;
-      state._scheduleFilter = state._scheduleFilter === next ? null : next;
-      renderSchedule();
-    });
-  });
-  $("#schedPeakDay")?.addEventListener("click", () => {
-    if (!peakIso) return;
-    openDayDeadlineDetail(peakIso);
-  });
-  $("#riskChartToggle")?.addEventListener("click", () => {
-    const body = $("#riskChartBody");
-    const btn = $("#riskChartToggle");
-    if (!body || !btn) return;
-    const open = body.hidden;
-    body.hidden = !open;
-    btn.setAttribute("aria-expanded", open ? "true" : "false");
-    btn.querySelector(".risk-chart-toggle").textContent = open ? "⌃" : "⌄";
-  });
-
-  bindScheduleFeedActions(el, () => {
+  const saveRow = (tr) => {
+    const guideId = tr.dataset.guide;
+    const schedId = tr.dataset.sched;
+    const title = (tr.querySelector("[data-tf-title]")?.value || "").trim();
+    const endDate = tr.querySelector("[data-tf-date]")?.value || "";
+    const status = tr.querySelector("[data-tf-status]")?.value || "준비";
+    if (!endDate) {
+      alert("마감일을 입력해 주세요.");
+      return;
+    }
+    if (guideId) {
+      upsertTfGuideSchedule(guideId, { title, endDate, status });
+    } else if (schedId) {
+      const item = state.schedule.find((s) => s.id === schedId);
+      if (!item) return;
+      item.title = title || item.title;
+      item.endDate = endDate;
+      item.date = endDate;
+      item.status = status;
+    }
+    persist();
     renderSchedule();
     updateAlarmButtons();
+  };
+
+  el.querySelectorAll("tr[data-guide], tr[data-sched]").forEach((tr) => {
+    tr.querySelector("[data-tf-save]")?.addEventListener("click", () => saveRow(tr));
   });
+  el.querySelectorAll("[data-tf-edit]").forEach((btn) => {
+    btn.addEventListener("click", () => openScheduleModal(btn.dataset.tfEdit));
+  });
+  $("#addSchedule")?.addEventListener("click", () => openScheduleModal());
 }
 
 function canEditScheduleItem(s) {
@@ -4064,11 +4160,15 @@ function openScheduleUploadForItem(s) {
         openCollectionRequestModal(col.round);
         return;
       }
-      alert("이 차수는 일정표에 수립만 되어 있습니다. 관리자가 제출 요청을 등록하면 파일을 업로드할 수 있습니다.");
+      alert("관리자가 취합 공지를 올리면 한글 파일을 올릴 수 있습니다.");
       return;
     }
-    if (phase === "closed" && !isAdmin()) {
-      alert("이 차수 취합은 마감되었습니다. 보고서 통합에서 결과를 확인할 수 있습니다.");
+    const mine = myPartIds();
+    const mineSubs = (col.submissions || []).filter((row) => mine.includes(row.partId));
+    const next = mineSubs.find((row) => submissionBoardStatus(row).id !== "done") || mineSubs[0];
+    if (next && canEditSubmission(next.partId) && phase === "open") {
+      openCheckRequestModal(next.partId, true);
+      return;
     }
     setView("collections");
     return;
@@ -4493,13 +4593,8 @@ function scheduleFeedPanelHtml(who, admin, items) {
       <div class="panel-head">
         <div>
           <h2 class="panel-title panel-title-mine"><span class="name-honorific">${escapeHtml(who)}</span>님에게 보이는 일정입니다.</h2>
-          <p class="muted" style="margin:4px 0 0">요청받은 업무에는 관리자가 무엇을 해달라고 했는지 말풍선으로 보입니다. 수정·삭제는 관리자(또는 본인 등록분)만 가능합니다.</p>
+          <p class="muted" style="margin:4px 0 0">보고서 업무 추가는 관리자만 가능합니다. 수정·삭제는 관리자 또는 본인 등록분만 됩니다.</p>
         </div>
-        ${
-          admin
-            ? `<button type="button" class="work-fab" id="addSchedule" title="주요 업무 추가" aria-label="주요 업무 추가">✎</button>`
-            : ""
-        }
       </div>
 
       <div class="work-filter-block" aria-label="상위 그룹">
@@ -4535,7 +4630,6 @@ function scheduleFeedPanelHtml(who, admin, items) {
                     <h3>${escapeHtml(g.label)}</h3>
                     <span class="muted">${rows.length}건 · ${escapeHtml(g.label)}</span>
                   </header>
-                  ${g.id === "collect" ? collectPipelineHtml() : ""}
                   <div class="work-group-card-body">
                     ${
                       months.length
@@ -4556,7 +4650,7 @@ function scheduleFeedPanelHtml(who, admin, items) {
                 </article>`;
               })
               .join("")
-          : `<div class="empty">표시할 일정이 없습니다. ${admin ? "연필 버튼으로 주요 업무를 추가하세요." : ""}</div>`
+          : `<div class="empty">표시할 일정이 없습니다.${admin ? " Setting · TF 일정에서 추가하세요. 보고서 업무 추가는 관리자만 가능합니다." : " 보고서 업무 추가는 관리자만 가능합니다."}</div>`
       }
     </section>`;
 }
@@ -4564,7 +4658,7 @@ function scheduleFeedPanelHtml(who, admin, items) {
 function bindScheduleFeedActions(root, onRefresh) {
   root.querySelector("#addSchedule")?.addEventListener("click", () => {
     if (!isAdmin()) {
-      denySchedulePermission("일정 등록은 관리자만 가능합니다.");
+      denySchedulePermission("보고서 업무 추가는 관리자만 가능합니다.");
       return;
     }
     openScheduleModal();
@@ -5656,6 +5750,95 @@ const SCHEDULE_GUIDE_TEMPLATES = [
   },
 ];
 
+function pickSoonestSchedule(items) {
+  const list = (items || []).filter(Boolean);
+  if (!list.length) return null;
+  const open = list.filter((s) => (s.status || "") !== "완료");
+  const pool = open.length ? open : list;
+  return [...pool].sort((a, b) => scheduleDueIso(a).localeCompare(scheduleDueIso(b)))[0];
+}
+
+function scheduleMatchesGuideHeuristic(s, guideId) {
+  if (!s || s.guideId) return false;
+  const title = String(s.title || "");
+  const group = scheduleGroupOf(s);
+  if (guideId === "forms") return group === "forms" && /킥오프|서식|지침/.test(title) && !/스타일|정의/.test(title);
+  if (guideId === "style") return /스타일/.test(title);
+  if (guideId === "definition") return /정의서|용어/.test(title);
+  if (guideId === "assign") return /할당|담당 영역/.test(title);
+  if (guideId === "collect") return group === "collect";
+  if (guideId === "review") return group === "review";
+  if (guideId === "budget") return group === "budget";
+  if (guideId === "kpi") return group === "kpi";
+  return false;
+}
+
+function tfScheduleForGuide(guideId) {
+  const items = state.schedule || [];
+  const tagged = items.filter((s) => s.guideId === guideId);
+  if (tagged.length) return pickSoonestSchedule(tagged);
+  if (guideId === "collect") {
+    const collects = items.filter((s) => !s.guideId && scheduleGroupOf(s) === "collect");
+    return pickSoonestSchedule(collects);
+  }
+  return pickSoonestSchedule(items.filter((s) => scheduleMatchesGuideHeuristic(s, guideId)));
+}
+
+function extraTfSchedules() {
+  const used = new Set(
+    SCHEDULE_GUIDE_TEMPLATES.map((t) => tfScheduleForGuide(t.id)?.id).filter(Boolean)
+  );
+  return (state.schedule || [])
+    .filter((s) => !used.has(s.id))
+    .sort((a, b) => scheduleDueIso(a).localeCompare(scheduleDueIso(b)));
+}
+
+function tfScheduleForProcess(processId) {
+  if (processId === "collect") {
+    const collects = (state.schedule || []).filter((s) => scheduleGroupOf(s) === "collect");
+    const next = pickSoonestSchedule(collects.filter((s) => (s.status || "") !== "완료")) || pickSoonestSchedule(collects);
+    if (next) return next;
+  }
+  return tfScheduleForGuide(processId);
+}
+
+function upsertTfGuideSchedule(guideId, patch = {}) {
+  const tpl = SCHEDULE_GUIDE_TEMPLATES.find((t) => t.id === guideId);
+  if (!tpl) return null;
+  const due = patch.endDate || today();
+  const existing = tfScheduleForGuide(guideId);
+  if (existing) {
+    existing.endDate = due;
+    existing.date = due;
+    existing.guideId = guideId;
+    if (patch.title) existing.title = patch.title;
+    if (patch.status) existing.status = patch.status;
+    return existing;
+  }
+  const assignees = tpl.assignAll ? (state.members || []).map((m) => m.name) : [];
+  const created = {
+    id: uid("s"),
+    guideId,
+    title: patch.title || tpl.title,
+    owner: sessionUser || state.meta?.adminName || "",
+    createdBy: sessionUser || "",
+    workGroup: tpl.workGroup,
+    status: patch.status || "준비",
+    type: tpl.type,
+    division: tpl.division,
+    date: due,
+    endDate: due,
+    goal: tpl.goal,
+    note: tpl.goal,
+    askMessage: tpl.askMessage || "",
+    prep: tpl.prep || "",
+    carePoints: tpl.carePoints || "",
+    assignees,
+  };
+  state.schedule.push(created);
+  return created;
+}
+
 function addDaysIso(iso, days) {
   const d = parseIsoDate(iso) || new Date();
   d.setDate(d.getDate() + (Number(days) || 0));
@@ -5823,7 +6006,7 @@ function renderRequests() {
         <div class="panel-head">
           <div>
             <h2 class="panel-title">보고서 주요업무 요청</h2>
-            <p class="muted" style="margin:4px 0 0">기본 프로세스 템플릿을 고른 뒤, 일정·대상·문구만 다듬어 발송합니다.</p>
+            <p class="muted" style="margin:4px 0 0">Setting 「TF 일정」을 고르면 마감이 기본값으로 들어갑니다. 프로세스를 고른 뒤 대상·문구만 다듬어 발송합니다.</p>
           </div>
           <button type="button" class="btn btn-primary" id="addRequest">요청 등록</button>
         </div>
@@ -5997,10 +6180,15 @@ function requestProcessById(id) {
 
 function requestAiContext() {
   const total = Number(state.budget?.total) || 0;
+  const finalDue =
+    tfScheduleForProcess("collect") ||
+    (state.schedule || []).find((s) => /제출|최종/.test(s.title || "")) ||
+    null;
+  const dueIso = finalDue ? scheduleDueIso(finalDue) : "";
   return {
     tfName: state.meta?.tfName || "TF",
     adminName: state.meta?.adminName || sessionUser || "관리자",
-    deadlineLabel: "2026년 9월 15일 오후 4시",
+    deadlineLabel: dueIso ? formatKorDate(dueIso) : "최종 제출일",
     budgetLabel: total ? `${Math.round(total / 1e8)}억` : "총액 기준",
     today: today(),
   };
@@ -6009,14 +6197,36 @@ function requestAiContext() {
 function buildRequestAiDraft(processId, overrides = {}) {
   const tpl = requestProcessById(processId) || REQUEST_PROCESS_TEMPLATES[0];
   const ctx = requestAiContext();
-  const due = addDaysDate(parseIsoDate(ctx.today), tpl.dueOffsetDays || 7);
+  const sched = tfScheduleForProcess(tpl.id);
+  const due = sched
+    ? scheduleDueIso(sched)
+    : toIsoDate(addDaysDate(parseIsoDate(ctx.today), tpl.dueOffsetDays || 7));
+  const baseMemo = overrides.memo ?? (typeof tpl.memo === "function" ? tpl.memo(ctx) : tpl.memo);
+  const schedNote = sched
+    ? `\n\n· TF 일정 기준 마감: ${formatKorDate(due)}${sched.goal || sched.note ? `\n· ${sched.goal || sched.note}` : ""}`
+    : "";
   return {
     processId: tpl.id,
-    title: overrides.title ?? tpl.title,
-    memo: overrides.memo ?? (typeof tpl.memo === "function" ? tpl.memo(ctx) : tpl.memo),
+    title: overrides.title ?? (sched?.title || tpl.title),
+    memo: String(baseMemo || "") + (overrides.memo != null ? "" : schedNote),
     checks: overrides.checks ?? [...(tpl.checks || [])],
-    dueDate: overrides.dueDate ?? toIsoDate(due),
+    dueDate: overrides.dueDate ?? due,
+    fromSchedule: Boolean(sched),
   };
+}
+
+function requestBaseSchedules() {
+  return [...(state.schedule || [])].sort((a, b) =>
+    scheduleDueIso(a).localeCompare(scheduleDueIso(b))
+  );
+}
+
+function processIdFromSchedule(s) {
+  if (!s) return REQUEST_PROCESS_TEMPLATES[0].id;
+  if (s.guideId && requestProcessById(s.guideId)) return s.guideId;
+  const group = scheduleGroupOf(s);
+  const map = { forms: "forms", collect: "collect", budget: "budget", kpi: "kpi", other: "assign", review: "collect" };
+  return requestProcessById(map[group])?.id || REQUEST_PROCESS_TEMPLATES[0].id;
 }
 
 function requestTargetMembers() {
@@ -6048,6 +6258,19 @@ function openRequestModal(groupId = null, processId = null) {
   const selected = new Set(existing.map((r) => r.recipient).filter(Boolean));
   if (!existing.length) members.forEach((m) => selected.add(m.name));
   const allOn = members.length > 0 && members.every((m) => selected.has(m.name));
+  const schedules = requestBaseSchedules();
+  const matchedSched =
+    (head?.scheduleId && schedules.find((s) => s.id === head.scheduleId)) ||
+    tfScheduleForProcess(draft.processId) ||
+    (!head ? schedules.find((s) => (s.status || "") !== "완료") : null) ||
+    null;
+  if (!head && matchedSched) {
+    draft.title = matchedSched.title || draft.title;
+    draft.dueDate = scheduleDueIso(matchedSched) || draft.dueDate;
+    draft.fromSchedule = true;
+    const pid = processIdFromSchedule(matchedSched);
+    if (!processId) draft.processId = pid;
+  }
 
   openModal({
     kicker: head ? "요청 수정" : "요청 등록",
@@ -6055,6 +6278,24 @@ function openRequestModal(groupId = null, processId = null) {
     submitLabel: head ? "저장" : "요청 발송",
     bodyHtml: `
       <div class="wp-form request-modal-form">
+        <label class="wp-field">
+          <span class="wp-label">일정 기반 요청</span>
+          <select name="scheduleId" id="requestScheduleSelect" class="wp-input wp-select">
+            <option value="">직접 입력</option>
+            ${schedules
+              .map((s) => {
+                const due = scheduleDueIso(s);
+                const done = (s.status || "") === "완료" ? " · 완료" : "";
+                return `<option value="${escapeAttr(s.id)}" ${matchedSched?.id === s.id ? "selected" : ""}>${escapeHtml(s.title || "일정")} · ${escapeHtml(formatKorDate(due) || due)}${done}</option>`;
+              })
+              .join("")}
+          </select>
+          <span class="muted" style="display:block;margin-top:4px;font-size:var(--text-xs)">${
+            schedules.length
+              ? "Setting 「TF 일정」에서 넣은 일정을 고르면 제목·마감이 채워집니다."
+              : "아직 TF 일정이 없습니다. Setting → TF 일정에서 마감을 먼저 넣으세요."
+          }</span>
+        </label>
         <div class="wp-field">
           <span class="wp-label">기본 프로세스</span>
           <div class="request-process-pick" role="radiogroup" aria-label="기본 프로세스">
@@ -6072,7 +6313,11 @@ function openRequestModal(groupId = null, processId = null) {
           </div>
         </div>
         <div class="request-ai-bar">
-          <p class="muted">AI가 요청사항·점검사항 초안을 채웁니다. 필요한 문구만 수정하세요.</p>
+          <p class="muted">${
+            draft.fromSchedule
+              ? "TF 일정의 마감·제목이 채워졌습니다. 필요한 문구만 수정하세요."
+              : "아직 연결할 TF 일정이 없습니다. Setting에서 마감을 넣거나, AI 초안을 사용하세요."
+          }</p>
           <button type="button" class="btn btn-sm" id="requestAiFill">AI 자동완성</button>
         </div>
         <label class="wp-field">
@@ -6082,6 +6327,11 @@ function openRequestModal(groupId = null, processId = null) {
         <label class="wp-field">
           <span class="wp-label">마감일</span>
           <input name="dueDate" id="requestDueInput" type="date" class="wp-input" value="${escapeAttr(draft.dueDate)}" />
+          ${
+            draft.fromSchedule
+              ? `<span class="muted" style="display:block;margin-top:4px;font-size:var(--text-xs)">TF 일정 기준</span>`
+              : ""
+          }
         </label>
         <label class="wp-field">
           <span class="wp-label">주요 요청사항</span>
@@ -6128,6 +6378,7 @@ function openRequestModal(groupId = null, processId = null) {
       const memo = (fd.get("memo") || "").toString().trim();
       const dueDate = fd.get("dueDate") || "";
       const process = normalizeRequestProcess(fd.get("processId"));
+      const scheduleId = String(fd.get("scheduleId") || "").trim();
       const checks = String(fd.get("checksText") || "")
         .split(/\r?\n/)
         .map((s) => s.trim())
@@ -6152,6 +6403,7 @@ function openRequestModal(groupId = null, processId = null) {
             memo,
             checks,
             processId: process,
+            scheduleId,
             requester: prev?.requester || sessionUser,
             recipient: name,
             dueDate,
@@ -6169,6 +6421,7 @@ function openRequestModal(groupId = null, processId = null) {
             memo,
             checks,
             processId: process,
+            scheduleId,
             requester: sessionUser,
             recipient: name,
             dueDate,
@@ -6193,12 +6446,39 @@ function openRequestModal(groupId = null, processId = null) {
     if (memoEl) memoEl.value = built.memo;
     if (checksEl) checksEl.value = (built.checks || []).join("\n");
     if (dueEl) dueEl.value = built.dueDate;
+    const sel = $("#requestScheduleSelect");
+    const match = tfScheduleForProcess(pid);
+    if (sel && match) sel.value = match.id;
+  };
+
+  const fillFromScheduleId = (id) => {
+    const sched = (state.schedule || []).find((s) => s.id === id);
+    if (!sched) return;
+    const pid = processIdFromSchedule(sched);
+    const radio = $$("[name='processId']", $("#modalBody") || document).find((r) => r.value === pid);
+    if (radio) radio.checked = true;
+    const titleEl = $("#requestTitleInput");
+    const memoEl = $("#requestMemoInput");
+    const dueEl = $("#requestDueInput");
+    const checksEl = $("#requestChecksInput");
+    const built = buildRequestAiDraft(pid);
+    if (titleEl) titleEl.value = sched.title || built.title;
+    if (dueEl) dueEl.value = scheduleDueIso(sched) || built.dueDate;
+    if (memoEl) {
+      const extra = [sched.askMessage, sched.goal || sched.note].filter(Boolean).join("\n");
+      memoEl.value = extra ? `${built.memo.replace(/\n\n· TF 일정[\s\S]*$/, "").trim()}\n\n· TF 일정 기준 마감: ${formatKorDate(scheduleDueIso(sched))}${extra ? `\n· ${extra}` : ""}` : built.memo;
+    }
+    if (checksEl && !(checksEl.value || "").trim()) checksEl.value = (built.checks || []).join("\n");
   };
 
   $$("[name='processId']", $("#modalBody") || document).forEach((radio) => {
     radio.addEventListener("change", () => {
       if (radio.checked) fillFromProcess(radio.value);
     });
+  });
+  $("#requestScheduleSelect")?.addEventListener("change", (e) => {
+    const id = e.target.value;
+    if (id) fillFromScheduleId(id);
   });
   $("#requestAiFill")?.addEventListener("click", (e) => {
     e.preventDefault();
@@ -7430,7 +7710,7 @@ const GUIDE_TIPS = [
   "상단 메뉴는 TF 요약 · 내업무 · TF 업무 모두보기 · 사용방법 네 칸입니다. 관리자는 Setting이 추가됩니다.",
   "TF 업무 모두보기는 보고서 통합 · 예산 통합 · 성과지표만 둡니다. 일정은 내업무에서 다룹니다.",
   "접속할 때마다 이름 선택 화면부터 시작합니다. TF주제 리스트에서 TF를 고른 뒤 참가자를 선택하세요.",
-  "상단 알람은 일정 리마인드(빨간)와 코멘트 리마인드(파란) 두 가지입니다. 로그인 시 일정 → 코멘트 순으로 통합 팝업이 표시됩니다.",
+  "상단 알람(빨간·파란)을 누르면 일정과 코멘트가 한 창에 같이 보입니다.",
   "「오늘 뭐먹지」는 내업무 안에 있습니다. 확정 후 카톡 문구·링크로 배포하면 성명·메뉴가 자동 취합됩니다.",
 ];
 
@@ -7440,9 +7720,6 @@ function renderGuide() {
   const menus = GUIDE_MENU.filter((m) => !m.adminOnly || isAdmin());
   el.innerHTML = `
     <div class="overview-page">
-      <div class="overview-process">
-        ${processRailHtml({ compact: false, currentView: "guide", dismissible: false })}
-      </div>
       ${GUIDE_SECTIONS.map(
         (sec) => `
         <section class="panel overview-panel">
@@ -7495,7 +7772,6 @@ function renderGuide() {
   el.querySelectorAll("[data-goto]").forEach((btn) => {
     btn.addEventListener("click", () => setView(btn.dataset.goto));
   });
-  bindProcessRail(el);
   $("#btnDownloadSrsGuide")?.addEventListener("click", () => downloadSrsDocument());
 }
 
@@ -8047,7 +8323,7 @@ function renderAiArt() {
     <div class="ai-page report-make art-studio">
       <header class="report-make-hero">
         <p class="report-make-kicker">보고서 그림</p>
-        <h2 class="report-make-title"><span class="mine-name">${escapeHtml(who)}</span> 님, 정해 주시면 제가 알아서 그림을 그려드립니다.</h2>
+        <h2 class="report-make-title"><span class="mine-name">${escapeHtml(who)}</span> 님, 방향만 정해주시면 제가 알아서 그림을 그려드립니다.</h2>
         <p class="report-make-desc">전문대 혁신·RISE·신산업 등 <strong>학습된 보고서 양식</strong>을 반영해 더 정교한 그림을 제안합니다.</p>
         ${
           isAdmin()
@@ -9859,7 +10135,15 @@ function renderView(name) {
     "ai-art": renderAiArt,
     guide: renderGuide,
   };
-  map[name]?.();
+  try {
+    map[name]?.();
+  } catch (err) {
+    console.error(`[renderView:${name}]`, err);
+    const el = document.getElementById(`view-${name}`);
+    if (el && !String(el.innerHTML || "").trim()) {
+      el.innerHTML = `<section class="panel"><p class="muted">화면을 불러오지 못했습니다. 새로고침해 주세요.</p></section>`;
+    }
+  }
 }
 
 function buildMyWorkChecklist() {
@@ -9956,12 +10240,10 @@ function renderMyWork() {
 
   el.innerHTML = `
     <div class="mywork-page">
-      ${processRailHtml({ compact: true, currentView: "my-work", dismissible: false })}
       ${scheduleFeedPanelHtml(who, admin, items)}
     </div>
   `;
 
-  bindProcessRail(el);
   bindScheduleFeedActions(el, refreshActiveScheduleSurface);
 }
 
@@ -10311,7 +10593,7 @@ function openScheduleModal(id) {
     return;
   }
   if (!item && !isAdmin()) {
-    denySchedulePermission("일정 등록은 관리자만 가능합니다.");
+    denySchedulePermission("보고서 업무 추가는 관리자만 가능합니다.");
     return;
   }
   const canDelete = Boolean(item) && canEditScheduleItem(item);
@@ -10343,29 +10625,7 @@ function openScheduleModal(id) {
     submitLabel: item ? "저장" : "일정 등록",
     bodyHtml: `
       <div class="wp-form schedule-form">
-        ${
-          !item
-            ? `<section class="schedule-guide" aria-label="기본 틀 가이드">
-          <div class="schedule-guide-head">
-            <strong>기본 틀 가이드</strong>
-            <span class="muted">스타일·양식·지침 등록부터 취합 일정까지 · 카드를 누르면 아래 항목이 채워집니다.</span>
-          </div>
-          <ol class="schedule-guide-flow" aria-hidden="true">
-            <li>서식·지침</li><li>스타일</li><li>정의서</li><li>담당·할당</li><li>취합일정</li><li>리뷰</li><li>예산</li><li>성과지표</li>
-          </ol>
-          <div class="schedule-guide-grid">
-            ${SCHEDULE_GUIDE_TEMPLATES.map(
-              (t) => `
-              <button type="button" class="schedule-guide-card" data-sched-guide="${escapeAttr(t.id)}">
-                <em>${escapeHtml(t.step)}</em>
-                <strong>${escapeHtml(t.short)}</strong>
-                <span>${escapeHtml(t.hint)}</span>
-              </button>`
-            ).join("")}
-          </div>
-        </section>`
-            : ""
-        }
+        <input type="hidden" name="guideId" id="schedGuideId" value="${escapeAttr(item?.guideId || "")}" />
         <label class="wp-field">
           <span class="wp-label">업무명</span>
           <input name="title" id="schedTitleInput" class="wp-input" required value="${escapeAttr(item?.title || "")}" placeholder="예: AID 예산 수정 및 담당자 지정" />
@@ -10562,6 +10822,7 @@ function openScheduleModal(id) {
         owner,
         createdBy: owner,
         workGroup,
+        guideId: (fd.get("guideId") || item?.guideId || "").toString().trim(),
         dept: (fd.get("dept") || "").toString().trim(),
         project: (fd.get("project") || "").toString().trim(),
         status: fd.get("status") || "준비",
@@ -10631,44 +10892,6 @@ function openScheduleModal(id) {
     syncCollabInputs();
   });
   syncCollabInputs();
-
-  const applyScheduleGuide = (guideId) => {
-    const tpl = SCHEDULE_GUIDE_TEMPLATES.find((t) => t.id === guideId);
-    if (!tpl) return;
-    const setVal = (sel, val) => {
-      const el = $(sel);
-      if (el) el.value = val ?? "";
-    };
-    setVal("#schedTitleInput", tpl.title);
-    setVal("#schedWorkGroup", tpl.workGroup);
-    setVal("#schedTypeSelect", tpl.type);
-    setVal("#schedDivisionInput", tpl.division);
-    setVal("#schedEndDate", addDaysIso(today(), tpl.dueOffsetDays));
-    setVal("#schedGoalInput", tpl.goal);
-    setVal("#schedAskInput", tpl.askMessage || "");
-    setVal("#schedPrepInput", tpl.prep);
-    setVal("#schedCareInput", tpl.carePoints);
-    $("#schedWorkGroup")?.dispatchEvent(new Event("change"));
-
-    $$(".schedule-guide-card").forEach((c) => c.classList.toggle("is-on", c.dataset.schedGuide === guideId));
-
-    const pills = $$("#scheduleCollabPills [data-collab]");
-    const noneBtn = pills.find((p) => p.dataset.collab === "none");
-    const allBtn = pills.find((p) => p.dataset.collab === "all");
-    const personBtns = pills.filter((p) => p.dataset.collab !== "none" && p.dataset.collab !== "all");
-    if (tpl.assignAll) {
-      noneBtn?.classList.remove("is-on");
-      allBtn?.classList.add("is-on");
-      personBtns.forEach((p) => p.classList.add("is-on"));
-    } else {
-      pills.forEach((p) => p.classList.toggle("is-on", p === noneBtn));
-    }
-    syncCollabInputs();
-  };
-
-  $$("[data-sched-guide]").forEach((btn) => {
-    btn.addEventListener("click", () => applyScheduleGuide(btn.dataset.schedGuide));
-  });
 
   bindScheduleFormUploadSection(currentGroup);
 
@@ -11332,6 +11555,14 @@ async function resetSample() {
 const REPORT_DEADLINE = new Date("2026-09-15T16:00:00+09:00");
 let deadlineTimer = null;
 
+function currentReportDeadline() {
+  try {
+    return reportDeadlineDate();
+  } catch {
+    return REPORT_DEADLINE;
+  }
+}
+
 function formatDeadlineRemain(ms) {
   if (ms <= 0) return { text: "0일 0시간 0분", over: true };
   const totalMin = Math.floor(ms / 60000);
@@ -11345,8 +11576,15 @@ function formatDeadlineRemain(ms) {
 }
 
 function updateReportDeadline() {
-  const remain = REPORT_DEADLINE.getTime() - Date.now();
+  const remain = currentReportDeadline().getTime() - Date.now();
   const text = remain <= 0 ? null : formatDeadlineRemain(remain).text;
+  const whenText = formatReportDeadlineWhen();
+  document.querySelectorAll(".deadline-when, .login-deadline-when").forEach((el) => {
+    el.textContent = whenText;
+  });
+  document.querySelectorAll(".deadline-base").forEach((el) => {
+    el.textContent = `최종 제출일 ${formatMileDateSafe(reportDeadlineIso())} 오후 4시 기준`;
+  });
   const homeStrong = document.querySelector("#homeDeadlineRemain");
   const lines = document.querySelectorAll(".deadline-remain");
 
@@ -11406,17 +11644,20 @@ async function boot() {
 
   $("#btnHome")?.addEventListener("click", () => setView("home"));
   $("#btnLogout")?.addEventListener("click", logout);
-  $("#btnRemindBell")?.addEventListener("click", () => openUnifiedAlarmPopup({ mode: "schedule", browseAll: true }));
-  $("#btnRequestPlane")?.addEventListener("click", () => openUnifiedAlarmPopup({ mode: "comment", browseAll: true }));
+  $("#userRoleBadge")?.addEventListener("click", () => {
+    if (!isAdmin()) return;
+    setView(activeNavId === "setup" ? "home" : "setup");
+  });
+  $("#btnRemindBell")?.addEventListener("click", () => openUnifiedAlarmPopup({ browseAll: true }));
+  $("#btnRequestPlane")?.addEventListener("click", () => openUnifiedAlarmPopup({ browseAll: true }));
   $("#remindCloseTop")?.addEventListener("click", () => {
     cancelRemindPopupAutoClose();
     closeRemindPopup();
   });
   $("#remindGoSchedule")?.addEventListener("click", () => {
     cancelRemindPopupAutoClose();
-    const goto = alarmPopupPhase === "comment" ? "my-work" : "schedule";
     closeRemindPopup();
-    setView(goto);
+    setView("my-work");
   });
   $("#requestCloseTop")?.addEventListener("click", () => {
     cancelRemindPopupAutoClose();
@@ -11449,14 +11690,7 @@ async function boot() {
   $("#remindDismissAll")?.addEventListener("click", () => {
     cancelRemindPopupAutoClose();
     clearAlarmPhaseTransitionTimer();
-    if (alarmPopupPhase === "schedule") {
-      getUpcomingReminders({ includeDismissed: true }).forEach((s) => dismissReminder(s.id));
-      const commentItems = myCommentFeedItems();
-      if (alarmPopupMode === "unified" && commentItems.length) {
-        showAlarmPhase("comment", { browseAll: false, auto: true });
-        return;
-      }
-    }
+    getUpcomingReminders({ includeDismissed: true }).forEach((s) => dismissReminder(s.id));
     closeRemindPopup();
   });
   $("#remindBackdrop")?.addEventListener("click", (e) => {

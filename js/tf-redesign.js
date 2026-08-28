@@ -140,16 +140,27 @@ export function computeMilestoneProgress(ctx) {
     kpiDone = false,
     finalDone = false,
     summaries = {},
+    milestones: customMiles,
   } = ctx || {};
+  const miles =
+    Array.isArray(customMiles) && customMiles.length >= 2
+      ? customMiles.map((m, i) => ({
+          id: m.id || `m${i}`,
+          label: m.label || m.short || `일정 ${i + 1}`,
+          short: m.short || m.label || `${i + 1}`,
+          date: m.date,
+          tip: m.tip || "",
+        }))
+      : TF_MILESTONES;
   const flags = [hasKickoff, round1Done, round2Done, budgetDone, kpiDone, finalDone];
   let done = 0;
-  for (const f of flags) {
-    if (f) done += 1;
+  for (let i = 0; i < miles.length; i++) {
+    if (flags[i]) done += 1;
     else break;
   }
-  const startDate = TF_MILESTONES[0].date;
-  const endDate = TF_MILESTONES[TF_MILESTONES.length - 1].date;
-  const points = TF_MILESTONES.map((m, i) => {
+  const startDate = miles[0].date;
+  const endDate = miles[miles.length - 1].date;
+  const points = miles.map((m, i) => {
     const state = i < done ? "done" : i === done ? "now" : "todo";
     return {
       ...m,
@@ -161,17 +172,16 @@ export function computeMilestoneProgress(ctx) {
   });
   const nowIso = ctx?.todayIso || new Date().toISOString().slice(0, 10);
   const timePct = isoToPct(nowIso, startDate, endDate);
-  const stagePct = Math.round((done / TF_MILESTONES.length) * 100);
+  const stagePct = Math.round((done / miles.length) * 100);
   const barPct = Math.max(stagePct, Math.round(timePct * 0.35 + stagePct * 0.65));
-  // 오늘 날짜 위치(출발~최종 대비). 애니메이션은 출발→오늘 구간을 반복.
   const todayPct = Math.min(96, Math.max(4, timePct || 4));
   const runnerLeft = todayPct;
   return {
     doneCount: done,
-    total: TF_MILESTONES.length,
+    total: miles.length,
     pct: stagePct,
     barPct: Math.min(100, barPct),
-    currentIndex: Math.min(done, TF_MILESTONES.length - 1),
+    currentIndex: Math.min(done, miles.length - 1),
     startDate,
     endDate,
     points,
@@ -206,7 +216,7 @@ export function marathonTrackHtml(progress, escapeHtml) {
         </div>
         <span class="marathon-pct">${pct}% · ${escapeHtml(current?.label || "")}</span>
       </div>
-      <div class="marathon-track" role="img" aria-label="마라톤 진도 ${pct}% · 오늘 위치까지 질주 후 정지">
+      <div class="marathon-track" role="img" aria-label="마라톤 진도 ${pct}% · 오늘 위치까지 달린 뒤 정지">
         <div class="marathon-rail">
           <div
             class="marathon-bar is-running"
@@ -215,7 +225,7 @@ export function marathonTrackHtml(progress, escapeHtml) {
           <div
             class="marathon-runner is-running"
             style="--run-from:2%;--run-to:${runTo}%;--run-duration:${durationSec}s"
-            title="출발 → 오늘 위치에서 정지"
+            title="출발 → 오늘 위치까지 달린 뒤 정지"
             aria-hidden="true"
           >
             <span class="marathon-runner-emoji">🏃</span>
@@ -245,6 +255,7 @@ export function marathonTrackHtml(progress, escapeHtml) {
 }
 
 export function bindMarathonRunner(root = document) {
+  bindMarathonFlags(root);
   const runner = root.querySelector?.(".marathon-runner.is-running") || null;
   const bar = root.querySelector?.(".marathon-bar.is-running") || null;
   if (!runner && !bar) return;
@@ -269,6 +280,27 @@ export function bindMarathonRunner(root = document) {
   runner.addEventListener("animationend", onEnd);
   const dur = Number.parseFloat(getComputedStyle(runner).getPropertyValue("--run-duration")) || 5.5;
   window.setTimeout(settle, Math.ceil(dur * 1000) + 80);
+}
+
+function bindMarathonFlags(root = document) {
+  const flags = [...(root.querySelectorAll?.(".marathon-flag") || [])];
+  if (!flags.length) return;
+  flags.forEach((btn) => {
+    btn.addEventListener("click", (e) => {
+      e.preventDefault();
+      e.stopPropagation();
+      const wasOpen = btn.classList.contains("is-open");
+      flags.forEach((f) => f.classList.remove("is-open"));
+      if (!wasOpen) btn.classList.add("is-open");
+    });
+  });
+  if (!document.documentElement.dataset.marathonFlagDoc) {
+    document.documentElement.dataset.marathonFlagDoc = "1";
+    document.addEventListener("pointerdown", (e) => {
+      if (e.target.closest?.(".marathon-flag")) return;
+      document.querySelectorAll(".marathon-flag.is-open").forEach((f) => f.classList.remove("is-open"));
+    });
+  }
 }
 
 function escapeAttrSafe(str = "") {

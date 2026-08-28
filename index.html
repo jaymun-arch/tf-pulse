@@ -2,7 +2,7 @@
 <html lang="ko">
 <head>
   <meta charset="UTF-8" />
-  <meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover, maximum-scale=1" />
+  <meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover" />
   <meta name="description" content="보고서 TF 운영 · 파트·취합·일정·자료 허브" />
   <meta name="author" content="jay.mun" />
   <meta name="copyright" content="Copyright © 2026 jay.mun. All rights reserved." />
@@ -47,21 +47,14 @@
         <p class="login-prompt"><strong>내 이름을 선택하여 접속하세요</strong></p>
       </div>
       <div class="login-stack">
-        <ol class="login-howto" aria-label="참여 순서">
-          <li><em>1</em><span>이름을 고르면 내 화면이 열립니다</span></li>
-          <li><em>2</em><span>내업무에서 요청받은 일을 확인합니다</span></li>
-          <li><em>3</em><span>제출 요청이 열리면 파일을 올리고 제출합니다</span></li>
-        </ol>
-        <label class="login-topic-wrap">
-          <span class="login-topic-hint">TF 구분</span>
-          <select id="loginTfTopic" class="login-topic-select" aria-label="TF 구분 선택"></select>
-        </label>
-        <div class="login-deadline" aria-live="polite">
-          <p class="login-deadline-label">최종 제출일시</p>
-          <p class="login-deadline-when">2026년 9월 15일 오후 4시</p>
-          <p class="deadline-remain login-deadline-remain">
-            남은 기간
-            <strong id="loginDeadlineRemain">—</strong>
+        <div class="login-topic-row">
+          <label class="login-topic-wrap">
+            <span class="login-topic-hint">TF 구분</span>
+            <select id="loginTfTopic" class="login-topic-select" aria-label="TF 구분 선택"></select>
+          </label>
+          <p class="login-deadline-inline" aria-live="polite">
+            <span class="login-deadline-when">2026년 9월 15일 오후 4시</span>
+            <span class="deadline-remain login-deadline-remain">남은 기간 <strong id="loginDeadlineRemain">—</strong></span>
           </p>
         </div>
         <p class="login-topic-desc" id="loginTfTopicDesc" hidden></p>
@@ -80,20 +73,27 @@
           <div class="brand-mark">연어회(硏語會)</div>
         </div>
         <div class="header-tools user-chip">
-          <span class="api-dot ok" id="saveDot" title="로컬 저장"></span>
-          <span class="save-hint" id="saveHint">저장됨</span>
-          <button type="button" class="remind-bell" id="btnRemindBell" hidden title="일정 리마인드" aria-label="일정 리마인드">
-            <span class="remind-bell-ping" aria-hidden></span>
-            <span class="remind-bell-count" id="remindBellCount">0</span>
+          <div class="save-dot is-shared is-saved" id="saveDotWrap" title="데이터 저장 상태">
+            <span class="save-dot-label" id="saveHint">공유됨</span>
+            <span class="api-dot ok" id="saveDot" aria-hidden="true"></span>
+          </div>
+          <button type="button" class="guide-bell nudge" id="btnRemindBell" hidden title="지연된 업무와 일주일 안 처리할 일정을 확인합니다" aria-label="일정 리마인드">
+            <span class="guide-bell-ping" aria-hidden="true"></span>
+            <span class="guide-bell-count" id="remindBellCount">0</span>
           </button>
-          <button type="button" class="request-plane comment-alarm-btn" id="btnRequestPlane" hidden title="코멘트 리마인드" aria-label="코멘트 리마인드">
-            <span class="request-plane-ping" aria-hidden></span>
-            <span class="request-plane-icon" aria-hidden>💬</span>
+          <button type="button" class="request-plane nudge" id="btnRequestPlane" hidden title="요청받은 업무와 코멘트를 확인합니다" aria-label="요청·코멘트 리마인드">
+            <span class="request-plane-ping" aria-hidden="true"></span>
+            <svg viewBox="0 0 24 24" width="13" height="13" aria-hidden="true">
+              <path fill="currentColor" d="M3.2 10.6 20.4 3.1c.7-.3 1.4.4 1.1 1.1L14 21.4c-.3.7-1.3.6-1.5-.2l-1.7-6.6-6.6-1.7c-.8-.2-.9-1.2-.2-1.5z" />
+            </svg>
             <span class="request-plane-count" id="requestPlaneCount">0</span>
           </button>
-          <span class="user-role-badge" id="userRoleBadge"></span>
-          <strong class="user-name" id="userNameLabel"></strong>
-          <button type="button" class="btn btn-ghost btn-sm" id="btnLogout">나가기</button>
+          <button type="button" class="user-role-badge" id="userRoleBadge" hidden title="사용자 관리">관리</button>
+          <span class="user-name" id="userNameLabel"></span>
+          <button type="button" class="btn btn-ghost btn-sm logout-btn" id="btnLogout" title="담당자변경" aria-label="나가기, 담당자변경">
+            <span class="logout-idle">나가기</span>
+            <span class="logout-hover">담당자변경</span>
+          </button>
         </div>
       </header>
 
@@ -107,7 +107,7 @@
       <nav class="sub-tab-bar" id="subNav" hidden aria-label="세부 메뉴"></nav>
     </div>
 
-    <header class="page-hero" id="pageHero">
+    <header class="page-hero" id="pageHero" hidden>
       <div class="page-hero-main">
         <p class="load-kicker" id="tfName">TF 운영 허브</p>
         <h1 class="load-title" id="viewTitle">요약</h1>
@@ -121,6 +121,8 @@
         </p>
         <p class="deadline-base">최종 제출일 9월 15일 오후 4시 기준</p>
       </aside>
+      <div class="page-hero-process" id="pageHeroProcess"></div>
+      <div class="page-hero-remind" id="pageHeroRemind"></div>
     </header>
 
     <section class="view active" id="view-dashboard"></section>
@@ -159,13 +161,12 @@
 
   <div id="remindBackdrop" class="remind-overlay" hidden>
     <div class="remind-card" role="dialog" aria-modal="true" aria-labelledby="remindTitle">
-      <div class="remind-autoclose" id="remindAutoCloseCount" hidden aria-live="polite" title="조작하지 않으면 자동으로 닫힙니다">3</div>
+      <div class="remind-autoclose" id="remindAutoCloseCount" hidden aria-live="polite"></div>
       <div class="remind-head">
         <div>
-          <p class="load-kicker" id="remindKicker">일정 리마인드</p>
+          <p class="load-kicker" id="remindKicker">업무 리마인드</p>
           <h2 id="remindTitle"><span class="name-honorific" id="remindWho">님</span>, 지금 챙길 일정입니다.</h2>
           <p class="muted" id="remindDesc">등록·수정 권한으로 접속했습니다.</p>
-          <p class="remind-phase-hint muted" id="remindPhaseHint" hidden></p>
         </div>
         <button type="button" class="btn btn-ghost btn-sm" id="remindCloseTop">닫기</button>
       </div>
@@ -173,11 +174,13 @@
       <div class="remind-foot">
         <div class="remind-hide-opts">
           <label class="remind-hide"><input type="checkbox" id="remindHideToday" />오늘하루 보지 않기</label>
-          <label class="remind-hide"><input type="checkbox" id="remindHideForever" />다시 보지 않기</label>
         </div>
         <div class="remind-foot-actions">
           <button type="button" class="btn" id="remindGoSchedule">내 업무 보기</button>
-          <button type="button" class="btn btn-primary" id="remindDismissAll">확인 <span class="remind-confirm-sec" id="remindConfirmSec">(5)</span></button>
+          <button type="button" class="btn btn-primary remind-confirm-btn" id="remindDismissAll">
+            확인
+            <span class="remind-confirm-count" id="remindConfirmCount" aria-live="polite"></span>
+          </button>
         </div>
       </div>
     </div>
