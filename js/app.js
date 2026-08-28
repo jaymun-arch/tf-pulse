@@ -791,7 +791,7 @@ function markDirty(dirty = true) {
   const dot = $("#saveDot");
   const wrap = $("#saveDotWrap");
   if (hint) {
-    hint.textContent = dirty ? "저장중" : "공유됨";
+    hint.textContent = dirty ? "저장중" : "저장됨";
     hint.classList.toggle("dirty", dirty);
   }
   if (dot) {
@@ -803,7 +803,44 @@ function markDirty(dirty = true) {
     wrap.classList.toggle("is-saving", dirty);
     wrap.classList.toggle("is-saved", !dirty);
     wrap.classList.toggle("is-shared", !dirty);
+    wrap.title = dirty ? "데이터 저장 중" : "데이터 저장 완료";
   }
+}
+
+let persistScheduled = false;
+
+function flushPersist() {
+  state.meta.updatedAt = new Date().toISOString();
+  let level = 0;
+  for (;;) {
+    try {
+      localStorage.setItem(STORAGE_KEY, JSON.stringify(state));
+      markDirty(false);
+      return true;
+    } catch (err) {
+      const quota =
+        err?.name === "QuotaExceededError" ||
+        err?.code === 22 ||
+        /quota|exceeded/i.test(String(err?.message || err));
+      if (!quota || level >= 5) {
+        console.warn("persist failed", err);
+        markDirty(true);
+        return false;
+      }
+      level += 1;
+      pruneHeavyAiPayloads(level);
+    }
+  }
+}
+
+function persist() {
+  markDirty(true);
+  if (persistScheduled) return;
+  persistScheduled = true;
+  queueMicrotask(() => {
+    persistScheduled = false;
+    flushPersist();
+  });
 }
 
 function pruneHeavyAiPayloads(level = 0) {
@@ -844,33 +881,10 @@ function pruneHeavyAiPayloads(level = 0) {
   }
 }
 
-function persist() {
-  state.meta.updatedAt = new Date().toISOString();
-  let level = 0;
-  for (;;) {
-    try {
-      localStorage.setItem(STORAGE_KEY, JSON.stringify(state));
-      markDirty(false);
-      return;
-    } catch (err) {
-      const quota =
-        err?.name === "QuotaExceededError" ||
-        err?.code === 22 ||
-        /quota|exceeded/i.test(String(err?.message || err));
-      if (!quota || level >= 5) {
-        console.warn("persist failed", err);
-        markDirty(true);
-        return;
-      }
-      level += 1;
-      pruneHeavyAiPayloads(level);
-    }
-  }
-}
-
 function saveAndRender(view) {
+  persistScheduled = false;
   markDirty(true);
-  persist();
+  flushPersist();
   if (view) renderView(view);
   else renderAll();
 }
@@ -12934,7 +12948,10 @@ function startReportDeadlineClock() {
 
 async function boot() {
   await initState();
+  markDirty(false);
   startReportDeadlineClock();
+  window.addEventListener("pagehide", () => flushPersist());
+  window.addEventListener("beforeunload", () => flushPersist());
 
   // 링크 접속 시마다 권한(이름) 선택 화면부터 시작
   sessionUser = null;

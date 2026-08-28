@@ -211,10 +211,10 @@ a {
   flex-shrink: 0;
 }
 .api-dot.ok {
-  background: var(--status-done);
+  background: #0071e3;
 }
 .api-dot.dirty {
-  background: var(--warn);
+  background: #e53935;
 }
 
 .save-dot {
@@ -236,16 +236,15 @@ a {
 }
 .save-dot.is-saving .save-dot-label,
 .save-hint.dirty {
-  color: #b88600;
+  color: #c62828;
 }
-.save-dot.is-saved .save-dot-label,
-.save-dot.is-shared:not(.is-saving) .save-dot-label {
-  color: #1f7a38;
+.save-dot.is-saved .save-dot-label {
+  color: #0071e3;
 }
 .save-dot.is-saving .api-dot,
 .api-dot.busy {
-  background: #ffcc00;
-  animation: save-dot-pulse 0.9s ease-in-out infinite;
+  background: #e53935;
+  animation: save-dot-pulse 0.75s ease-in-out infinite;
 }
 @keyframes save-dot-pulse {
   0%, 100% { transform: scale(1); opacity: 1; }
