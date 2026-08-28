@@ -232,6 +232,22 @@ function myPartIds() {
   return state.parts.filter((p) => p.assigneeId === me.id).map((p) => p.id);
 }
 
+function myAssignedParts() {
+  const ids = new Set(myPartIds());
+  return (state.parts || []).filter((p) => ids.has(p.id));
+}
+
+function myAssignedPartsLine() {
+  const parts = myAssignedParts();
+  if (!parts.length) return "담당 영역 미배정";
+  const bits = parts.slice(0, 3).map((p) => {
+    const name = `${p.section || ""} ${p.title || ""}`.replace(/\s+/g, " ").trim();
+    const pages = pagesOf(p);
+    return pages ? `${name} ${pages}p` : name;
+  });
+  return bits.join(" · ") + (parts.length > 3 ? ` 외 ${parts.length - 3}` : "");
+}
+
 function canEditSubmission(partId) {
   return isAdmin() || myPartIds().includes(partId);
 }
@@ -3663,10 +3679,34 @@ function checkRequestSummary(sub) {
   return "미업로드";
 }
 
+function partAssignmentLine(part) {
+  if (!part) return "";
+  const range =
+    part.pageStart != null && part.pageEnd != null ? `${part.pageStart}–${part.pageEnd}쪽` : "";
+  const pages = pagesOf(part);
+  return [`${part.section || ""}. ${part.title || ""}`.replace(/^\.\s*/, "").trim(), range, pages ? `${pages}p` : "", part.note || ""]
+    .filter(Boolean)
+    .join(" · ");
+}
+
 function openCheckRequestModal(partId, editable = true) {
   const col = state.collections.find((c) => c.round === activeRound);
-  const sub = col?.submissions.find((s) => s.partId === partId);
-  if (!sub) return;
+  if (!col) return;
+  if (!Array.isArray(col.submissions)) col.submissions = [];
+  let sub = col.submissions.find((s) => s.partId === partId);
+  if (!sub) {
+    sub = {
+      partId,
+      pageCount: 0,
+      status: "pending",
+      submittedAt: "",
+      memo: "",
+      checkImages: [],
+      checkFiles: [],
+      partDone: false,
+    };
+    col.submissions.push(sub);
+  }
   const part = partById(partId);
   let files = normalizeCheckFiles(sub)
     .filter((f) => isHangulFileName(f.name))
@@ -3750,6 +3790,7 @@ function openCheckRequestModal(partId, editable = true) {
     submitLabel: editable ? "올리고 제출" : "닫기",
     bodyHtml: `
       <div class="check-pane active" data-check-pane="file">
+        <p class="schedule-comment-lead">목차·할당 ${escapeHtml(partAssignmentLine(part) || partId)}</p>
         <div class="check-paste ${editable ? "" : "is-readonly"}" id="checkFileZone">
           <strong>담당 영역 한글 파일을 올리세요</strong>
           <span class="muted">.hwp / .hwpx · 개당 30MB · 최대 3개 · <span id="checkFileCount">${files.length}/3</span></span>
@@ -4175,25 +4216,76 @@ function openScheduleUploadForItem(s) {
     }
     activeRound = col.round;
     const phase = collectionPhaseOf(col);
-    if (phase === "planned") {
-      if (isAdmin()) {
+    if (isAdmin()) {
+      if (phase === "planned") {
         openCollectionRequestModal(col.round);
         return;
       }
-      alert("관리자가 취합 공지를 올리면 한글 파일을 올릴 수 있습니다.");
+      setView("collections");
       return;
     }
-    const mine = myPartIds();
-    const mineSubs = (col.submissions || []).filter((row) => mine.includes(row.partId));
-    const next = mineSubs.find((row) => submissionBoardStatus(row).id !== "done") || mineSubs[0];
-    if (next && canEditSubmission(next.partId) && phase === "open") {
-      openCheckRequestModal(next.partId, true);
-      return;
-    }
-    setView("collections");
+    openMyAssignedUpload(col);
     return;
   }
   setView("collections");
+}
+
+function openMyAssignedUpload(col) {
+  if (!col) return;
+  activeRound = col.round;
+  const phase = collectionPhaseOf(col);
+  if (phase === "planned") {
+    alert("관리자가 취합 공지를 올리면 한글 파일을 올릴 수 있습니다.");
+    return;
+  }
+  const mine = myAssignedParts();
+  if (!mine.length) {
+    alert("목차·할당에서 담당 영역이 아직 없습니다.");
+    return;
+  }
+  const editable = phase === "open" || phase === "closed";
+  if (mine.length === 1) {
+    const part = mine[0];
+    if (!canEditSubmission(part.id)) {
+      alert("배정된 영역만 올릴 수 있습니다.");
+      return;
+    }
+    openCheckRequestModal(part.id, editable);
+    return;
+  }
+  const dueIso = col.dueDate || scheduleDueIso(scheduleForCollectionRound(col.round));
+  openModal({
+    kicker: col.name || "취합",
+    title: "내 담당 영역 올리기",
+    submitLabel: "닫기",
+    hideFooter: true,
+    bodyHtml: `
+      <p class="schedule-comment-lead">${
+        dueIso ? `마감 ${escapeHtml(formatKorDate(dueIso))} · ` : ""
+      }목차·할당에서 배정된 영역만 보입니다.</p>
+      <div class="my-part-upload-list">
+        ${mine
+          .map((p) => {
+            const sub = (col.submissions || []).find((row) => row.partId === p.id);
+            const st = submissionBoardStatus(sub);
+            return `<button type="button" class="my-part-upload-item" data-upload-part="${escapeAttr(p.id)}">
+              <strong>${escapeHtml(`${p.section || ""}. ${p.title || ""}`.replace(/^\.\s*/, "").trim())}</strong>
+              <span>${escapeHtml(partAssignmentLine(p))}</span>
+              <em>${escapeHtml(st.label)}</em>
+            </button>`;
+          })
+          .join("")}
+      </div>
+    `,
+    onSubmit: () => true,
+  });
+  $("#modalBody")
+    ?.querySelectorAll("[data-upload-part]")
+    .forEach((btn) => {
+      btn.addEventListener("click", () => {
+        openCheckRequestModal(btn.dataset.uploadPart, editable && canEditSubmission(btn.dataset.uploadPart));
+      });
+    });
 }
 
 /** 일정(서식 및 지침확인) 업로드 탭 */
@@ -4855,6 +4947,20 @@ function bindScheduleFeedActions(root, onRefresh) {
   root.querySelectorAll(".swipe-row[data-schedule-id]").forEach((row) => {
     bindScheduleSwipeRow(row, onRefresh);
   });
+
+  root.querySelectorAll(".task-row.is-simple[data-open-upload]").forEach((el) => {
+    const open = () => {
+      const item = state.schedule.find((s) => s.id === el.dataset.openUpload);
+      openScheduleUploadForItem(item);
+    };
+    el.addEventListener("click", () => open());
+    el.addEventListener("keydown", (e) => {
+      if (e.key === "Enter" || e.key === " ") {
+        e.preventDefault();
+        open();
+      }
+    });
+  });
 }
 
 function bindScheduleSwipeRow(row, onRefresh) {
@@ -5015,45 +5121,29 @@ function workFeedRowHtml(s, admin) {
   const typeName = typeLabel(s.type);
   const groupId = scheduleGroupOf(s);
   const groupName = scheduleGroupLabel(groupId);
-  const collectCol = groupId === "collect" ? collectionBySchedule(s) : null;
-  const collectPhase = collectCol ? collectionPhaseOf(collectCol) : "";
-  const askKicker =
-    collectPhase === "planned"
-      ? "일정 수립"
-      : collectPhase === "closed"
-        ? "취합 마감"
-        : collectPhase === "open"
-          ? "제출 요청"
-          : "일정 리마인드";
-  const askText = origin.kind === "received" ? scheduleAskMessage(s) : "";
-  const commentText = scheduleCommentBubbleText(s);
-  const floatCount = (askText ? 1 : 0) + (commentText ? 1 : 0);
+  const timing =
+    days < 0 ? `${Math.abs(days)}일 지남` : days === 0 ? "오늘" : `${days}일 남음`;
+
+  if (!isAdmin()) {
+    const partsLine = groupId === "collect" ? myAssignedPartsLine() : "";
+    return `
+    <div class="work-task-wrap">
+      <article class="task-row is-simple tone-${statusTone}" data-open-upload="${escapeAttr(s.id)}" role="button" tabindex="0">
+        <div class="task-row-main">
+          <p class="task-title"><span class="task-title-text">${escapeHtml(s.title)}</span></p>
+          <p class="task-meta">${escapeHtml([partsLine, timing].filter(Boolean).join(" · "))}</p>
+        </div>
+        <span class="due-cluster ${glowLabel === "지연" ? "is-overdue" : ""}">
+          ${glowLabel ? `<span class="remind-title-glow due-glow">${escapeHtml(glowLabel)}</span>` : ""}
+          <span class="due-badge">${escapeHtml(formatKorDate(s.endDate || s.date))}</span>
+        </span>
+      </article>
+    </div>`;
+  }
 
   return `
-    <div class="work-task-wrap ${floatCount ? `has-float-bubbles float-n-${floatCount}` : ""}">
-      ${
-        floatCount
-          ? `<div class="task-float-stack" aria-live="polite">
-              ${
-                askText
-                  ? `<p class="task-float-bubble is-schedule ${statusTone === "done" ? "is-done" : ""}" role="note">
-                      <span class="task-float-kicker">${escapeHtml(askKicker)}</span>
-                      <span class="task-float-text">${escapeHtml(askText)}</span>
-                    </p>`
-                  : ""
-              }
-              ${
-                commentText
-                  ? `<button type="button" class="task-float-bubble is-comment ${statusTone === "done" ? "is-done" : ""}" data-comment="${escapeAttr(s.id)}" title="코멘트 보기">
-                      <span class="task-float-kicker">코멘트 리마인드</span>
-                      <span class="task-float-text">${escapeHtml(commentText)}</span>
-                    </button>`
-                  : ""
-              }
-            </div>`
-          : ""
-      }
-    <div class="swipe-row has-edit-handle has-delete-handle ${canManage ? "can-manage" : "no-manage"}" data-schedule-id="${escapeAttr(s.id)}">
+    <div class="work-task-wrap">
+    <div class="swipe-row has-edit-handle has-delete-handle can-manage" data-schedule-id="${escapeAttr(s.id)}">
       <div class="swipe-action swipe-action-edit" aria-hidden="true">
         <span class="swipe-action-main">수정하기</span>
       </div>
@@ -5086,7 +5176,6 @@ function workFeedRowHtml(s, admin) {
                     : ""
               }
             </p>
-            ${collectCol ? collectStepperHtml(collectCol, { compact: true }) : ""}
             <p class="task-meta">${escapeHtml(metaBits.join(" · "))}</p>
           </div>
           <span class="due-cluster ${glowLabel === "지연" ? "is-overdue" : ""}">
