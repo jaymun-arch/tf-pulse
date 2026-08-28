@@ -8489,7 +8489,7 @@ body.view-home .page-hero {
 .marathon-track { position: relative; padding-top: 4px; }
 .marathon-rail {
   position: relative;
-  height: 67px;
+  height: 88px;
   margin: 2px 4px 0;
 }
 .marathon-bar {
@@ -8654,7 +8654,7 @@ body.view-home .page-hero {
 .marathon-legend li.is-done em { color: #0a7ea4; }
 .marathon-legend li.is-now em { color: #e67e00; }
 @media (max-width: 720px) {
-  .marathon-rail { height: 64px; margin-bottom: 0; }
+  .marathon-rail { height: 86px; margin-bottom: 0; }
   .marathon-flag-date { margin-top: 0; }
   .marathon-legend { grid-template-columns: repeat(3, 1fr); row-gap: 10px; }
   .marathon-tip { min-width: 160px; }
@@ -9256,18 +9256,18 @@ body.view-home .page-hero {
 /* Marathon runner — compact track */
 .marathon-track { position: relative; padding-top: 0; }
 .marathon-rail {
-  height: 67px;
+  height: 88px;
   margin: 2px 4px 0;
 }
 .marathon-runner {
   position: absolute;
-  top: 2px;
+  top: 4px;
   left: var(--run-from, 2%);
   transform: translateX(-50%);
   display: flex;
-  flex-direction: row;
+  flex-direction: column;
   align-items: center;
-  gap: 4px;
+  gap: 0;
   font-size: inherit;
   line-height: 1;
   background: none;
@@ -9278,7 +9278,7 @@ body.view-home .page-hero {
 }
 .marathon-runner-emoji {
   display: block;
-  font-size: 1.9rem;
+  font-size: 2.35rem;
   line-height: 1;
   margin: 0;
   padding: 0;
@@ -9288,17 +9288,21 @@ body.view-home .page-hero {
   transform-origin: center;
 }
 .marathon-runner-today {
+  position: absolute;
+  top: 58px;
+  left: 50%;
   opacity: 0;
-  font-size: 0.56rem;
+  font-size: 0.62rem;
   font-weight: 800;
   color: #c45a00;
   white-space: nowrap;
-  background: rgba(255, 248, 230, 0.92);
-  border: 1px solid rgba(255, 149, 0, 0.35);
-  padding: 1px 5px;
+  background: rgba(255, 248, 230, 0.96);
+  border: 1px solid rgba(255, 149, 0, 0.4);
+  padding: 2px 7px;
   border-radius: 999px;
-  box-shadow: none;
+  box-shadow: 0 1px 2px rgba(0, 0, 0, 0.06);
   pointer-events: none;
+  transform: translateX(-50%);
 }
 .marathon-runner.is-running {
   animation: marathon-run-leg var(--run-duration, 5.5s) cubic-bezier(0.4, 0.05, 0.2, 1) 1 forwards;
@@ -9319,7 +9323,7 @@ body.view-home .page-hero {
 }
 .marathon-runner.is-arrived .marathon-runner-today {
   opacity: 1;
-  transform: translateY(0);
+  transform: translateX(-50%) translateY(0);
 }
 @keyframes marathon-run-leg {
   0% { left: var(--run-from, 2%); }
@@ -9330,8 +9334,8 @@ body.view-home .page-hero {
   50% { transform: scaleX(-1) translateY(-3px); }
 }
 @keyframes marathon-today-show {
-  0%, 72% { opacity: 0; transform: translateY(3px); }
-  88%, 100% { opacity: 1; transform: translateY(0); }
+  0%, 72% { opacity: 0; transform: translateX(-50%) translateY(4px); }
+  88%, 100% { opacity: 1; transform: translateX(-50%) translateY(0); }
 }
 @media (prefers-reduced-motion: reduce) {
   .marathon-runner.is-running,
@@ -9346,6 +9350,7 @@ body.view-home .page-hero {
   .marathon-runner.is-running .marathon-runner-today,
   .marathon-runner.is-arrived .marathon-runner-today {
     opacity: 1;
+    transform: translateX(-50%);
   }
   .marathon-runner-emoji {
     transform: scaleX(-1);
@@ -9911,7 +9916,7 @@ body.view-home .page-hero {
 
 /* Unified marathon flags (no separate legend row) */
 .marathon-rail {
-  height: 67px;
+  height: 88px;
   margin: 2px 2px 0;
 }
 .marathon-bar {
@@ -9919,7 +9924,7 @@ body.view-home .page-hero {
   height: 7px;
 }
 .marathon-runner {
-  top: 0;
+  top: 4px;
 }
 .marathon-flag {
   top: 2px;
@@ -9966,8 +9971,9 @@ body.view-home .page-hero {
   display: none !important;
 }
 @media (max-width: 720px) {
-  .marathon-rail { height: 64px; }
+  .marathon-rail { height: 86px; }
   .marathon-flag { width: 48px; }
+  .marathon-runner-today { top: 56px; }
 }
 
 /* My-work task card Ã¢ÂÂ reference design */
