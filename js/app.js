@@ -1871,6 +1871,7 @@ function enterAs(name) {
   $("#appShell").hidden = false;
   applyRoleUi();
   renderAll();
+  paintAccessQr();
   setView("dashboard");
   window.setTimeout(() => {
     openUnifiedAlarmPopup({ mode: "unified", browseAll: false });
@@ -3881,6 +3882,7 @@ function renderCollections() {
   const hangulReady = col ? orderedCollectionHangulFiles(col).length : 0;
 
   el.innerHTML = `
+    ${tfallHubBarHtml()}
     <div class="round-tabs">
       ${rounds
         .map((c) => {
@@ -4024,6 +4026,7 @@ function renderCollections() {
     }
   `;
 
+  bindTfallHubBar(el);
   el.querySelectorAll("[data-round]").forEach((btn) => {
     btn.addEventListener("click", () => {
       activeRound = Number(btn.dataset.round);
@@ -5682,15 +5685,271 @@ function downloadBudgetExcel({ mineOnly = false } = {}) {
     );
   });
 
-  const blob = new Blob(["\uFEFF" + lines.join("\n")], {
+  const blob = excelBlobFromLines(lines);
+  const modeTag = mode === "result" ? "실적" : "예산";
+  triggerBlobDownload(blob, mineOnly ? `내${modeTag}항목_${today()}.xls` : `${modeTag}_입력현황_${today()}.xls`);
+}
+
+function excelBlobFromLines(lines) {
+  return new Blob(["\uFEFF" + (lines || []).join("\n")], {
     type: "application/vnd.ms-excel;charset=utf-8;",
   });
+}
+
+function triggerBlobDownload(blob, fileName) {
   const a = document.createElement("a");
   a.href = URL.createObjectURL(blob);
-  const modeTag = mode === "result" ? "실적" : "예산";
-  a.download = mineOnly ? `내${modeTag}항목_${today()}.xls` : `${modeTag}_입력현황_${today()}.xls`;
+  a.download = fileName;
+  document.body.appendChild(a);
   a.click();
-  URL.revokeObjectURL(a.href);
+  a.remove();
+  window.setTimeout(() => URL.revokeObjectURL(a.href), 2000);
+}
+
+function appAccessUrl() {
+  const loc = window.location;
+  if (loc?.origin && loc.origin !== "null") {
+    const path = loc.pathname && loc.pathname !== "/" ? loc.pathname.replace(/\/index\.html$/i, "/") : "/";
+    return `${loc.origin}${path === "/" ? "/" : path}`;
+  }
+  return "https://tf-pulse.vercel.app";
+}
+
+let cachedAccessQr = "";
+
+async function accessQrDataUrl() {
+  if (cachedAccessQr) return cachedAccessQr;
+  const url = appAccessUrl();
+  try {
+    const QRCode = (await import("https://cdn.jsdelivr.net/npm/qrcode@1.5.4/+esm")).default;
+    cachedAccessQr = await QRCode.toDataURL(url, {
+      width: 240,
+      margin: 1,
+      color: { dark: "#1d1d1f", light: "#ffffff" },
+    });
+  } catch {
+    cachedAccessQr = `https://api.qrserver.com/v1/create-qr-code/?size=240x240&data=${encodeURIComponent(url)}`;
+  }
+  return cachedAccessQr;
+}
+
+async function paintAccessQr() {
+  const img = $("#appAccessQr");
+  if (!img) return;
+  img.src = await accessQrDataUrl();
+  const cap = $("#appAccessQrUrl");
+  if (cap) cap.textContent = appAccessUrl();
+}
+
+function kpiExcelLines() {
+  ensureKpis();
+  const lines = [["구분", "지표명", "영역", "기준값", "목표", "실적", "단위", "달성률(%)", "담당", "상태"].map(csvEscape).join(",")];
+  (state.kpis || []).forEach((raw) => {
+    const k = kpiSimRow(raw);
+    const assignee = k.assigneeId ? memberById(k.assigneeId) : null;
+    lines.push(
+      [
+        kpiScopeMeta(k.scope).label,
+        k.name,
+        k.area || "미분류",
+        k.baseline,
+        k.target,
+        k.actual,
+        k.unit || "",
+        k.rate != null ? k.rate.toFixed(1) : "",
+        assignee?.name || k.submittedBy || "",
+        isKpiSubmitted(k) ? "제출" : "입력중",
+      ]
+        .map(csvEscape)
+        .join(",")
+    );
+  });
+  return lines;
+}
+
+function collectionStatusExcelLines(col = latestCollection()) {
+  const board = col ? buildTeamCollectionBoard(col) : [];
+  const lines = [[`${col?.name || "취합"} 보고서 현황`].map(csvEscape).join(",")];
+  lines.push(["파트", "담당", "작성p", "할당p", "상태"].map(csvEscape).join(","));
+  board.forEach((r) => {
+    lines.push([`${r.section}. ${r.title}`, r.assignee, r.pages, r.alloc || "", r.status?.label || ""].map(csvEscape).join(","));
+  });
+  return lines;
+}
+
+function scheduleStatusExcelLines() {
+  const lines = [["마감", "업무명", "단계", "담당", "상태"].map(csvEscape).join(",")];
+  unifiedTfScheduleRows().forEach(({ s, tpl, due }) => {
+    if (!s && !tpl) return;
+    lines.push(
+      [
+        due || "",
+        s?.title || tpl?.title || "",
+        tpl ? `${tpl.step || ""} ${tpl.short || ""}`.trim() : scheduleGroupLabel(scheduleGroupOf(s)),
+        s?.owner || s?.createdBy || "",
+        s?.status || "준비",
+      ]
+        .map(csvEscape)
+        .join(",")
+    );
+  });
+  return lines;
+}
+
+function tfallHubBarHtml() {
+  if (activeNavId !== "tfall") return "";
+  return `
+    <section class="hub-pack-bar">
+      <div>
+        <strong>모아보기 자료</strong>
+        <p class="muted">보고서·예산·성과지표가 모이면 한 번에 받고, 평가회의 요약표로 출력합니다.</p>
+      </div>
+      <div class="row hub-pack-actions">
+        <button type="button" class="btn" id="printEvalBrief">요약표 출력</button>
+        <button type="button" class="btn btn-primary" id="downloadHubPack">일괄 다운로드</button>
+      </div>
+    </section>`;
+}
+
+function bindTfallHubBar(root = document) {
+  root.querySelector("#downloadHubPack")?.addEventListener("click", () => downloadHubPack());
+  root.querySelector("#printEvalBrief")?.addEventListener("click", () => openEvalBriefPrint());
+}
+
+async function downloadHubPack() {
+  ensureBudget();
+  ensureKpis();
+  const col = latestCollection();
+  const hangul = col ? orderedCollectionHangulFiles(col) : [];
+  try {
+    const JSZip = (await import("https://cdn.jsdelivr.net/npm/jszip@3.10.1/+esm")).default;
+    const zip = new JSZip();
+    zip.file(`1_보고서현황_${today()}.xls`, excelBlobFromLines(collectionStatusExcelLines(col)));
+    hangul.forEach((f) => {
+      const b64 = String(f.dataUrl || "").split(",")[1];
+      if (!b64) return;
+      zip.file(`보고서_한글/${f.zipName}`, b64, { base64: true });
+    });
+    zip.file(`2_예산현황_${today()}.xls`, excelBlobFromLines(budgetExcelLines()));
+    zip.file(`3_성과지표현황_${today()}.xls`, excelBlobFromLines(kpiExcelLines()));
+    zip.file(`4_주요일정현황_${today()}.xls`, excelBlobFromLines(scheduleStatusExcelLines()));
+    const blob = await zip.generateAsync({ type: "blob" });
+    triggerBlobDownload(blob, `모아보기_일괄_${safeZipFileName(state.meta?.tfName || "TF", "TF")}_${today()}.zip`);
+  } catch (err) {
+    alert(err?.message || "일괄 파일을 만들지 못했습니다. 네트워크 후 다시 시도해 주세요.");
+  }
+}
+
+function budgetExcelLines() {
+  ensureBudget();
+  const mode = getBudgetInputMode();
+  const items = state.budget.items || [];
+  const lines = [["연번", "영역", "세부프로그램", "비목", "편성금액", "실적금액", "산출내역", "담당", "상태"].map(csvEscape).join(",")];
+  items.forEach((item) => {
+    const assignee = item.assigneeId ? memberById(item.assigneeId) : null;
+    lines.push(
+      [
+        item.no,
+        item.area,
+        item.activity || item.title,
+        item.expenseType || "",
+        Number(item.planned) || 0,
+        Number(item.spent) || 0,
+        item.calcText || "",
+        assignee?.name || "",
+        isBudgetSubmitted(item) ? "제출" : "입력중",
+      ]
+        .map(csvEscape)
+        .join(",")
+    );
+  });
+  return lines;
+}
+
+async function openEvalBriefPrint() {
+  ensureBudget();
+  ensureKpis();
+  const col = latestCollection();
+  const board = col ? buildTeamCollectionBoard(col) : [];
+  const items = state.budget.items || [];
+  const kpis = (state.kpis || []).map(kpiSimRow);
+  const sched = unifiedTfScheduleRows();
+  const qr = await accessQrDataUrl();
+  const url = appAccessUrl();
+  const tfName = state.meta?.tfName || state.meta?.reportTitle || "TF Pulse";
+  const win = window.open("", "_blank", "noopener,noreferrer,width=980,height=820");
+  if (!win) {
+    alert("팝업이 차단되었습니다. 팝업을 허용한 뒤 다시 눌러 주세요.");
+    return;
+  }
+  const table = (head, rows) =>
+    `<table><thead><tr>${head.map((h) => `<th>${h}</th>`).join("")}</tr></thead><tbody>${
+      rows.length ? rows.join("") : `<tr><td colspan="${head.length}">자료 없음</td></tr>`
+    }</tbody></table>`;
+  win.document.write(`<!DOCTYPE html><html lang="ko"><head><meta charset="utf-8" /><title>평가회의 요약표</title>
+    <style>
+      body{font-family:Pretendard,Apple SD Gothic Neo,sans-serif;color:#1d1d1f;margin:24px;font-size:13px}
+      h1{font-size:22px;margin:0 0 6px} .sub{color:#6e6e73;margin:0 0 18px}
+      h2{font-size:15px;margin:22px 0 8px;border-bottom:1px solid #ddd;padding-bottom:4px}
+      table{width:100%;border-collapse:collapse;margin-bottom:8px}
+      th,td{border:1px solid #ccc;padding:6px 8px;text-align:left}
+      th{background:#f4f4f5}
+      .qr{margin-top:28px;text-align:center}
+      .qr img{width:140px;height:140px}
+      .qr p{margin:6px 0 0;font-size:12px;color:#6e6e73}
+      @media print{body{margin:12mm} button{display:none}}
+    </style></head><body>
+    <button type="button" onclick="window.print()">인쇄</button>
+    <h1>${escapeHtml(tfName)} 평가회의 요약표</h1>
+    <p class="sub">${escapeHtml(today())} · 주요 일정 및 현황</p>
+    <h2>1. 주요 일정 및 현황</h2>
+    ${table(
+      ["마감", "업무명", "단계", "담당", "상태"],
+      sched.map(({ s, tpl, due }) => {
+        const title = s?.title || tpl?.title || "";
+        if (!title) return "";
+        return `<tr><td>${escapeHtml(due ? formatKorDate(due) : "-")}</td><td>${escapeHtml(title)}</td><td>${escapeHtml(
+          tpl ? `${tpl.step || ""} ${tpl.short || ""}`.trim() : scheduleGroupLabel(scheduleGroupOf(s))
+        )}</td><td>${escapeHtml(s?.owner || s?.createdBy || "-")}</td><td>${escapeHtml(s?.status || "준비")}</td></tr>`;
+      }).filter(Boolean)
+    )}
+    <h2>2. 보고서 통합${col ? ` · ${escapeHtml(col.name)}` : ""}</h2>
+    ${table(
+      ["파트", "담당", "페이지", "상태"],
+      board.map(
+        (r) =>
+          `<tr><td>${escapeHtml(`${r.section}. ${r.title}`)}</td><td>${escapeHtml(r.assignee)}</td><td>${r.pages}/${r.alloc || "?"}p</td><td>${escapeHtml(r.status?.label || "")}</td></tr>`
+      )
+    )}
+    <h2>3. 예산 통합</h2>
+    ${table(
+      ["영역", "프로그램", "비목", "편성", "실적", "담당"],
+      items.map((i) => {
+        const m = i.assigneeId ? memberById(i.assigneeId) : null;
+        return `<tr><td>${escapeHtml(i.area || "미분류")}</td><td>${escapeHtml(i.activity || i.title || "")}</td><td>${escapeHtml(
+          i.expenseType || ""
+        )}</td><td>${formatWon(i.planned)}</td><td>${formatWon(i.spent)}</td><td>${escapeHtml(m?.name || "-")}</td></tr>`;
+      })
+    )}
+    <h2>4. 성과지표 통합</h2>
+    ${table(
+      ["구분", "지표명", "기준", "목표", "실적", "달성"],
+      kpis.map(
+        (k) =>
+          `<tr><td>${escapeHtml(kpiScopeMeta(k.scope).label)}</td><td>${escapeHtml(k.name)}</td><td>${escapeHtml(String(k.baseline))}${escapeHtml(
+            k.unit || ""
+          )}</td><td>${escapeHtml(String(k.target))}${escapeHtml(k.unit || "")}</td><td>${escapeHtml(String(k.actual))}${escapeHtml(
+            k.unit || ""
+          )}</td><td>${k.rate != null ? `${k.rate.toFixed(1)}%` : "—"}</td></tr>`
+      )
+    )}
+    <div class="qr">
+      <img src="${qr}" alt="접속 QR" />
+      <p>웹앱 접속 · ${escapeHtml(url)}</p>
+    </div>
+    <script>window.addEventListener("load",()=>setTimeout(()=>window.print(),200));</script>
+    </body></html>`);
+  win.document.close();
 }
 
 function sendBudgetInputRequest(itemId, { silent = false, mode = getBudgetInputMode() } = {}) {
@@ -5910,6 +6169,7 @@ function renderBudget() {
 
   el.innerHTML = `
     <div class="budget-page">
+      ${tfallHubBarHtml()}
       <div class="budget-mode-tabs" role="tablist" aria-label="예산 입력 구분">
         <button type="button" class="budget-mode-tab ${mode === "plan" ? "active" : ""}" data-budget-mode="plan">운영계획 (예산)</button>
         <button type="button" class="budget-mode-tab ${mode === "result" ? "active" : ""}" data-budget-mode="result">결과보고 (실적)</button>
@@ -6028,6 +6288,7 @@ function renderBudget() {
   $("#addBudgetItem")?.addEventListener("click", () => openBudgetItemModal());
   $("#composeBudgetItem")?.addEventListener("click", () => openMemberBudgetCompose());
   $("#bulkBudgetUpload")?.addEventListener("click", () => openBudgetBulkUploadModal());
+  bindTfallHubBar(el);
   $("#downloadBudgetExcel")?.addEventListener("click", () => downloadBudgetExcel());
   $("#downloadBudgetExcel2")?.addEventListener("click", () =>
     downloadBudgetExcel({ mineOnly: !manage })
@@ -8279,7 +8540,7 @@ const GUIDE_MENU = [
   {
     tab: "collections",
     name: "모아보기",
-    how: "보고서 통합 · 예산 통합 · 성과지표 통합만 봅니다.",
+    how: "보고서 통합 · 예산 통합 · 성과지표 통합만 봅니다. 일괄 다운로드와 평가회의 요약표 출력을 쓸 수 있습니다.",
   },
   {
     tab: "food",
@@ -10124,6 +10385,7 @@ function renderKpi() {
   const submittedN = rows.filter((k) => isKpiSubmitted(k)).length;
 
   el.innerHTML = `
+    ${tfallHubBarHtml()}
     <div class="panel">
       <div class="panel-head">
         <div>
@@ -10185,6 +10447,7 @@ function renderKpi() {
     </div>
   `;
 
+  bindTfallHubBar(el);
   el.querySelectorAll("[data-kpi-filter]").forEach((btn) => {
     btn.addEventListener("click", () => {
       state._kpiFilter = btn.dataset.kpiFilter;

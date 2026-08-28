@@ -1484,6 +1484,34 @@ dialog::backdrop {
   gap: 0;
 }
 
+.app-footer-qr {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  gap: 4px;
+  margin-bottom: 18px;
+}
+.app-footer-qr img {
+  width: 88px;
+  height: 88px;
+  border-radius: 10px;
+  background: #fff;
+  border: 1px solid var(--line);
+}
+.app-footer-qr p {
+  margin: 0;
+  font-size: 0.72rem;
+  font-weight: 750;
+  color: var(--ink);
+}
+.app-footer-qr span {
+  font-size: 0.66rem;
+  color: var(--ink-faint);
+  word-break: break-all;
+  max-width: 16rem;
+  text-align: center;
+}
+
 .app-footer-brand {
   display: flex;
   flex-direction: column;
@@ -11465,6 +11493,29 @@ body.view-home .page-hero {
   .area-board {
     grid-template-columns: 1fr;
   }
+}
+
+.hub-pack-bar {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 12px;
+  flex-wrap: wrap;
+  margin: 0 0 14px;
+  padding: 14px 16px;
+  border: 1px solid rgba(0, 113, 227, 0.2);
+  border-radius: 14px;
+  background: #f4f9ff;
+}
+.hub-pack-bar strong {
+  display: block;
+  font-size: 0.95rem;
+}
+.hub-pack-bar .muted {
+  margin: 4px 0 0;
+}
+.hub-pack-actions {
+  gap: 8px;
 }
 
 .drive-page .panel + .panel {
