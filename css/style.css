@@ -11466,3 +11466,56 @@ body.view-home .page-hero {
     grid-template-columns: 1fr;
   }
 }
+
+.drive-page .panel + .panel {
+  margin-top: 16px;
+}
+.drive-lib-tabs {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 6px;
+  margin: 0 0 14px;
+}
+.drive-doc-picker {
+  display: grid;
+  gap: 8px;
+  margin-top: 8px;
+}
+.drive-doc-pick {
+  display: grid;
+  grid-template-columns: auto auto 1fr;
+  align-items: center;
+  gap: 8px;
+  padding: 10px 12px;
+  border: 1px solid var(--line);
+  border-radius: 12px;
+  background: #fff;
+  cursor: pointer;
+}
+.drive-doc-pick.is-on {
+  border-color: rgba(0, 113, 227, 0.35);
+  background: #f4f9ff;
+}
+.drive-doc-pick strong {
+  font-size: 0.88rem;
+}
+.tf-linked-docs {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 6px;
+  margin-top: 6px;
+}
+.tf-linked-doc {
+  display: inline-flex;
+  align-items: center;
+  padding: 3px 8px;
+  border-radius: 999px;
+  background: rgba(0, 113, 227, 0.1);
+  color: var(--accent);
+  font-size: 0.72rem;
+  font-weight: 750;
+  text-decoration: none;
+}
+.tf-linked-doc:hover {
+  background: rgba(0, 113, 227, 0.16);
+}

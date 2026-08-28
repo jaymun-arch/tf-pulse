@@ -110,7 +110,7 @@ const VIEW_META = {
   requests: { title: "요청", desc: "작업 요청·진행" },
   budget: { title: "예산", desc: "예산을 입력·제출하고 영역별로 구성합니다" },
   schedule: { title: "TF 일정", desc: "마감 순 타임라인에서 일정을 작성합니다" },
-  drive: { title: "드라이브", desc: "문서 링크" },
+  drive: { title: "드라이브", desc: "지침·서식·스타일가이드를 올리고 할 일에 연결합니다" },
   resources: { title: "양식", desc: "공통양식·가이드" },
   food: { title: "식사", desc: "메뉴 돌림판·투표" },
   members: { title: "구성원", desc: "TF 멤버" },
@@ -900,6 +900,7 @@ async function initState() {
       ensureTfTopics();
       ensureCollectionPhases();
       ensureKpis();
+      ensureSharedResources();
       persist();
       return;
     } catch {
@@ -920,6 +921,7 @@ async function initState() {
   ensureTfTopics();
   ensureCollectionPhases();
   ensureKpis();
+  ensureSharedResources();
   persist();
 }
 
@@ -1660,6 +1662,9 @@ function setView(name) {
   }
   if (viewName === "schedule") {
     desc = "마감 순 타임라인에서 일정을 작성합니다. 요청업무 등록 시 날짜와 내용이 이 기준으로 채워집니다.";
+  }
+  if (viewName === "drive") {
+    desc = "지침·서식·스타일가이드를 올리고, 할 일에 연결 문서로 붙입니다.";
   }
   if (viewName === "budget") {
     const modeMeta = budgetModeMeta();
@@ -4100,6 +4105,7 @@ function renderSchedule() {
           <span class="tf-timeline-title">
             <em>업무명</em>
             <input data-tf-title value="${escapeAttr(s?.title || tpl?.title || "")}" placeholder="업무명" aria-label="업무명" />
+            ${s ? scheduleLinkedDocsHtml(s, { compact: true }) : ""}
           </span>
           <span class="tf-timeline-people">
             <span class="tf-timeline-meta">
@@ -4530,6 +4536,75 @@ function sharedSetupResources() {
     .sort((a, b) => (order[a.category] ?? 99) - (order[b.category] ?? 99) || String(a.title).localeCompare(String(b.title), "ko"));
 }
 
+const DRIVE_LIBRARY_CATS = ["지침", "서식", "스타일", "집행기준", "기타"];
+
+function libraryResources() {
+  ensureSharedResources();
+  const order = Object.fromEntries(DRIVE_LIBRARY_CATS.map((c, i) => [c, i]));
+  return [...state.resources].sort(
+    (a, b) =>
+      (order[a.category] ?? 99) - (order[b.category] ?? 99) ||
+      String(a.title || "").localeCompare(String(b.title || ""), "ko")
+  );
+}
+
+function scheduleLinkedIds(s) {
+  return Array.isArray(s?.linkedResourceIds) ? s.linkedResourceIds.map(String).filter(Boolean) : [];
+}
+
+function scheduleLinkedResources(s) {
+  const ids = new Set(scheduleLinkedIds(s));
+  if (!ids.size) return [];
+  ensureSharedResources();
+  return state.resources.filter((r) => ids.has(String(r.id)));
+}
+
+function scheduleLinkedDocsHtml(s, { compact = false } = {}) {
+  const docs = scheduleLinkedResources(s);
+  if (!docs.length) return "";
+  return `
+    <div class="tf-linked-docs ${compact ? "is-compact" : ""}" data-linked-docs>
+      ${docs
+        .map(
+          (r) =>
+            `${resourceDownloadLinkHtml(r, compact ? r.category || "문서" : r.title || "열람", "tf-linked-doc")}`
+        )
+        .join("")}
+    </div>`;
+}
+
+function driveDocPickerHtml(selectedIds = []) {
+  const selected = new Set((selectedIds || []).map(String));
+  const rows = libraryResources();
+  if (!rows.length) {
+    return `<p class="muted wp-form-hint">아직 올린 자료가 없습니다. Setting · 드라이브에서 지침·서식·스타일가이드를 먼저 올려 주세요.</p>`;
+  }
+  return `
+    <div class="drive-doc-picker" id="driveDocPicker">
+      ${rows
+        .map(
+          (r) => `
+        <label class="drive-doc-pick ${selected.has(String(r.id)) ? "is-on" : ""}">
+          <input type="checkbox" name="linkedResources" value="${escapeAttr(r.id)}" ${
+            selected.has(String(r.id)) ? "checked" : ""
+          } />
+          <span class="badge">${escapeHtml(r.category || "자료")}</span>
+          <strong>${escapeHtml(r.title || r.fileName || "자료")}</strong>
+        </label>`
+        )
+        .join("")}
+    </div>`;
+}
+
+function bindDriveDocPicker(root = document) {
+  root.querySelectorAll(".drive-doc-pick").forEach((label) => {
+    const box = label.querySelector('input[name="linkedResources"]');
+    const sync = () => label.classList.toggle("is-on", Boolean(box?.checked));
+    box?.addEventListener("change", sync);
+    label.addEventListener("click", (e) => e.stopPropagation());
+  });
+}
+
 function openSharedMaterialsModal(scheduleItem) {
   const items = sharedSetupResources();
   const byCat = {};
@@ -4825,6 +4900,7 @@ function myWorkTimelineRowHtml(s, index, rows) {
           <em>업무명</em>
           <strong>${escapeHtml(s.title)}</strong>
           ${partsLine ? `<span class="tf-timeline-dept">${escapeHtml(partsLine)}</span>` : ""}
+          ${scheduleLinkedDocsHtml(s, { compact: true })}
         </span>
         <span class="tf-timeline-status">
           <em>진행현황</em>
@@ -4935,12 +5011,19 @@ function bindScheduleFeedActions(root, onRefresh) {
     bindScheduleSwipeRow(row, onRefresh);
   });
 
+  root.querySelectorAll("[data-linked-docs] a").forEach((a) => {
+    a.addEventListener("click", (e) => e.stopPropagation());
+  });
+
   root.querySelectorAll(".task-row.is-simple[data-open-upload], .tf-timeline-row[data-open-upload]").forEach((el) => {
     const open = () => {
       const item = state.schedule.find((s) => s.id === el.dataset.openUpload);
       openScheduleUploadForItem(item);
     };
-    el.addEventListener("click", () => open());
+    el.addEventListener("click", (e) => {
+      if (e.target.closest("[data-linked-docs]")) return;
+      open();
+    });
     el.addEventListener("keydown", (e) => {
       if (e.key === "Enter" || e.key === " ") {
         e.preventDefault();
@@ -5194,38 +5277,118 @@ function workFeedRowHtml(s, admin) {
 
 function renderDrive() {
   const el = $("#view-drive");
+  if (!el) return;
+  ensureSharedResources();
+  const filter = DRIVE_LIBRARY_CATS.includes(state._driveLibFilter) ? state._driveLibFilter : "all";
+  state._driveLibFilter = filter;
+  const lib = libraryResources();
+  const shown = filter === "all" ? lib : lib.filter((r) => r.category === filter);
+  const admin = isAdmin();
+
   el.innerHTML = `
-    <div class="panel">
-      <div class="panel-head">
-        <h2>구글드라이브 바로가기</h2>
-        <button class="btn btn-primary admin-only" id="addDrive">링크 등록</button>
-      </div>
-      <div class="grid grid-3">
-        ${
-          state.driveLinks.length
-            ? state.driveLinks
-                .map(
-                  (d) => `
-            <div class="link-card">
-              <span class="badge">${escapeHtml(d.category || "링크")}</span>
-              <a href="${escapeAttr(d.url)}" target="_blank" rel="noopener noreferrer">${escapeHtml(d.title)}</a>
-              <p class="muted">${escapeHtml(d.note || "")}</p>
-              <div class="card-meta">
-                <a class="btn btn-sm btn-primary" href="${escapeAttr(d.url)}" target="_blank" rel="noopener noreferrer">열기</a>
-                <div class="row admin-only">
-                  <button class="btn btn-sm" data-edit="${d.id}">수정</button>
-                  <button class="btn btn-sm btn-danger" data-del="${d.id}">삭제</button>
-                </div>
+    <div class="drive-page">
+      <div class="panel">
+        <div class="panel-head">
+          <div>
+            <h2 class="panel-title">지침 · 서식 · 스타일가이드</h2>
+            <p class="muted" style="margin:4px 0 0">여기에 올려 두면 할 일 입력 때 꺼내 연결하고, 담당자가 바로 열람할 수 있습니다.</p>
+          </div>
+          ${admin ? `<button type="button" class="btn btn-primary" id="addResource">자료 올리기</button>` : ""}
+        </div>
+        <div class="drive-lib-tabs" role="tablist" aria-label="자료 분류">
+          <button type="button" class="kpi-scope-tab ${filter === "all" ? "is-on" : ""}" data-drive-filter="all">전체 <em>${lib.length}</em></button>
+          ${DRIVE_LIBRARY_CATS.map((c) => {
+            const n = lib.filter((r) => r.category === c).length;
+            return `<button type="button" class="kpi-scope-tab ${filter === c ? "is-on" : ""}" data-drive-filter="${escapeAttr(c)}">${escapeHtml(c === "스타일" ? "스타일가이드" : c)} <em>${n}</em></button>`;
+          }).join("")}
+        </div>
+        <div class="grid grid-2">
+          ${
+            shown.length
+              ? shown
+                  .map(
+                    (r) => `
+            <article class="resource-card">
+              <div class="row">
+                <span class="badge">${escapeHtml(r.category === "스타일" ? "스타일가이드" : r.category || "자료")}</span>
+                <span class="muted">${escapeHtml(r.uploadedAt || "")}</span>
               </div>
-            </div>`
-                )
-                .join("")
-            : `<div class="empty" style="grid-column:1/-1">등록된 드라이브 링크가 없습니다.</div>`
-        }
+              <strong>${escapeHtml(r.title)}</strong>
+              <p class="muted">${escapeHtml(r.fileName || "")}${r.note ? ` · ${escapeHtml(r.note)}` : ""}</p>
+              <div class="card-meta">
+                ${resourceDownloadLinkHtml(r, "열람")}
+                ${
+                  admin
+                    ? `<div class="row">
+                  <button type="button" class="btn btn-sm" data-res-edit="${escapeAttr(r.id)}">수정</button>
+                  <button type="button" class="btn btn-sm btn-danger" data-res-del="${escapeAttr(r.id)}">삭제</button>
+                </div>`
+                    : ""
+                }
+              </div>
+            </article>`
+                  )
+                  .join("")
+              : `<div class="empty" style="grid-column:1/-1">${
+                  filter === "all" ? "올린 자료가 없습니다. 「자료 올리기」로 지침·서식·스타일가이드를 등록하세요." : "이 분류의 자료가 없습니다."
+                }</div>`
+          }
+        </div>
+      </div>
+
+      <div class="panel">
+        <div class="panel-head">
+          <h2 class="panel-title">구글드라이브 바로가기</h2>
+          ${admin ? `<button type="button" class="btn btn-primary" id="addDrive">링크 등록</button>` : ""}
+        </div>
+        <div class="grid grid-3">
+          ${
+            state.driveLinks.length
+              ? state.driveLinks
+                  .map(
+                    (d) => `
+              <div class="link-card">
+                <span class="badge">${escapeHtml(d.category || "링크")}</span>
+                <a href="${escapeAttr(d.url)}" target="_blank" rel="noopener noreferrer">${escapeHtml(d.title)}</a>
+                <p class="muted">${escapeHtml(d.note || "")}</p>
+                <div class="card-meta">
+                  <a class="btn btn-sm btn-primary" href="${escapeAttr(d.url)}" target="_blank" rel="noopener noreferrer">열기</a>
+                  ${
+                    admin
+                      ? `<div class="row">
+                    <button type="button" class="btn btn-sm" data-edit="${escapeAttr(d.id)}">수정</button>
+                    <button type="button" class="btn btn-sm btn-danger" data-del="${escapeAttr(d.id)}">삭제</button>
+                  </div>`
+                      : ""
+                  }
+                </div>
+              </div>`
+                  )
+                  .join("")
+              : `<div class="empty" style="grid-column:1/-1">등록된 드라이브 링크가 없습니다.</div>`
+          }
+        </div>
       </div>
     </div>
   `;
 
+  el.querySelectorAll("[data-drive-filter]").forEach((btn) => {
+    btn.addEventListener("click", () => {
+      state._driveLibFilter = btn.dataset.driveFilter;
+      renderDrive();
+    });
+  });
+  $("#addResource")?.addEventListener("click", () => openResourceModal());
+  el.querySelectorAll("[data-res-edit]").forEach((btn) =>
+    btn.addEventListener("click", () => openResourceModal(btn.dataset.resEdit))
+  );
+  el.querySelectorAll("[data-res-del]").forEach((btn) =>
+    btn.addEventListener("click", () => {
+      if (!confirm("이 자료를 삭제할까요?")) return;
+      state.resources = state.resources.filter((r) => r.id !== btn.dataset.resDel);
+      saveAndRender("drive");
+    })
+  );
   $("#addDrive")?.addEventListener("click", () => openDriveModal());
   el.querySelectorAll("[data-edit]").forEach((btn) =>
     btn.addEventListener("click", () => openDriveModal(btn.dataset.edit))
@@ -8131,7 +8294,7 @@ const GUIDE_MENU = [
   {
     tab: "members",
     name: "Setting",
-    how: "관리자 전용. 구성원·목차·할당·드라이브를 관리합니다.",
+    how: "관리자 전용. 구성원·목차·할당·드라이브(지침·서식·스타일가이드)를 관리합니다.",
     adminOnly: true,
   },
 ];
@@ -11228,6 +11391,12 @@ function openScheduleModal(id) {
           <input name="driveUrl" class="wp-input" type="url" value="${escapeAttr(item?.driveUrl || "")}" placeholder="https://drive.google.com/..." />
         </label>
 
+        <div class="wp-field">
+          <span class="wp-label">연결 문서</span>
+          <p class="muted wp-form-hint">드라이브에 올린 지침·서식·스타일가이드를 골라 붙이면 담당자가 할 일에서 바로 열람합니다.</p>
+          ${driveDocPickerHtml(scheduleLinkedIds(item))}
+        </div>
+
         ${scheduleFormUploadSectionHtml(item)}
 
         ${datalistOptions(`schedDept_${dl}`, deptOpts)}
@@ -11294,6 +11463,7 @@ function openScheduleModal(id) {
         assignees,
         sheetUrl,
         driveUrl: (fd.get("driveUrl") || "").toString().trim(),
+        linkedResourceIds: fd.getAll("linkedResources").map((v) => String(v).trim()).filter(Boolean),
         sharedFiles,
       };
       if (item) Object.assign(item, data);
@@ -11349,6 +11519,7 @@ function openScheduleModal(id) {
   syncCollabInputs();
 
   bindScheduleFormUploadSection(currentGroup);
+  bindDriveDocPicker($("#modalBody") || document);
 
   $("#scheduleModalDelete")?.addEventListener("click", () => {
     if (!item || !confirm("삭제하시겠습니까?")) return;
@@ -11399,7 +11570,7 @@ function openResourceModal(id) {
   if (!isAdmin()) return;
   const item = id ? state.resources.find((r) => r.id === id) : null;
   openModal({
-    title: item ? "자료 수정" : "공통 자료 등록",
+    title: item ? "자료를 수정합니다." : "지침·서식·스타일가이드를 올립니다.",
     bodyHtml: `
       <div class="form-grid two">
         <label class="field full">제목
@@ -11477,7 +11648,7 @@ function openResourceModal(id) {
       });
       if (item) Object.assign(item, data);
       else state.resources.push({ id: uid("r"), ...data });
-      saveAndRender("resources");
+      saveAndRender("drive");
       return true;
     },
   });
