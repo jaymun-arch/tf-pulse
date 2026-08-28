@@ -103,7 +103,7 @@ const BUDGET_CATALOG = {
 const VIEW_META = {
   dashboard: { title: "TF 요약", desc: "지금 열린 단계만, 내 파트만 하면 됩니다" },
   "my-work": { title: "내 업무", desc: "확인 · 제출 · 반영 · 참석 중 지금 할 일" },
-  "tf-all": { title: "TF 업무 모두보기", desc: "보고서·예산·성과지표 통합" },
+  "tf-all": { title: "모아보기", desc: "보고서·예산·성과지표 통합" },
   parts: { title: "목차·할당", desc: "목차와 파트 분량" },
   collections: { title: "보고서 통합", desc: "차수별 제출·분량 분석" },
   review: { title: "윤독", desc: "검토사항 기록" },
@@ -119,7 +119,7 @@ const VIEW_META = {
   guide: { title: "사용방법", desc: "처음 사용자도 순서대로 따라갈 수 있습니다" },
 };
 
-/** PDF 요청: TF요약 · 내업무 · TF모두보기 (+ Setting) */
+/** 상단: TF요약 · 내업무 · 모아보기 · 사용방법 (+ Setting) */
 const NAV_GROUPS = {
   home: {
     label: "TF 요약",
@@ -141,10 +141,12 @@ const NAV_GROUPS = {
     defaultView: "ai-art",
   },
   tfall: {
-    label: "TF 업무 모두보기",
-    views: ["collections"],
+    label: "모아보기",
+    views: ["collections", "budget", "kpi"],
     labels: {
       collections: "보고서 통합",
+      budget: "예산 통합",
+      kpi: "성과지표 통합",
     },
     defaultView: "collections",
   },
@@ -1525,7 +1527,12 @@ function openPartReviewCommentModal(partId, round = activeRound) {
   bindReviewCommentDeletes($("#modalBody"));
 }
 
-function navGroupOf(viewName) {
+function navGroupOf(viewName, preferredNav = activeNavId) {
+  const hits = Object.entries(NAV_GROUPS)
+    .filter(([, g]) => (g.views || []).includes(viewName))
+    .map(([id]) => id);
+  if (preferredNav && hits.includes(preferredNav)) return preferredNav;
+  if (hits.length) return hits[0];
   return VIEW_TO_NAV[viewName] || "home";
 }
 
@@ -1598,25 +1605,26 @@ function renderSubNav(navId, viewName) {
 }
 
 function setView(name) {
+  const groupHint = NAV_GROUPS[name] ? name : activeNavId;
   let viewName = resolveViewName(name);
   if (!isAdmin() && (viewName === "parts" || viewName === "members" || viewName === "schedule")) {
     viewName = "dashboard";
   }
-  let navId = navGroupOf(viewName);
+  let navId = navGroupOf(viewName, groupHint);
   const groupProbe = NAV_GROUPS[navId];
   if (groupProbe?.adminViews?.includes(viewName) && !isAdmin()) {
     viewName = groupProbe.defaultView || "dashboard";
-    navId = navGroupOf(viewName);
+    navId = navGroupOf(viewName, groupHint);
   }
-  if (!isAdmin() && navGroupOf(viewName) === "setup") {
+  if (!isAdmin() && navGroupOf(viewName, groupHint) === "setup") {
     viewName = "dashboard";
   }
-  navId = navGroupOf(viewName);
+  navId = navGroupOf(viewName, groupHint);
   if (NAV_GROUPS[navId]?.adminOnly && !isAdmin()) {
     viewName = "dashboard";
     navId = "home";
   }
-  const resolvedNav = navGroupOf(viewName);
+  const resolvedNav = navGroupOf(viewName, groupHint);
   activeNavId = resolvedNav;
   activeViewName = viewName;
   lastViewByNav[resolvedNav] = viewName;
@@ -1629,8 +1637,9 @@ function setView(name) {
 
   const group = NAV_GROUPS[resolvedNav];
   const meta = VIEW_META[viewName] || { title: viewName, desc: "" };
-  const showGroupTitle = group && group.views.length > 1;
-  const title = showGroupTitle ? `${group.label} · ${meta.title}` : meta.title || group?.label || viewName;
+  const tabLabel = group?.labels?.[viewName] || meta.title;
+  const showGroupTitle = group && group.views.filter((v) => !(group.hideTabs || []).includes(v)).length > 1;
+  const title = showGroupTitle ? `${group.label} · ${tabLabel}` : tabLabel || group?.label || viewName;
   let desc = meta.desc;
   if (viewName === "collections") {
     desc = isAdmin()
@@ -8106,8 +8115,8 @@ const GUIDE_MENU = [
   },
   {
     tab: "collections",
-    name: "TF 업무 모두보기",
-    how: "보고서 취합 현황을 봅니다. 예산·지표는 내업무에서 다룹니다.",
+    name: "모아보기",
+    how: "보고서 통합 · 예산 통합 · 성과지표 통합만 봅니다.",
   },
   {
     tab: "food",
@@ -8128,7 +8137,7 @@ const GUIDE_MENU = [
 ];
 
 const GUIDE_TIPS = [
-  "상단 메뉴는 TF 요약 · 내업무 · TF 업무 모두보기 · 사용방법 네 칸입니다. 관리자는 Setting이 추가됩니다.",
+  "상단 메뉴는 TF 요약 · 내업무 · 모아보기 · 사용방법 네 칸입니다. 관리자는 Setting이 추가됩니다.",
   "내업무는 그림 · 지표 · 예산 · 식사만 둡니다. 제출한 예산·지표는 담당자가 영역별로 배치합니다.",
   "접속할 때마다 이름 선택 화면부터 시작합니다. TF주제 리스트에서 TF를 고른 뒤 참가자를 선택하세요.",
   "상단 알람(빨간·파란)을 누르면 일정과 코멘트가 한 창에 같이 보입니다.",
