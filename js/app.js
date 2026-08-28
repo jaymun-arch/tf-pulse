@@ -4,6 +4,7 @@ import {
   analyzeReviewSummary,
   generateYeonsungImage,
   planReportDiagram,
+  learnStyleFromImage,
   downloadImagesAsPpt,
 } from "./ai.js";
 import { REPORT_LAYOUTS, downloadReportLayoutPpt, layoutPreviewWireHtml } from "./report-layouts.js";
@@ -20,13 +21,13 @@ import {
   getAllLearnedSamples,
   pickSamplesForGeneration,
   buildLearnedStyleGuideBlock,
-  learningBannerHtml,
   learningGalleryHtml,
   ingestStyleSample,
   removeLearnedSample,
   programStats,
   STYLE_PROGRAMS,
   DEFAULT_STYLE_SAMPLES,
+  learningLogHtml,
 } from "./report-style-learning.js";
 import {
   DEFAULT_TF_TOPICS,
@@ -113,7 +114,7 @@ const VIEW_META = {
   resources: { title: "양식", desc: "공통양식·가이드" },
   food: { title: "오늘 뭐먹지", desc: "메뉴 돌림판·투표" },
   members: { title: "구성원", desc: "TF 멤버" },
-  "ai-art": { title: "보고서 그림", desc: "레이아웃·도식·PPT" },
+  "ai-art": { title: "보고서 그림", desc: "영역 · 레이아웃 · 내용만 정하면 됩니다" },
   kpi: { title: "성과지표", desc: "달성·밸런스 분석" },
   guide: { title: "사용방법", desc: "처음 사용자도 순서대로 따라갈 수 있습니다" },
 };
@@ -8538,7 +8539,6 @@ function renderAiArt() {
   const el = $("#view-ai-art");
   if (!el) return;
   ensureAiArts();
-  ensureAiBriefs();
   ensureReportStyleLearning(state);
 
   const who = sessionUser || "작성자";
@@ -8546,214 +8546,117 @@ function renderAiArt() {
   state._aiArtTab = artTab;
   const selectedFrame = state._aiArtFrame || "core-project";
   const frame = reportFrameById(selectedFrame);
-  const docKind = getReportDocKind();
+  const selectedLayout = state._aiArtLayoutId || "kpi";
   const seed = state._artStudioSeed || Date.now();
   const allLearned = getAllLearnedSamples(state);
-  const activeLearned = pickSamplesForGeneration(state, {
-    themeId: selectedFrame,
-    direction: state._aiArtContextSeed || "",
-    limit: 5,
-  });
-  const learnFilter = state._styleLearnFilter || "all";
-  const learnStats = programStats(allLearned);
+  const learnLogs = state.reportStyleLearning?.logs || [];
+  const history = Array.isArray(state._artStudioHistory) ? state._artStudioHistory : [];
   const lastPack =
     state._artStudioPack ||
     composeStudioPack({
       themeId: selectedFrame,
       direction: state._aiArtContextSeed || "",
       seed,
-      learnedSamples: activeLearned,
+      preferLayoutId: selectedLayout,
     });
   const lastGuide = state._artStudioGuide || null;
-  const briefOpts = state.aiBriefs
-    .slice(0, 12)
-    .map(
-      (b) =>
-        `<option value="${escapeAttr(b.id)}" ${b.id === (state._aiArtBriefId || "") ? "selected" : ""}>${escapeHtml(
-          `${b.roundName || ""} · ${b.analysis?.adminBrief || b.fileName || b.id}`
-        )}</option>`
-    )
-    .join("");
+  const directionValue = state._aiArtContextSeed || "";
 
   el.innerHTML = `
-    <div class="ai-page report-make art-studio">
-      <header class="report-make-hero">
-        <p class="report-make-kicker">보고서 그림</p>
-        <h2 class="report-make-title"><span class="mine-name">${escapeHtml(who)}</span> 님, 방향만 정해주시면 제가 알아서 그림을 그려드립니다.</h2>
-        <p class="report-make-desc">전문대 혁신·RISE·신산업 등 <strong>학습된 보고서 양식</strong>을 반영해 더 정교한 그림을 제안합니다.</p>
-        ${
-          isAdmin()
-            ? `<div class="report-make-mode" role="group" aria-label="작성 기준">
-                <button type="button" class="btn btn-sm ${docKind === "plan" ? "btn-primary" : ""}" data-doc-kind="plan">운영계획서</button>
-                <button type="button" class="btn btn-sm ${docKind === "result" ? "btn-primary" : ""}" data-doc-kind="result">결과보고서</button>
-              </div>`
-            : ""
-        }
-      </header>
-
+    <div class="ai-page report-make art-studio is-simple">
       <nav class="art-studio-subtabs sub-tab-bar" role="tablist" aria-label="보고서 그림">
-        <button type="button" class="sub-tab-btn ${artTab === "create" ? "active" : ""}" data-art-tab="create" role="tab">그림 만들기</button>
-        <button type="button" class="sub-tab-btn ${artTab === "learn" ? "active" : ""}" data-art-tab="learn" role="tab">양식학습 <span class="badge">${allLearned.length}</span></button>
+        <button type="button" class="sub-tab-btn ${artTab === "create" ? "active" : ""}" data-art-tab="create">그림 만들기</button>
+        <button type="button" class="sub-tab-btn ${artTab === "learn" ? "active" : ""}" data-art-tab="learn">양식학습 ${learnLogs.length ? `<span class="badge">${learnLogs.length}</span>` : ""}</button>
       </nav>
 
       <div data-art-tab-panel="create" ${artTab === "create" ? "" : "hidden"}>
-      ${learningBannerHtml(activeLearned)}
-
-      <section class="panel art-studio-compose">
-        <div class="art-studio-compose-grid">
-          <div class="art-studio-inputs">
-            <label class="wp-field">
-              <span class="wp-label">테마 (보고서 작성 방향)</span>
+        <section class="panel art-simple-panel">
+          <ol class="art-simple-steps">
+            <li>
+              <p class="wp-label">1. 보고서 영역</p>
               <div class="ai-type-grid ai-frame-grid art-studio-themes" role="radiogroup">
                 ${REPORT_FRAME_GROUPS.map(
                   (g) => `
                   <button type="button" class="ai-type-card ai-frame-card ${g.id === selectedFrame ? "active" : ""}" data-art-frame="${escapeAttr(g.id)}" aria-pressed="${g.id === selectedFrame ? "true" : "false"}">
-                    <span class="ai-type-icon">${flaticonIcon(g.icon || "fi-rr-diagram-project")}</span>
                     <strong>${escapeHtml(g.name)}</strong>
                     <span>${escapeHtml(g.desc)}</span>
                   </button>`
                 ).join("")}
               </div>
-            </label>
-            <label class="wp-field">
-              <span class="wp-label">작성 방향 · 표현할 내용</span>
-              <textarea id="artStudioDirection" rows="5" class="wp-input" placeholder="예: ICC 특성화·거버넌스·3개년 KPI·2026 확산 실적">${escapeHtml(state._aiArtContextSeed || frameContextGuide(frame))}</textarea>
-            </label>
-            <label class="wp-field">
-              <span class="wp-label">AI 취합분석 불러오기 (선택)</span>
-              <select id="artStudioBrief" class="wp-input wp-select">
-                <option value="">직접 입력</option>
-                ${briefOpts}
-              </select>
-            </label>
-            <div class="art-studio-actions">
-              <button type="button" class="btn btn-primary btn-lg" id="artStudioCreate">${flaticonIcon("fi-rr-magic-wand")} 만들기</button>
-              <button type="button" class="btn btn-lg art-studio-dice" id="artStudioDice" title="같은 방향 · 다른 조합" ${lastGuide ? "" : "disabled"}>🎲 새로고침</button>
+            </li>
+            <li>
+              <p class="wp-label">2. 비슷한 레이아웃</p>
+              <div class="art-layout-pick" role="radiogroup">
+                ${REPORT_LAYOUTS.map(
+                  (l) => `
+                  <button type="button" class="art-layout-card ${l.id === selectedLayout ? "active" : ""}" data-art-layout="${escapeAttr(l.id)}" aria-pressed="${l.id === selectedLayout ? "true" : "false"}">
+                    <div class="art-layout-thumb">${layoutPreviewWireHtml(l.id)}</div>
+                    <strong>${escapeHtml(l.name)}</strong>
+                  </button>`
+                ).join("")}
+              </div>
+            </li>
+            <li>
+              <p class="wp-label">3. 넣고 싶은 내용</p>
+              <textarea id="artStudioDirection" rows="6" class="wp-input" placeholder="보고서에 담고 싶은 내용을 적어 주세요. 예: ICC 참여 기업 수, 프로그램 운영 실적, 환류 사례">${escapeHtml(directionValue)}</textarea>
+            </li>
+          </ol>
+          <div class="art-studio-actions">
+            <button type="button" class="btn btn-primary btn-lg" id="artStudioCreate">만들기</button>
+            <button type="button" class="btn btn-lg art-studio-dice" id="artStudioDice" title="조금씩 다르게 다시 그리기" ${lastGuide ? "" : "disabled"} aria-label="주사위">🎲</button>
+            ${
+              history.length
+                ? `<button type="button" class="btn" id="artStudioUndo">직전 그림 불러오기</button>`
+                : ""
+            }
+          </div>
+        </section>
+
+        <section class="panel art-studio-live-panel">
+          <div class="ai-art-progress diagram-build-progress" id="artStudioProgress" hidden>
+            <div class="ai-art-progress-meta">
+              <span class="muted" id="artStudioStatus">준비</span>
+              <span class="ai-art-progress-pct" id="artStudioPct">0%</span>
             </div>
+            <div class="ai-art-progress-track" role="progressbar" aria-valuemin="0" aria-valuemax="100">
+              <div class="ai-art-progress-fill" id="artStudioFill"></div>
+            </div>
+            <p class="ai-art-progress-step muted" id="artStudioStep"></p>
           </div>
           <div class="art-studio-live">
-            <div class="ai-art-progress diagram-build-progress" id="artStudioProgress" hidden>
-              <div class="ai-art-progress-meta">
-                <span class="muted" id="artStudioStatus">준비</span>
-                <span class="ai-art-progress-pct" id="artStudioPct">0%</span>
-              </div>
-              <div class="ai-art-progress-track" role="progressbar" aria-valuemin="0" aria-valuemax="100" id="artStudioBar">
-                <div class="ai-art-progress-fill" id="artStudioFill"></div>
-              </div>
-              <p class="ai-art-progress-step muted" id="artStudioStep"></p>
-            </div>
             ${studioStageHtml({
               layoutIds: lastPack.layoutIds,
               diagramTypeId: lastPack.typeId,
-              visibleCount: lastGuide ? lastPack.layoutIds.length : 0,
+              visibleCount: lastGuide ? lastPack.layoutIds.length : 1,
               phase: lastGuide ? 5 : 0,
               variant: lastPack.variant,
             })}
           </div>
-        </div>
-      </section>
+        </section>
 
-      <section class="panel art-studio-result" id="artStudioResult" ${lastGuide ? "" : "hidden"}>
-        <div class="panel-head">
-          <div>
-            <h2 class="panel-title">${flaticonIcon("fi-rr-lightbulb-on", "panel-title-icon")} 레이아웃 조합 · 활용 제안</h2>
-            <p class="panel-desc" id="artStudioSummary">${escapeHtml(lastGuide?.summary || "")}</p>
-          </div>
-          <div class="row">
-            <button type="button" class="btn btn-primary" id="artStudioPptLayout">${flaticonIcon("fi-rr-download")} 레이아웃 PPT</button>
-            <button type="button" class="btn" id="artStudioPptDiagram">도식 PPT</button>
-            <button type="button" class="btn" id="artStudioPptAll">전체 패키지</button>
-          </div>
-        </div>
-        <ul class="diagram-build-log" id="artStudioLog" aria-live="polite"></ul>
-        <div class="art-studio-guide" id="artStudioGuide">
-          ${
-            lastGuide
-              ? `
-            ${lastGuide.reasoning ? `<p class="art-studio-reasoning">${escapeHtml(lastGuide.reasoning)}</p>` : ""}
-            ${
-              lastGuide.keyMessages?.length
-                ? `<ul class="art-studio-messages">${lastGuide.keyMessages.map((m) => `<li>${escapeHtml(m)}</li>`).join("")}</ul>`
-                : ""
-            }
-            <ol class="art-studio-workflow">${lastGuide.workflow.map((w) => `<li>${escapeHtml(w)}</li>`).join("")}</ol>
-            <div class="art-studio-layout-cards">
-              ${lastGuide.items
-                .map(
-                  (it) => `
-                <article class="art-studio-guide-card">
-                  <span class="badge">${escapeHtml(String(it.order))}</span>
-                  <strong>${escapeHtml(it.name)}</strong>
-                  <p>${escapeHtml(it.usage)}</p>
-                  <span class="muted">${escapeHtml(it.desc)}</span>
-                </article>`
-                )
-                .join("")}
-            </div>
-            <p class="muted art-studio-variant-note">스타일 변형 · ${escapeHtml(lastGuide.variantLabel)} — ${escapeHtml(lastGuide.variantHint)}</p>
-            ${
-              lastGuide.learnedSamples?.length
-                ? `<div class="style-learn-applied"><strong>반영된 학습 양식</strong><ul>${lastGuide.learnedSamples
-                    .map((s) => `<li>${escapeHtml(s.title)} <span class="muted">(${escapeHtml(STYLE_PROGRAMS.find((p) => p.id === s.program)?.label || s.program)})</span></li>`)
-                    .join("")}</ul></div>`
-                : ""
-            }`
-              : ""
-          }
-        </div>
-      </section>
+        <section class="panel art-studio-result" id="artStudioResult" ${lastGuide ? "" : "hidden"}>
+          <h2 class="panel-title">왜 이렇게 그렸나</h2>
+          <p class="art-studio-reasoning" id="artStudioWhy">${escapeHtml(lastGuide?.reasoning || lastGuide?.summary || "")}</p>
+          <h3 class="art-studio-contents-title">담을 수 있는 내용</h3>
+          <ul class="art-studio-messages" id="artStudioContents">
+            ${(lastGuide?.contents || lastGuide?.keyMessages || []).map((m) => `<li>${escapeHtml(m)}</li>`).join("")}
+          </ul>
+        </section>
       </div>
 
-      <section class="panel style-learn-panel" data-art-tab-panel="learn" ${artTab === "learn" ? "" : "hidden"}>
-        <div class="panel-head">
-          <div>
-            <h2 class="panel-title">${flaticonIcon("fi-rr-layers", "panel-title-icon")} 양식학습 · 보고서 그림 레퍼런스</h2>
-            <p class="panel-desc">전문대학 혁신지원사업·RISE·신산업 등에서 쓰인 보고서 그림을 등록하면, 「그림 만들기」에서 자동 반영됩니다. (현재 ${allLearned.length}건 학습)</p>
-          </div>
-        </div>
-        <div class="style-learn-stats">
-          ${STYLE_PROGRAMS.map(
-            (p) => `<span class="style-learn-stat"><em>${learnStats[p.id] || 0}</em>${escapeHtml(p.label)}</span>`
-          ).join("")}
-        </div>
-        <form class="style-learn-upload" id="styleLearnUploadForm">
-          <div class="wp-grid-2">
-            <label class="wp-field">
-              <span class="wp-label">사업·프로그램 분류</span>
-              <select name="program" class="wp-input wp-select" required>
-                ${STYLE_PROGRAMS.map((p) => `<option value="${escapeAttr(p.id)}">${escapeHtml(p.label)}</option>`).join("")}
-              </select>
-            </label>
-            <label class="wp-field">
-              <span class="wp-label">양식 제목</span>
-              <input name="title" class="wp-input" placeholder="예: RISE 거버넌스 추진체계도" />
-            </label>
-            <label class="wp-field">
-              <span class="wp-label">레이아웃 유형 (선택)</span>
-              <select name="layoutRef" class="wp-input wp-select">
-                <option value="">자동</option>
-                ${REPORT_LAYOUTS.map((l) => `<option value="${escapeAttr(l.id)}">${escapeHtml(l.name)}</option>`).join("")}
-              </select>
-            </label>
-            <label class="wp-field">
-              <span class="wp-label">보고서 그림 파일 (PNG·JPG)</span>
-              <input type="file" name="file" accept="image/png,image/jpeg,image/webp" required />
-            </label>
-          </div>
-          <button type="submit" class="btn btn-primary">${flaticonIcon("fi-rr-upload")} 학습에 추가</button>
-        </form>
-        <div class="style-learn-filter sub-tab-bar">
-          <button type="button" class="sub-tab-btn ${learnFilter === "all" ? "active" : ""}" data-learn-filter="all">전체 ${allLearned.length}</button>
-          ${STYLE_PROGRAMS.map(
-            (p) =>
-              `<button type="button" class="sub-tab-btn ${learnFilter === p.id ? "active" : ""}" data-learn-filter="${escapeAttr(p.id)}">${escapeHtml(p.label)} ${learnStats[p.id] || 0}</button>`
-          ).join("")}
-        </div>
-        <div id="styleLearnGallery">${learningGalleryHtml(allLearned, { filter: learnFilter })}</div>
-        <p class="muted style-learn-foot">※ 내장 ${DEFAULT_STYLE_SAMPLES?.length || 10}건 + 업로드 양식이 「만들기」 GPT 기획·레이아웃 조합에 반영됩니다.</p>
+      <section class="panel style-learn-panel is-simple" data-art-tab-panel="learn" ${artTab === "learn" ? "" : "hidden"}>
+        <h2 class="panel-title">양식학습</h2>
+        <p class="panel-desc">보고서 그림을 올리면 누가 학습을 시켰는지 기록되고, API가 유형을 분석해 그림 만들기에 반영합니다.</p>
+        <label class="style-learn-drop" id="styleLearnDrop">
+          <input type="file" id="styleLearnFile" accept="image/png,image/jpeg,image/webp" hidden />
+          <strong>그림을 올리거나 여기에 놓으세요</strong>
+          <span>PNG · JPG · 학습 담당자 ${escapeHtml(who)}</span>
+        </label>
+        <p class="muted" id="styleLearnStatus"></p>
+        <h3 class="art-studio-contents-title">학습 로그</h3>
+        ${learningLogHtml(learnLogs)}
+        <div id="styleLearnGallery">${learningGalleryHtml(allLearned.filter((s) => s.source === "upload"), { filter: "all" })}</div>
       </section>
-
-      ${flaticonSearchHtml()}
     </div>
   `;
 
@@ -8774,72 +8677,34 @@ function renderAiArt() {
     if (status && label != null) status.textContent = label;
   };
 
-  const pushStudioLog = (text) => {
-    const log = $("#artStudioLog");
-    if (!log) return;
-    const li = document.createElement("li");
-    li.textContent = text;
-    li.className = "is-new";
-    log.appendChild(li);
-  };
-
   const renderGuideDom = (guide) => {
-    const box = $("#artStudioGuide");
-    const sum = $("#artStudioSummary");
-    if (sum) sum.textContent = guide.summary || "";
-    if (!box) return;
-    box.innerHTML = `
-      ${guide.reasoning ? `<p class="art-studio-reasoning">${escapeHtml(guide.reasoning)}</p>` : ""}
-      ${
-        guide.keyMessages?.length
-          ? `<ul class="art-studio-messages">${guide.keyMessages.map((m) => `<li>${escapeHtml(m)}</li>`).join("")}</ul>`
-          : ""
-      }
-      <ol class="art-studio-workflow">${guide.workflow.map((w) => `<li>${escapeHtml(w)}</li>`).join("")}</ol>
-      <div class="art-studio-layout-cards">
-        ${guide.items
-          .map(
-            (it) => `
-          <article class="art-studio-guide-card">
-            <span class="badge">${escapeHtml(String(it.order))}</span>
-            <strong>${escapeHtml(it.name)}</strong>
-            <p>${escapeHtml(it.usage)}</p>
-            <span class="muted">${escapeHtml(it.desc)}</span>
-          </article>`
-          )
-          .join("")}
-      </div>
-      <p class="muted art-studio-variant-note">스타일 변형 · ${escapeHtml(guide.variantLabel)} — ${escapeHtml(guide.variantHint)}</p>
-      ${
-        guide.learnedSamples?.length
-          ? `<div class="style-learn-applied"><strong>반영된 학습 양식</strong><ul>${guide.learnedSamples
-              .map(
-                (s) =>
-                  `<li>${escapeHtml(s.title)} <span class="muted">(${escapeHtml(STYLE_PROGRAMS.find((p) => p.id === s.program)?.label || s.program)})</span></li>`
-              )
-              .join("")}</ul></div>`
-          : ""
-      }`;
+    const why = $("#artStudioWhy");
+    const list = $("#artStudioContents");
+    if (why) why.textContent = guide.reasoning || guide.summary || "";
+    if (list) {
+      list.innerHTML = (guide.contents || guide.keyMessages || []).map((m) => `<li>${escapeHtml(m)}</li>`).join("");
+    }
   };
 
-  const applyBriefToStudio = (id) => {
-    const b = state.aiBriefs.find((x) => x.id === id);
-    if (!b) return;
-    const a = b.analysis || {};
-    const f = reportFrameById(state._aiArtFrame || selectedFrame);
-    const ctx = [
-      frameContextGuide(f).split("【표현할 내용】")[0].trim(),
-      "【표현할 내용】",
-      a.projectName ? `핵심사업: ${a.projectName}` : "",
-      a.adminBrief,
-      a.summary,
-      (a.themes || []).join(", "),
-    ]
-      .filter(Boolean)
-      .join("\n\n");
-    const ta = $("#artStudioDirection");
-    if (ta) ta.value = ctx;
-    state._aiArtContextSeed = ctx;
+  const snapshotNow = () => ({
+    pack: state._artStudioPack ? { ...state._artStudioPack } : null,
+    guide: state._artStudioGuide ? { ...state._artStudioGuide } : null,
+    plan: state._lastDiagramPlan || null,
+    seed: state._artStudioSeed,
+    layoutId: state._aiArtLayoutId,
+    frame: state._aiArtFrame,
+  });
+
+  const applySnapshot = (snap) => {
+    if (!snap) return;
+    state._artStudioPack = snap.pack;
+    state._artStudioGuide = snap.guide;
+    state._lastDiagramPlan = snap.plan;
+    state._artStudioSeed = snap.seed;
+    if (snap.layoutId) state._aiArtLayoutId = snap.layoutId;
+    if (snap.frame) state._aiArtFrame = snap.frame;
+    persist();
+    renderAiArt();
   };
 
   el.querySelectorAll("[data-art-tab]").forEach((btn) => {
@@ -8850,106 +8715,74 @@ function renderAiArt() {
     });
   });
 
-  el.querySelectorAll("[data-learn-filter]").forEach((btn) => {
-    btn.addEventListener("click", () => {
-      state._styleLearnFilter = btn.dataset.learnFilter;
-      renderAiArt();
-    });
-  });
-
-  $("#styleLearnUploadForm")?.addEventListener("submit", async (e) => {
-    e.preventDefault();
-    const fd = new FormData(e.target);
-    const file = fd.get("file");
-    try {
-      await ingestStyleSample(state, file, {
-        program: fd.get("program"),
-        title: fd.get("title"),
-        layoutRef: fd.get("layoutRef"),
-        uid,
-      });
-      persist();
-      alert("학습 양식에 추가했습니다. 「그림 만들기」에서 반영됩니다.");
-      state._aiArtTab = "learn";
-      renderAiArt();
-    } catch (err) {
-      alert(err.message || "업로드 실패");
-    }
-  });
-
-  el.querySelectorAll("[data-del-sample]").forEach((btn) => {
-    btn.addEventListener("click", () => {
-      if (!confirm("이 학습 양식을 삭제할까요?")) return;
-      removeLearnedSample(state, btn.dataset.delSample);
-      persist();
-      renderAiArt();
-    });
-  });
-
   el.querySelectorAll("[data-art-frame]").forEach((btn) => {
     btn.addEventListener("click", () => {
-      const f = reportFrameById(btn.dataset.artFrame);
-      state._aiArtFrame = f.id;
-      state._aiArtType = frameDefaultType(f);
-      state._aiArtContextSeed = frameContextGuide(f);
+      state._aiArtFrame = btn.dataset.artFrame;
       persist();
       renderAiArt();
     });
   });
 
-  el.querySelectorAll("[data-doc-kind]").forEach((btn) => {
+  el.querySelectorAll("[data-art-layout]").forEach((btn) => {
     btn.addEventListener("click", () => {
-      if (!isAdmin()) return;
-      setReportDocKind(btn.dataset.docKind);
+      state._aiArtLayoutId = btn.dataset.artLayout;
       persist();
       renderAiArt();
     });
   });
 
-  $("#artStudioBrief")?.addEventListener("change", () => {
-    const id = $("#artStudioBrief").value;
-    state._aiArtBriefId = id || "";
-    if (id) applyBriefToStudio(id);
-  });
-  if (state._aiArtBriefId) applyBriefToStudio(state._aiArtBriefId);
+  const bounceDice = () => {
+    const diceBtn = $("#artStudioDice");
+    if (!diceBtn) return;
+    diceBtn.classList.remove("is-bounce");
+    void diceBtn.offsetWidth;
+    diceBtn.classList.add("is-bounce");
+  };
 
   const runStudioCreate = async ({ reroll = false } = {}) => {
     const direction = ($("#artStudioDirection")?.value || "").trim();
     if (!direction) {
-      alert("작성 방향·표현할 내용을 입력해 주세요.");
+      alert("넣고 싶은 내용을 적어 주세요.");
       return;
     }
     state._aiArtContextSeed = direction;
+    if (reroll && state._artStudioGuide) {
+      bounceDice();
+      const hist = Array.isArray(state._artStudioHistory) ? state._artStudioHistory : [];
+      hist.push(snapshotNow());
+      state._artStudioHistory = hist.slice(-8);
+    }
     if (!reroll) state._artStudioSeed = Date.now();
     else state._artStudioSeed = (state._artStudioSeed || Date.now()) + 997 + Math.floor(Math.random() * 9000);
 
     const themeId = state._aiArtFrame || selectedFrame;
+    const layoutId = state._aiArtLayoutId || selectedLayout;
     const frameNow = reportFrameById(themeId);
-    const learnedForRun = pickSamplesForGeneration(state, { themeId, direction, limit: 5 });
-    const pack = composeStudioPack({ themeId, direction, seed: state._artStudioSeed, learnedSamples: learnedForRun });
+    const learnedForRun = pickSamplesForGeneration(state, { themeId, direction, limit: 4 });
+    const pack = composeStudioPack({
+      themeId,
+      direction,
+      seed: state._artStudioSeed,
+      learnedSamples: learnedForRun,
+      preferLayoutId: layoutId,
+      reroll,
+    });
     state._artStudioPack = pack;
-    state._artStudioActiveLearned = learnedForRun;
-    state._reportLayoutIds = pack.layoutIds;
+    if (pack.layoutIds?.[0]) state._aiArtLayoutId = pack.layoutIds[0];
     state._aiArtType = pack.typeId;
 
     const live = el.querySelector(".art-studio-live");
     if (live) {
-      const prog = live.querySelector("#artStudioProgress");
-      const oldStage = live.querySelector("#artStudioStage");
-      const stageHtml = studioStageHtml({
+      live.innerHTML = studioStageHtml({
         layoutIds: pack.layoutIds,
         diagramTypeId: pack.typeId,
         visibleCount: 0,
         phase: 0,
         variant: pack.variant,
       });
-      if (oldStage) oldStage.outerHTML = stageHtml;
-      else if (prog) prog.insertAdjacentHTML("afterend", stageHtml);
     }
 
     $("#artStudioResult")?.removeAttribute("hidden");
-    $("#artStudioLog").innerHTML = "";
-    $("#artStudioDice")?.removeAttribute("disabled");
     const createBtn = $("#artStudioCreate");
     const diceBtn = $("#artStudioDice");
     if (createBtn) createBtn.disabled = true;
@@ -8960,13 +8793,14 @@ function renderAiArt() {
       buildYeonsungStyleGuide(type, frameNow) +
       (learnedForRun.length ? `\n\n${buildLearnedStyleGuideBlock(learnedForRun)}` : "");
     const title = type.name;
-
-    learnedForRun.forEach((s) => pushStudioLog(`학습 반영 · ${s.title}`));
+    const extraPrompt = reroll
+      ? `${pack.variant?.hint || ""} · 같은 목적에서 레이아웃·표현을 한 단계만 다르게`
+      : pack.variant?.hint || "";
 
     const planPromise = planReportDiagram({
       title,
       context: direction,
-      prompt: `${pack.variant?.hint || ""} · 레이아웃 ${pack.layoutIds.length}종 · 학습 ${learnedForRun.length}건`,
+      prompt: extraPrompt,
       styleGuide,
       reportFrame: frameNow.id,
       reportFrameName: frameNow.name,
@@ -8983,19 +8817,11 @@ function renderAiArt() {
         diagramTypeId: pack.typeId,
         variant: pack.variant,
         learnedSamples: learnedForRun,
-        onProgress: (pct, label) => setStudioProgress(pct, label, reroll ? "다른 조합 생성 중…" : "학습 기반 그림 작성 중…"),
-        onStep: pushStudioLog,
+        onProgress: (pct, label) => setStudioProgress(pct, label, reroll ? "다른 형태로 그리는 중…" : "그리는 중…"),
+        onStep: () => {},
         planPromise,
       });
-
       state._lastDiagramPlan = plan || null;
-      state._lastDiagramBuild = {
-        typeId: pack.typeId,
-        title: plan?.title || title,
-        at: new Date().toISOString(),
-        plan: plan || null,
-      };
-
       const guide = buildStudioUsageGuide({
         layoutIds: pack.layoutIds,
         plan,
@@ -9006,73 +8832,93 @@ function renderAiArt() {
       });
       state._artStudioGuide = guide;
       renderGuideDom(guide);
-      if (plan?.purpose) pushStudioLog(`목적 · ${plan.purpose}`);
       persist();
+      if (reroll) renderAiArt();
     } catch (err) {
-      alert(err.message || "그림 양식 생성에 실패했습니다.");
+      alert(err.message || "그림 생성에 실패했습니다.");
     } finally {
-      if (createBtn) createBtn.disabled = false;
-      if (diceBtn) diceBtn.disabled = false;
+      const c = $("#artStudioCreate");
+      const d = $("#artStudioDice");
+      if (c) c.disabled = false;
+      if (d) d.disabled = false;
     }
   };
 
   $("#artStudioCreate")?.addEventListener("click", () => runStudioCreate({ reroll: false }));
   $("#artStudioDice")?.addEventListener("click", () => runStudioCreate({ reroll: true }));
-
-  $("#artStudioPptLayout")?.addEventListener("click", async () => {
-    const ids = state._artStudioPack?.layoutIds || state._reportLayoutIds || [];
-    if (!ids.length) return alert("먼저 「만들기」를 실행해 주세요.");
-    try {
-      await downloadReportLayoutPpt({
-        layoutIds: ids,
-        chapterNo: state._layoutChapterNo || "3",
-        titlePrefix: `연성대_TF_레이아웃_${today()}`,
-        pack: ids.length > 1,
-      });
-      pushStudioLog("레이아웃 PPT 저장 완료");
-    } catch (err) {
-      alert(err.message || "PPT 저장 실패");
-    }
+  $("#artStudioUndo")?.addEventListener("click", () => {
+    const hist = Array.isArray(state._artStudioHistory) ? state._artStudioHistory : [];
+    const prev = hist.pop();
+    state._artStudioHistory = hist;
+    applySnapshot(prev);
   });
 
-  $("#artStudioPptDiagram")?.addEventListener("click", async () => {
-    const plan = state._lastDiagramPlan;
-    const type = reportArtTypeById(state._artStudioPack?.typeId || state._aiArtType);
+  const drop = $("#styleLearnDrop");
+  const fileInput = $("#styleLearnFile");
+  const statusEl = $("#styleLearnStatus");
+  const ingestFile = async (file) => {
+    if (!file) return;
+    if (statusEl) statusEl.textContent = "그림을 분석·학습하는 중…";
     try {
-      await downloadEditableDiagramPpt({
-        typeId: type.id,
-        title: plan?.title || type.name,
-        fileName: `보고서도식_${plan?.title || type.name}`,
-        labels: plan?.labels || {},
+      const sample = await ingestStyleSample(state, file, {
+        uid,
+        manager: who,
       });
-      pushStudioLog("도식 PPT 저장 완료");
+      try {
+        const analysis = await learnStyleFromImage({
+          imageDataUrl: sample.thumbDataUrl || sample.dataUrl,
+          fileName: file.name,
+          manager: who,
+        });
+        if (analysis?.ok || analysis?.title) {
+          sample.program = analysis.program || sample.program;
+          sample.title = analysis.title || sample.title;
+          sample.layoutRef = analysis.layoutRef || sample.layoutRef;
+          if (Array.isArray(analysis.cues) && analysis.cues.length) sample.cues = analysis.cues;
+          sample.summary = analysis.summary || sample.summary;
+          const log = (state.reportStyleLearning.logs || []).find((l) => l.sampleId === sample.id);
+          if (log) {
+            log.title = sample.title;
+            log.program = sample.program;
+            log.layoutRef = sample.layoutRef;
+            log.summary = sample.summary;
+          }
+        }
+      } catch {
+        /* 업로드는 유지하고 분석만 생략 */
+      }
+      persist();
+      state._aiArtTab = "learn";
+      renderAiArt();
     } catch (err) {
-      alert(err.message || "도식 PPT 저장 실패");
+      alert(err.message || "업로드 실패");
+      if (statusEl) statusEl.textContent = "";
     }
+  };
+  drop?.addEventListener("click", () => fileInput?.click());
+  drop?.addEventListener("dragover", (e) => {
+    e.preventDefault();
+    drop.classList.add("is-over");
+  });
+  drop?.addEventListener("dragleave", () => drop.classList.remove("is-over"));
+  drop?.addEventListener("drop", (e) => {
+    e.preventDefault();
+    drop.classList.remove("is-over");
+    ingestFile(e.dataTransfer?.files?.[0]);
+  });
+  fileInput?.addEventListener("change", (e) => {
+    ingestFile(e.target.files?.[0]);
+    e.target.value = "";
   });
 
-  $("#artStudioPptAll")?.addEventListener("click", async () => {
-    const pack = state._artStudioPack;
-    if (!pack?.layoutIds?.length) return alert("먼저 「만들기」를 실행해 주세요.");
-    const plan = state._lastDiagramPlan;
-    const type = reportArtTypeById(pack.typeId);
-    try {
-      await downloadReportArtPackagePpt({
-        layoutIds: pack.layoutIds,
-        chapterNo: state._layoutChapterNo || "3",
-        typeId: pack.typeId,
-        title: plan?.title || type.name,
-        labels: plan?.labels || plan,
-        docKindName: reportDocKindMeta().name,
-        fileName: `연성대_보고서_그림_패키지_${today()}`,
-      });
-      pushStudioLog("전체 패키지 PPT 저장 완료");
-    } catch (err) {
-      alert(err.message || "패키지 PPT 저장 실패");
-    }
+  el.querySelectorAll("[data-del-sample]").forEach((btn) => {
+    btn.addEventListener("click", () => {
+      if (!confirm("이 학습 양식을 삭제할까요?")) return;
+      removeLearnedSample(state, btn.dataset.delSample);
+      persist();
+      renderAiArt();
+    });
   });
-
-  bindFlaticonSearch(el);
 }
 
 const REVIEW_TAG_PRESETS = [

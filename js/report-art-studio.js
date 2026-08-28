@@ -88,38 +88,48 @@ function scoreLayout(layout, themeId, direction) {
   return score;
 }
 
-export function composeStudioPack({ themeId = "core-project", direction = "", seed = Date.now(), learnedSamples = [] }) {
+export function composeStudioPack({
+  themeId = "core-project",
+  direction = "",
+  seed = Date.now(),
+  learnedSamples = [],
+  preferLayoutId = "",
+  reroll = false,
+}) {
   const rng = seededRandom(seed);
   const weights = THEME_LAYOUT_WEIGHTS[themeId] || THEME_LAYOUT_WEIGHTS["core-project"];
-  const must = [...weights.must];
-  const pool = [...weights.pool];
-  const targetCount = 4 + Math.floor(rng() * 3);
+  const known = REPORT_LAYOUTS.some((l) => l.id === preferLayoutId);
 
-  const scored = REPORT_LAYOUTS.map((l) => ({
-    ...l,
-    score: scoreLayout(l, themeId, direction) + rng() * 2.5,
-  }))
-    .filter((l) => !must.includes(l.id))
-    .sort((a, b) => b.score - a.score);
-
-  const extras = [];
-  while (must.length + extras.length < targetCount && scored.length) {
-    const pick = scored.shift();
-    if (pick && !extras.includes(pick.id)) extras.push(pick.id);
+  let primary = known ? preferLayoutId : "";
+  if (!primary || reroll) {
+    const ranked = REPORT_LAYOUTS.map((l) => ({
+      id: l.id,
+      score: scoreLayout(l, themeId, direction) + rng() * 2.4,
+    })).sort((a, b) => b.score - a.score);
+    if (!primary) primary = ranked[0]?.id || "kpi";
+    if (reroll) {
+      const alts = ranked.map((r) => r.id).filter((id) => id !== preferLayoutId && id !== primary);
+      primary = alts[Math.floor(rng() * Math.min(3, alts.length))] || primary;
+    }
   }
 
-  let layoutIds = [...must, ...extras].slice(0, targetCount);
-  if (learnedSamples.length) layoutIds = boostLayoutsFromLearning(layoutIds, learnedSamples);
-  if (rng() > 0.55) layoutIds = [...layoutIds].sort(() => rng() - 0.5);
+  let layoutIds = [primary];
+  if (learnedSamples.length) {
+    layoutIds = boostLayoutsFromLearning(layoutIds, learnedSamples).slice(0, 1);
+  }
 
   const typePool = weights.types || ["overview"];
   let typeId = typePool[Math.floor(rng() * typePool.length)] || "overview";
   const learnedDiagram = learnedSamples.find((s) => s.diagramRef)?.diagramRef;
-  if (learnedDiagram && rng() > 0.35) typeId = learnedDiagram;
+  if (learnedDiagram && rng() > 0.4) typeId = learnedDiagram;
 
-  const variant = VARIANTS[Math.floor(rng() * VARIANTS.length)] || VARIANTS[0];
+  let variant = VARIANTS[Math.floor(rng() * VARIANTS.length)] || VARIANTS[0];
+  if (reroll) {
+    const rest = VARIANTS.filter((v) => v.id !== variant.id);
+    variant = rest[Math.floor(rng() * rest.length)] || variant;
+  }
 
-  return { layoutIds, typeId, variant, seed, learnedSamples: learnedSamples.slice(0, 5) };
+  return { layoutIds, typeId, variant, seed, learnedSamples: learnedSamples.slice(0, 5), primary };
 }
 
 export function buildStudioUsageGuide({ layoutIds = [], plan, theme, direction, variant, learnedSamples = [] }) {
@@ -132,23 +142,17 @@ export function buildStudioUsageGuide({ layoutIds = [], plan, theme, direction, 
     preview: l.preview,
   }));
 
-  const workflow = [
-    `① ${items[0]?.name || "장 표지"}로 해당 장을 열고 핵심 메시지를 고정합니다.`,
-    `② ${items.slice(1, 3).map((x) => x.name).join(" · ") || "표·도식"}에 실제 수치·문장을 채웁니다.`,
-    `③ ${plan?.title || "핵심 도식"} 슬라이드로 추진체계·성과를 시각화합니다.`,
-    "④ 한글 보고서에 붙여넣은 뒤 교육부 지침·TF 스타일 가이드와 톤을 맞춥니다.",
-  ];
-
   return {
     summary:
       plan?.purpose ||
-      `${theme?.name || "보고서"} 방향에 맞춘 레이아웃 ${layouts.length}종 + 도식 1세트를 제안합니다.`,
+      `${theme?.name || "보고서"} 영역에 맞춰 ${layouts[0]?.name || "레이아웃"}으로 그렸습니다.`,
     reasoning: plan?.reasoning || "",
     keyMessages: plan?.keyMessages || [],
+    contents: plan?.keyMessages || items.map((it) => it.usage),
     variantLabel: variant?.label || "공공문서형",
     variantHint: variant?.hint || "",
     items,
-    workflow,
+    workflow: [],
     directionEcho: (direction || "").slice(0, 120),
     learnedSamples: learnedSamples.map((s) => ({
       title: s.title,

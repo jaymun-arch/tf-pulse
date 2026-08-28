@@ -157,10 +157,13 @@ function thumbHtml(sample) {
 
 export function ensureReportStyleLearning(state) {
   if (!state.reportStyleLearning) {
-    state.reportStyleLearning = { samples: [], updatedAt: null };
+    state.reportStyleLearning = { samples: [], logs: [], updatedAt: null };
   }
   if (!Array.isArray(state.reportStyleLearning.samples)) {
     state.reportStyleLearning.samples = [];
+  }
+  if (!Array.isArray(state.reportStyleLearning.logs)) {
+    state.reportStyleLearning.logs = [];
   }
   const existing = new Set(state.reportStyleLearning.samples.map((s) => s.id));
   DEFAULT_STYLE_SAMPLES.forEach((seed) => {
@@ -320,34 +323,73 @@ async function compressImageFile(file, maxBytes = MAX_UPLOAD_BYTES) {
   return { dataUrl: out, thumbDataUrl: thumbCanvas.toDataURL("image/jpeg", 0.82) };
 }
 
-export async function ingestStyleSample(state, file, { program, title, layoutRef, diagramRef, uid }) {
+export async function ingestStyleSample(state, file, { program, title, layoutRef, diagramRef, uid, manager, analysis } = {}) {
   if (!file?.size) throw new Error("파일을 선택해 주세요.");
   const uploads = getAllLearnedSamples(state).filter((s) => s.source === "upload");
   if (uploads.length >= MAX_UPLOADS) throw new Error(`업로드 학습본은 최대 ${MAX_UPLOADS}건까지입니다.`);
 
   const { dataUrl, thumbDataUrl } = await compressImageFile(file);
   const baseName = (file.name || "보고서양식").replace(/\.[^.]+$/, "");
+  const who = String(manager || "").trim() || "관리자";
   const sample = {
     id: uid("style"),
-    program: program || "innovation",
-    title: (title || baseName).trim().slice(0, 80),
-    layoutRef: layoutRef || "",
+    program: analysis?.program || program || "innovation",
+    title: String(analysis?.title || title || baseName).trim().slice(0, 80),
+    layoutRef: analysis?.layoutRef || layoutRef || "",
     diagramRef: diagramRef || "",
-    cues: [
-      programLabel(program),
-      layoutRef ? `${layoutRef} 레이아웃` : "업로드 도식",
-      "흑백·회색 공공보고서",
-      "TF 학습 반영",
-    ],
+    cues: Array.isArray(analysis?.cues) && analysis.cues.length
+      ? analysis.cues
+      : [
+          programLabel(program || analysis?.program),
+          "업로드 도식",
+          "흑백·회색 공공보고서",
+        ],
     dataUrl,
     thumbDataUrl,
     fileName: file.name,
     source: "upload",
+    manager: who,
+    summary: analysis?.summary || "",
     learnedAt: new Date().toISOString().slice(0, 10),
   };
+  ensureReportStyleLearning(state);
   state.reportStyleLearning.samples.unshift(sample);
+  state.reportStyleLearning.logs.unshift({
+    id: uid("slog"),
+    sampleId: sample.id,
+    manager: who,
+    title: sample.title,
+    program: sample.program,
+    layoutRef: sample.layoutRef,
+    summary: sample.summary,
+    at: new Date().toISOString(),
+  });
+  state.reportStyleLearning.logs = state.reportStyleLearning.logs.slice(0, 80);
   state.reportStyleLearning.updatedAt = new Date().toISOString();
   return sample;
+}
+
+export function learningLogHtml(logs = []) {
+  if (!logs.length) {
+    return `<p class="empty">아직 학습 기록이 없습니다. 그림을 올리면 담당자와 시각이 쌓입니다.</p>`;
+  }
+  return `
+    <ol class="style-learn-log">
+      ${logs
+        .slice(0, 40)
+        .map(
+          (l) => `
+        <li>
+          <div class="style-learn-log-head">
+            <strong>${escapeHtml(l.manager || "관리자")}</strong>
+            <time>${escapeHtml(String(l.at || "").slice(0, 16).replace("T", " "))}</time>
+          </div>
+          <em>${escapeHtml(l.title || "양식")}</em>
+          ${l.summary ? `<p>${escapeHtml(l.summary)}</p>` : ""}
+        </li>`
+        )
+        .join("")}
+    </ol>`;
 }
 
 export function removeLearnedSample(state, id) {

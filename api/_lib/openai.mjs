@@ -84,6 +84,45 @@ export async function readJsonBody(req) {
   return JSON.parse(raw);
 }
 
+export async function openaiVision({ system, text, imageDataUrl, jsonMode = true, temperature = 0.2 }) {
+  const key = loadOpenAIKey();
+  if (!key) {
+    const err = new Error("OPENAI_API_KEY가 없습니다. Documents/api/.env 또는 Vercel 환경변수를 설정해 주세요.");
+    err.status = 500;
+    throw err;
+  }
+  const body = {
+    model: "gpt-4o-mini",
+    temperature,
+    messages: [
+      { role: "system", content: system },
+      {
+        role: "user",
+        content: [
+          { type: "text", text },
+          { type: "image_url", image_url: { url: imageDataUrl } },
+        ],
+      },
+    ],
+  };
+  if (jsonMode) body.response_format = { type: "json_object" };
+  const res = await fetch("https://api.openai.com/v1/chat/completions", {
+    method: "POST",
+    headers: {
+      Authorization: `Bearer ${key}`,
+      "Content-Type": "application/json",
+    },
+    body: JSON.stringify(body),
+  });
+  const data = await res.json().catch(() => ({}));
+  if (!res.ok) {
+    const err = new Error(data?.error?.message || `OpenAI 오류 (${res.status})`);
+    err.status = res.status;
+    throw err;
+  }
+  return data.choices?.[0]?.message?.content || "";
+}
+
 export async function openaiChat({ system, user, jsonMode = true, temperature = 0.3 }) {
   const key = loadOpenAIKey();
   if (!key) {

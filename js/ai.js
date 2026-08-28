@@ -105,6 +105,10 @@ export async function planReportDiagram(payload) {
   return callAiApi("/api/plan-diagram", payload);
 }
 
+export async function learnStyleFromImage(payload) {
+  return callAiApi("/api/learn-style", payload);
+}
+
 export async function downloadImagesAsPpt({ title, slides }) {
   const PptxGenJS = (await import("https://cdn.jsdelivr.net/npm/pptxgenjs@3.12.0/+esm")).default;
   const pptx = new PptxGenJS();
