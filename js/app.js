@@ -1893,7 +1893,6 @@ function enterAs(name) {
   $("#appShell").hidden = false;
   applyRoleUi();
   renderAll();
-  paintAccessQr();
   setView("dashboard");
   window.setTimeout(() => {
     openUnifiedAlarmPopup({ mode: "unified", browseAll: false });
@@ -5772,14 +5771,6 @@ async function accessQrDataUrl() {
     cachedAccessQr = `https://api.qrserver.com/v1/create-qr-code/?size=240x240&data=${encodeURIComponent(url)}`;
   }
   return cachedAccessQr;
-}
-
-async function paintAccessQr() {
-  const img = $("#appAccessQr");
-  if (!img) return;
-  img.src = await accessQrDataUrl();
-  const cap = $("#appAccessQrUrl");
-  if (cap) cap.textContent = appAccessUrl();
 }
 
 function kpiExcelLines() {
