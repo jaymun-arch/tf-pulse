@@ -10204,6 +10204,13 @@ body.view-home .page-hero {
   overflow: hidden;
   box-shadow: 0 1px 0 rgba(0, 0, 0, 0.02);
 }
+.work-group-stack .work-group-card {
+  margin-top: 0;
+}
+.work-group-stack {
+  display: grid;
+  gap: 14px;
+}
 .work-group-card-head {
   display: flex;
   align-items: baseline;
@@ -10741,7 +10748,8 @@ body.view-home .page-hero {
 .mywork-schedule-panel .tf-timeline-hero {
   position: relative;
   padding-right: 48px;
-  padding-left: 48px;
+  padding-left: 12px;
+  text-align: left;
 }
 .mywork-schedule-panel .request-add-btn {
   position: absolute;

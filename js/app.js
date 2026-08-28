@@ -4830,13 +4830,48 @@ function openScheduleCommentModal(scheduleId) {
 
 function scheduleByMonth(items) {
   const byMonth = {};
-  items.forEach((s) => {
-    const key = (s.date || "").slice(0, 7);
-    if (!key) return;
+  (items || []).forEach((s) => {
+    const key = (scheduleDueIso(s) || "").slice(0, 7);
+    if (!key) {
+      if (!byMonth.__none) byMonth.__none = [];
+      byMonth.__none.push(s);
+      return;
+    }
     if (!byMonth[key]) byMonth[key] = [];
     byMonth[key].push(s);
   });
   return byMonth;
+}
+
+function scheduleByDept(items) {
+  const map = new Map();
+  (items || []).forEach((s) => {
+    const key = String(s.dept || s.division || "미분류").trim() || "미분류";
+    if (!map.has(key)) map.set(key, []);
+    map.get(key).push(s);
+  });
+  map.forEach((rows) => {
+    rows.sort((a, b) => {
+      const da = scheduleDueIso(a);
+      const db = scheduleDueIso(b);
+      if (!da && !db) return 0;
+      if (!da) return 1;
+      if (!db) return -1;
+      return da.localeCompare(db);
+    });
+  });
+  const order = [...new Set([...(BUDGET_CATALOG.depts || []), ...(BUDGET_CATALOG.workDepts || [])])];
+  const keys = [...map.keys()].sort((a, b) => {
+    const ia = order.indexOf(a);
+    const ib = order.indexOf(b);
+    if (ia >= 0 && ib >= 0) return ia - ib;
+    if (ia >= 0) return -1;
+    if (ib >= 0) return 1;
+    if (a === "미분류") return 1;
+    if (b === "미분류") return -1;
+    return a.localeCompare(b, "ko");
+  });
+  return { map, keys };
 }
 
 function scheduleByGroup(items) {
@@ -4996,8 +5031,48 @@ function scheduleFeedPanelHtml(who, admin, items) {
     if (!db) return -1;
     return da.localeCompare(db);
   });
+  const { map: byDept, keys: deptKeys } = scheduleByDept(sorted);
+
+  const deptSections = deptKeys
+    .map((dept) => {
+      const rows = byDept.get(dept) || [];
+      if (!rows.length) return "";
+      const byMonth = scheduleByMonth(rows);
+      const months = Object.keys(byMonth)
+        .filter((k) => k !== "__none")
+        .sort((a, b) => b.localeCompare(a));
+      const monthHtml = months
+        .map((ym) => {
+          const monthLabel = formatKorYearMonth(`${ym}-01`);
+          return `
+          <div class="work-month-chunk">
+            <p class="work-month-label">${escapeHtml(monthLabel)}</p>
+            <div class="work-feed">${byMonth[ym].map((s) => workFeedRowHtml(s, admin)).join("")}</div>
+          </div>`;
+        })
+        .join("");
+      const undated =
+        byMonth.__none?.length
+          ? `<div class="work-month-chunk">
+              <p class="work-month-label">날짜 미정</p>
+              <div class="work-feed">${byMonth.__none.map((s) => workFeedRowHtml(s, admin)).join("")}</div>
+            </div>`
+          : "";
+      return `
+      <article class="work-group-card">
+        <header class="work-group-card-head">
+          <h3>${escapeHtml(dept)}</h3>
+          <span class="muted">${rows.length}건 · ${escapeHtml(dept)}</span>
+        </header>
+        <div class="work-group-card-body">
+          ${monthHtml}${undated}
+        </div>
+      </article>`;
+    })
+    .join("");
+
   return `
-    <section class="panel work-feed-panel mywork-schedule-panel is-timeline">
+    <section class="panel work-feed-panel mywork-schedule-panel">
       <header class="tf-timeline-hero">
         <h2>${escapeHtml(admin ? `${who}님이 보낸 요청입니다` : `${who}님, 받은 요청입니다`)}</h2>
         ${
@@ -5012,7 +5087,7 @@ function scheduleFeedPanelHtml(who, admin, items) {
       </header>
       ${
         sorted.length
-          ? `<ol class="tf-timeline">${sorted.map((item, i) => myWorkTimelineRowHtml(item, i, sorted)).join("")}</ol>`
+          ? `<div class="work-group-stack">${deptSections}</div>`
           : `<div class="empty">${escapeHtml(emptyMyWorkCopy(admin, "all"))}</div>`
       }
     </section>`;
@@ -5270,10 +5345,11 @@ function workFeedRowHtml(s, admin) {
   const origin = scheduleOriginOf(s, sessionUser);
   const people = scheduleAssigneesOf(s);
   const collabNames = people.length ? `협업 ${people.slice(0, 4).join(", ")}${people.length > 4 ? " 외" : ""}` : "";
+  const yoy = scheduleYoyHint(s);
   const metaBits = [
     glowLabel || (bucket === "month" ? "이번달" : "일정"),
-    s.note ? String(s.note).slice(0, 40) : "",
-    collabNames,
+    yoy.text && yoy.text !== "작년 대비 자료 없음" ? yoy.text : "",
+    collabNames || "협업 미지정",
     days < 0 ? `${Math.abs(days)}일 지남` : days === 0 ? "오늘" : `${days}일 남음`,
   ].filter(Boolean);
   const statusTone =
@@ -11401,7 +11477,12 @@ function renderMyWork() {
     </div>
   `;
 
-  bindScheduleFeedActions(el, refreshActiveScheduleSurface);
+  bindScheduleFeedActions(el, refreshActiveScheduleSurface, {
+    onOpenItem: (item) => {
+      if (isAdmin()) openScheduleModal(item?.id);
+      else openScheduleUploadForItem(item);
+    },
+  });
 }
 
 function renderTfAll() {
