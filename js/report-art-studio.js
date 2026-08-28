@@ -6,6 +6,32 @@ import { REPORT_LAYOUTS, layoutPreviewWireHtml } from "./report-layouts.js";
 import { diagramPreviewWireHtml } from "./report-diagrams.js";
 import { boostLayoutsFromLearning } from "./report-style-learning.js";
 
+function inferWeightsFromText(blob = "") {
+  const text = String(blob);
+  if (/예산|비목|사업비/.test(text)) {
+    return { must: ["budget", "section-cover", "kpi"], pool: ["three-year", "process"], types: ["improvement"] };
+  }
+  if (/성과|지표|KPI|달성/.test(text)) {
+    return { must: ["kpi", "section-cover", "three-year"], pool: ["matrix", "timeline", "competency"], types: ["improvement", "diffusion"] };
+  }
+  if (/ICC|지산학|산학|협력|플랫폼/.test(text)) {
+    return { must: ["matrix", "org", "process", "timeline"], pool: ["section-cover", "kpi"], types: ["icc-matrix", "platform", "governance"] };
+  }
+  if (/교육|트랙|과정|마이크로|융합/.test(text)) {
+    return { must: ["matrix", "process", "section-cover", "kpi"], pool: ["three-year", "timeline", "competency"], types: ["overview", "platform"] };
+  }
+  if (/추진|계획|로드맵|연차|3개년|마일스톤/.test(text)) {
+    return { must: ["timeline", "three-year", "section-cover", "process"], pool: ["kpi", "org"], types: ["roadmap", "overview"] };
+  }
+  if (/현황|여건|진단|SWOT|분석/.test(text)) {
+    return { must: ["competency", "swot", "section-cover"], pool: ["matrix", "kpi", "process"], types: ["overview"] };
+  }
+  if (/개요|배경|목적|사업/.test(text)) {
+    return { must: ["section-cover", "process", "competency"], pool: ["three-year", "kpi", "org"], types: ["overview", "governance"] };
+  }
+  return null;
+}
+
 const THEME_LAYOUT_WEIGHTS = {
   "core-project": {
     must: ["section-cover", "competency", "process", "three-year"],
@@ -95,9 +121,16 @@ export function composeStudioPack({
   learnedSamples = [],
   preferLayoutId = "",
   reroll = false,
+  part = null,
 }) {
   const rng = seededRandom(seed);
-  const weights = THEME_LAYOUT_WEIGHTS[themeId] || THEME_LAYOUT_WEIGHTS["core-project"];
+  const partBlob = part ? `${part.title || ""} ${part.note || ""}` : "";
+  const inferred = inferWeightsFromText(`${partBlob} ${direction}`);
+  const weights =
+    inferred ||
+    THEME_LAYOUT_WEIGHTS[themeId] ||
+    (String(themeId).startsWith("part:") ? inferWeightsFromText(direction) : null) ||
+    THEME_LAYOUT_WEIGHTS["core-project"];
   const known = REPORT_LAYOUTS.some((l) => l.id === preferLayoutId);
 
   let primary = known ? preferLayoutId : "";

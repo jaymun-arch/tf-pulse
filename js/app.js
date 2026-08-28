@@ -28,6 +28,8 @@ import {
   STYLE_PROGRAMS,
   DEFAULT_STYLE_SAMPLES,
   learningLogHtml,
+  getStudioLayoutOptions,
+  layoutOptionsUpdatedLabel,
 } from "./report-style-learning.js";
 import {
   DEFAULT_TF_TOPICS,
@@ -9144,7 +9146,121 @@ function reportArtTypeById(id) {
 }
 
 function reportFrameById(id) {
-  return REPORT_FRAME_GROUPS.find((g) => g.id === id) || REPORT_FRAME_GROUPS[0];
+  const areas = reportAreaOptions();
+  return areas.find((g) => g.id === id) || areas[0] || REPORT_FRAME_GROUPS[0];
+}
+
+function inferPartVisualHint(title = "", note = "") {
+  const blob = `${title} ${note}`;
+  if (/예산|비목|사업비/.test(blob)) return "예산·비목 구조와 배분 흐름";
+  if (/성과|지표|KPI/.test(blob)) return "핵심 지표·목표 대비 실적";
+  if (/개요|배경|목적/.test(blob)) return "사업 개요·추진 배경";
+  if (/추진|계획|로드맵|연차/.test(blob)) return "단계별 추진 일정·3개년 계획";
+  if (/여건|진단|SWOT|현황/.test(blob)) return "현황 분석·여건 변화·시사점";
+  if (/조직|체계|거버넌스/.test(blob)) return "추진체계·거버넌스";
+  return note || "이 목차에 맞는 핵심 메시지";
+}
+
+function buildPartContextGuide(part, kind = getReportDocKind()) {
+  const doc = reportDocKindMeta(kind);
+  const label = `${part.section || ""}. ${part.title || ""}`.replace(/^\.\s*/, "");
+  const hint = inferPartVisualHint(part.title, part.note);
+  if (kind === "result") {
+    return `【보고서 구분】${doc.name}\n【목차】${label}\n【작성 방향】${part.note || hint}\n【표현할 내용】${hint} · 실적·성과 중심`;
+  }
+  return `【보고서 구분】${doc.name}\n【목차】${label}\n【작성 방향】${part.note || hint}\n【표현할 내용】${hint}`;
+}
+
+function reportAreasFromParts() {
+  const parts = (state.parts || []).filter((p) => p.title || p.section);
+  if (!parts.length) return null;
+  return parts.map((p) => {
+    const m = memberById(p.assigneeId);
+    const pages =
+      p.pageStart != null && p.pageEnd != null ? `${p.pageStart}–${p.pageEnd}p` : "";
+    const meta = [p.note || inferPartVisualHint(p.title, p.note), pages, m?.name].filter(Boolean);
+    return {
+      id: `part:${p.id}`,
+      partId: p.id,
+      name: `${p.section || ""}. ${p.title || "파트"}`.replace(/^\.\s*/, ""),
+      desc: meta.join(" · "),
+      section: p.section,
+      title: p.title,
+      note: p.note,
+      icon: "fi-rr-book",
+      contextGuidePlan: buildPartContextGuide(p, "plan"),
+      contextGuideResult: buildPartContextGuide(p, "result"),
+    };
+  });
+}
+
+function reportAreaOptions() {
+  return reportAreasFromParts() || REPORT_FRAME_GROUPS;
+}
+
+function partFromAreaFrame(frameId) {
+  if (!String(frameId || "").startsWith("part:")) return null;
+  return partById(frameId.slice(5));
+}
+
+function partDirectionSeed(frame) {
+  if (!frame) return "";
+  const kind = getReportDocKind();
+  return kind === "result"
+    ? frame.contextGuideResult || frame.contextGuidePlan || ""
+    : frame.contextGuidePlan || frame.contextGuideResult || "";
+}
+
+function ensureAiArtFrameSelection() {
+  const areas = reportAreaOptions();
+  const valid = new Set(areas.map((a) => a.id));
+  if (!valid.has(state._aiArtFrame)) {
+    state._aiArtFrame = areas[0]?.id || "core-project";
+  }
+}
+
+function openArtStudioCompleteModal({ pack, guide, frame, direction, plan }) {
+  const type = reportArtTypeById(pack.typeId);
+  const previewHtml = studioStageHtml({
+    layoutIds: pack.layoutIds,
+    diagramTypeId: pack.typeId,
+    visibleCount: pack.layoutIds.length,
+    phase: 5,
+    variant: pack.variant,
+  });
+  const layoutName = REPORT_LAYOUTS.find((l) => l.id === pack.layoutIds[0])?.name || "레이아웃";
+  openModal({
+    kicker: "완성",
+    title: `${frame?.name || "보고서"} · ${type.name}`,
+    submitLabel: "PPT 다운로드",
+    bodyHtml: `
+      <div class="art-complete-modal">
+        <div class="art-complete-preview">${previewHtml}</div>
+        <p class="art-complete-summary">${escapeHtml(guide?.summary || plan?.purpose || "선택한 영역·레이아웃으로 그림을 구성했습니다.")}</p>
+        ${
+          guide?.reasoning
+            ? `<p class="muted art-complete-reason">${escapeHtml(guide.reasoning)}</p>`
+            : ""
+        }
+        <ul class="art-complete-meta">
+          <li><strong>영역</strong> ${escapeHtml(frame?.name || "-")}</li>
+          <li><strong>레이아웃</strong> ${escapeHtml(layoutName)} · ${escapeHtml(guide?.variantLabel || pack.variant?.label || "")}</li>
+        </ul>
+        <p class="muted art-complete-hint">PPT를 받아 수치·문장만 바꾼 뒤 한글 보고서에 넣으면 됩니다.</p>
+      </div>`,
+    onSubmit: async () => {
+      const doc = reportDocKindMeta(getReportDocKind());
+      await downloadReportArtPackagePpt({
+        layoutIds: pack.layoutIds,
+        typeId: pack.typeId,
+        title: `${frame?.name || "보고서"} · ${type.name}`,
+        labels: plan?.labels || {},
+        fileName: `${frame?.name || "보고서"}_${type.name}`.replace(/[\\/:*?"<>|]/g, "_"),
+        docKindName: doc.name,
+      });
+      return true;
+    },
+  });
 }
 
 function artTypesByGroup() {
@@ -9178,27 +9294,49 @@ function renderAiArt() {
   if (!el) return;
   ensureAiArts();
   ensureReportStyleLearning(state);
+  ensureAiArtFrameSelection();
+  if (!state._aiArtContextSeed && partFromAreaFrame(state._aiArtFrame)) {
+    state._aiArtContextSeed = partDirectionSeed(reportFrameById(state._aiArtFrame));
+  }
 
   const who = sessionUser || "작성자";
   const artTab = state._aiArtTab === "learn" ? "learn" : "create";
   state._aiArtTab = artTab;
-  const selectedFrame = state._aiArtFrame || "core-project";
+  const areaOptions = reportAreaOptions();
+  const fromParts = Boolean(reportAreasFromParts());
+  const selectedFrame = state._aiArtFrame || areaOptions[0]?.id || "core-project";
   const frame = reportFrameById(selectedFrame);
   const selectedLayout = state._aiArtLayoutId || "kpi";
   const seed = state._artStudioSeed || Date.now();
   const allLearned = getAllLearnedSamples(state);
   const learnLogs = state.reportStyleLearning?.logs || [];
   const history = Array.isArray(state._artStudioHistory) ? state._artStudioHistory : [];
+  const directionValue = state._aiArtContextSeed || "";
+  const layoutOptions = getStudioLayoutOptions(state, {
+    themeId: selectedFrame,
+    direction: directionValue,
+    limit: 10,
+  });
+  if (!layoutOptions.some((l) => l.id === selectedLayout) && layoutOptions[0]) {
+    state._aiArtLayoutId = layoutOptions[0].id;
+  }
+  const layoutIdNow = state._aiArtLayoutId || layoutOptions[0]?.id || "kpi";
   const lastPack =
     state._artStudioPack ||
     composeStudioPack({
       themeId: selectedFrame,
-      direction: state._aiArtContextSeed || "",
+      direction: directionValue,
       seed,
-      preferLayoutId: selectedLayout,
+      preferLayoutId: layoutIdNow,
+      part: partFromAreaFrame(selectedFrame),
+      learnedSamples: pickSamplesForGeneration(state, {
+        themeId: selectedFrame,
+        direction: directionValue,
+        limit: 4,
+      }),
     });
   const lastGuide = state._artStudioGuide || null;
-  const directionValue = state._aiArtContextSeed || "";
+  const liveComplete = Boolean(lastGuide);
 
   el.innerHTML = `
     <div class="ai-page report-make art-studio is-simple">
@@ -9212,26 +9350,33 @@ function renderAiArt() {
           <ol class="art-simple-steps">
             <li>
               <p class="wp-label">1. 보고서 영역</p>
+              <p class="muted art-area-hint">${fromParts ? "목차·할당 기준으로 영역을 제안합니다" : "목차가 없어 기본 영역을 제안합니다 · Setting · 목차·할당에서 등록하세요"}</p>
               <div class="ai-type-grid ai-frame-grid art-studio-themes" role="radiogroup">
-                ${REPORT_FRAME_GROUPS.map(
-                  (g) => `
+                ${areaOptions
+                  .map(
+                    (g) => `
                   <button type="button" class="ai-type-card ai-frame-card ${g.id === selectedFrame ? "active" : ""}" data-art-frame="${escapeAttr(g.id)}" aria-pressed="${g.id === selectedFrame ? "true" : "false"}">
                     <strong>${escapeHtml(g.name)}</strong>
                     <span>${escapeHtml(g.desc)}</span>
                   </button>`
-                ).join("")}
+                  )
+                  .join("")}
               </div>
             </li>
             <li>
               <p class="wp-label">2. 비슷한 레이아웃</p>
+              <p class="muted art-layout-hint">${escapeHtml(layoutOptionsUpdatedLabel(state))}</p>
               <div class="art-layout-pick" role="radiogroup">
-                ${REPORT_LAYOUTS.map(
-                  (l) => `
-                  <button type="button" class="art-layout-card ${l.id === selectedLayout ? "active" : ""}" data-art-layout="${escapeAttr(l.id)}" aria-pressed="${l.id === selectedLayout ? "true" : "false"}">
+                ${layoutOptions
+                  .map(
+                    (l) => `
+                  <button type="button" class="art-layout-card ${l.id === layoutIdNow ? "active" : ""} ${l.learned ? "is-learned" : ""}" data-art-layout="${escapeAttr(l.id)}" aria-pressed="${l.id === layoutIdNow ? "true" : "false"}" title="${escapeAttr(l.learnedTitle || l.desc || "")}">
                     <div class="art-layout-thumb">${layoutPreviewWireHtml(l.id)}</div>
                     <strong>${escapeHtml(l.name)}</strong>
+                    ${l.learned ? `<span class="art-layout-learned">학습</span>` : ""}
                   </button>`
-                ).join("")}
+                  )
+                  .join("")}
               </div>
             </li>
             <li>
@@ -9241,7 +9386,10 @@ function renderAiArt() {
           </ol>
           <div class="art-studio-actions">
             <button type="button" class="btn btn-primary btn-lg" id="artStudioCreate">만들기</button>
-            <button type="button" class="btn btn-lg art-studio-dice" id="artStudioDice" title="조금씩 다르게 다시 그리기" ${lastGuide ? "" : "disabled"} aria-label="주사위">🎲</button>
+            <div class="art-studio-reroll">
+              <button type="button" class="btn btn-lg art-studio-dice" id="artStudioDice" title="전체 틀은 유지하고 표현만 조금 바꿉니다" ${lastGuide ? "" : "disabled"} aria-label="조금만 다르게 다시">🎲</button>
+              <span class="art-studio-reroll-label">조금만 다르게 다시</span>
+            </div>
             ${
               history.length
                 ? `<button type="button" class="btn" id="artStudioUndo">직전 그림 불러오기</button>`
@@ -9250,7 +9398,7 @@ function renderAiArt() {
           </div>
         </section>
 
-        <section class="panel art-studio-live-panel">
+        <section class="panel art-studio-live-panel ${liveComplete ? "is-complete" : ""}">
           <div class="ai-art-progress diagram-build-progress" id="artStudioProgress" hidden>
             <div class="ai-art-progress-meta">
               <span class="muted" id="artStudioStatus">준비</span>
@@ -9265,11 +9413,19 @@ function renderAiArt() {
             ${studioStageHtml({
               layoutIds: lastPack.layoutIds,
               diagramTypeId: lastPack.typeId,
-              visibleCount: lastGuide ? lastPack.layoutIds.length : 1,
-              phase: lastGuide ? 5 : 0,
+              visibleCount: liveComplete ? lastPack.layoutIds.length : lastGuide ? lastPack.layoutIds.length : 1,
+              phase: liveComplete ? 5 : lastGuide ? 5 : 0,
               variant: lastPack.variant,
             })}
           </div>
+          ${
+            liveComplete
+              ? `<div class="art-studio-complete-bar">
+                  <p><strong>완성</strong> · ${escapeHtml(lastGuide?.variantLabel || lastPack.variant?.label || "")}</p>
+                  <button type="button" class="btn btn-primary btn-sm" id="artStudioRedownload">PPT 다운로드</button>
+                </div>`
+              : ""
+          }
         </section>
 
         <section class="panel art-studio-result" id="artStudioResult" ${lastGuide ? "" : "hidden"}>
@@ -9356,6 +9512,10 @@ function renderAiArt() {
   el.querySelectorAll("[data-art-frame]").forEach((btn) => {
     btn.addEventListener("click", () => {
       state._aiArtFrame = btn.dataset.artFrame;
+      const area = reportFrameById(state._aiArtFrame);
+      if (partFromAreaFrame(state._aiArtFrame)) {
+        state._aiArtContextSeed = partDirectionSeed(area);
+      }
       persist();
       renderAiArt();
     });
@@ -9394,8 +9554,9 @@ function renderAiArt() {
     else state._artStudioSeed = (state._artStudioSeed || Date.now()) + 997 + Math.floor(Math.random() * 9000);
 
     const themeId = state._aiArtFrame || selectedFrame;
-    const layoutId = state._aiArtLayoutId || selectedLayout;
+    const layoutId = state._aiArtLayoutId || layoutIdNow;
     const frameNow = reportFrameById(themeId);
+    const partNow = partFromAreaFrame(themeId);
     const learnedForRun = pickSamplesForGeneration(state, { themeId, direction, limit: 4 });
     const pack = composeStudioPack({
       themeId,
@@ -9404,6 +9565,7 @@ function renderAiArt() {
       learnedSamples: learnedForRun,
       preferLayoutId: layoutId,
       reroll,
+      part: partNow,
     });
     state._artStudioPack = pack;
     if (pack.layoutIds?.[0]) state._aiArtLayoutId = pack.layoutIds[0];
@@ -9432,8 +9594,8 @@ function renderAiArt() {
       (learnedForRun.length ? `\n\n${buildLearnedStyleGuideBlock(learnedForRun)}` : "");
     const title = type.name;
     const extraPrompt = reroll
-      ? `${pack.variant?.hint || ""} · 같은 목적에서 레이아웃·표현을 한 단계만 다르게`
-      : pack.variant?.hint || "";
+      ? `${pack.variant?.hint || ""} · 전체 틀과 목차 방향은 유지하고 레이아웃·표현만 한 단계만 다르게`
+      : `${pack.variant?.hint || ""} · ${frameNow.name} 영역에 맞춰 ${partNow?.note || "목차 방향"}을 반영`;
 
     const planPromise = planReportDiagram({
       title,
@@ -9470,7 +9632,22 @@ function renderAiArt() {
       });
       state._artStudioGuide = guide;
       renderGuideDom(guide);
+
+      const livePanel = el.querySelector(".art-studio-live-panel");
+      const liveInner = el.querySelector(".art-studio-live");
+      if (liveInner) {
+        liveInner.innerHTML = studioStageHtml({
+          layoutIds: pack.layoutIds,
+          diagramTypeId: pack.typeId,
+          visibleCount: pack.layoutIds.length,
+          phase: 5,
+          variant: pack.variant,
+        });
+      }
+      livePanel?.classList.add("is-complete");
+      $("#artStudioProgress")?.setAttribute("hidden", "");
       persist();
+      openArtStudioCompleteModal({ pack, guide, frame: frameNow, direction, plan });
       if (reroll) renderAiArt();
     } catch (err) {
       alert(err.message || "그림 생성에 실패했습니다.");
@@ -9484,6 +9661,27 @@ function renderAiArt() {
 
   $("#artStudioCreate")?.addEventListener("click", () => runStudioCreate({ reroll: false }));
   $("#artStudioDice")?.addEventListener("click", () => runStudioCreate({ reroll: true }));
+  $("#artStudioRedownload")?.addEventListener("click", async () => {
+    const pack = state._artStudioPack;
+    const guide = state._artStudioGuide;
+    const plan = state._lastDiagramPlan;
+    if (!pack) return;
+    const frameNow = reportFrameById(state._aiArtFrame);
+    const type = reportArtTypeById(pack.typeId);
+    const doc = reportDocKindMeta(getReportDocKind());
+    try {
+      await downloadReportArtPackagePpt({
+        layoutIds: pack.layoutIds,
+        typeId: pack.typeId,
+        title: `${frameNow?.name || "보고서"} · ${type.name}`,
+        labels: plan?.labels || {},
+        fileName: `${frameNow?.name || "보고서"}_${type.name}`.replace(/[\\/:*?"<>|]/g, "_"),
+        docKindName: doc.name,
+      });
+    } catch (err) {
+      alert(err.message || "PPT 다운로드에 실패했습니다.");
+    }
+  });
   $("#artStudioUndo")?.addEventListener("click", () => {
     const hist = Array.isArray(state._artStudioHistory) ? state._artStudioHistory : [];
     const prev = hist.pop();

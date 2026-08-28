@@ -2,7 +2,7 @@
  * 보고서 그림 양식 학습 — 전문대·RISE·신산업 등 공공사업 보고서 도식 레퍼런스
  */
 
-import { layoutPreviewWireHtml } from "./report-layouts.js";
+import { REPORT_LAYOUTS, layoutPreviewWireHtml } from "./report-layouts.js";
 import { diagramPreviewWireHtml } from "./report-diagrams.js";
 
 export const STYLE_PROGRAMS = [
@@ -191,7 +191,17 @@ export function pickSamplesForGeneration(state, { themeId = "", direction = "", 
     performance: ["rise", "innovation"],
     roadmap: ["rise", "new-industry"],
   };
-  const preferred = themeProgramMap[themeId] || ["innovation", "rise", "new-industry"];
+  let preferred = themeProgramMap[themeId] || ["innovation", "rise", "new-industry"];
+  if (String(themeId).startsWith("part:")) {
+    const partId = themeId.slice(5);
+    const part = (state.parts || []).find((p) => p.id === partId);
+    const hint = `${part?.title || ""} ${part?.note || ""} ${direction}`;
+    if (/예산|비목/.test(hint)) preferred = ["innovation", "rise"];
+    else if (/성과|지표|KPI/.test(hint)) preferred = ["rise", "innovation"];
+    else if (/ICC|지산학|산학/.test(hint)) preferred = ["icc", "new-industry"];
+    else if (/교육|트랙|과정/.test(hint)) preferred = ["edu", "innovation"];
+    else preferred = ["innovation", "rise", "new-industry"];
+  }
 
   const scored = all.map((s) => {
     let score = preferred.includes(s.program) ? 8 : 2;
@@ -229,6 +239,59 @@ export function boostLayoutsFromLearning(layoutIds, samples = []) {
     if (ref && !boosted.includes(ref)) boosted.unshift(ref);
   });
   return [...new Set(boosted)].slice(0, Math.max(layoutIds.length, 5));
+}
+
+const LAYOUT_KEYWORDS = {
+  competency: /역량|현황|분석|여건|진단/,
+  "section-cover": /개요|요약|장|도입|표지/,
+  "three-year": /3개년|개년|연차|연도|2025|2026|2027/,
+  process: /체계|프로세스|추진|단계|순환/,
+  kpi: /지표|성과|KPI|달성|목표/,
+  matrix: /매트릭스|ICC|비교|2축|특성화/,
+  org: /조직|거버넌스|위원|협의|체계/,
+  swot: /SWOT|강점|약점|기회|시사/,
+  timeline: /일정|타임|마일스톤|분기|로드맵/,
+  budget: /예산|비목|사업비/,
+};
+
+function scoreLayoutForStudio(layout, { direction = "", themeId = "" } = {}) {
+  const blob = `${direction} ${themeId}`.toLowerCase();
+  let score = 1;
+  const kw = LAYOUT_KEYWORDS[layout.id];
+  if (kw?.test(blob)) score += 8;
+  if (new RegExp(layout.name.replace(/[·\s]/g, "|"), "i").test(direction || "")) score += 4;
+  return score;
+}
+
+/** 양식학습 + 목차 방향을 반영해 레이아웃 추천 순 정렬 */
+export function getStudioLayoutOptions(state, { themeId = "", direction = "", limit = 10 } = {}) {
+  const samples = pickSamplesForGeneration(state, { themeId, direction, limit: 24 });
+  const recentUploads = samples.filter((s) => s.source === "upload");
+  const scored = REPORT_LAYOUTS.map((layout) => {
+    let score = scoreLayoutForStudio(layout, { direction, themeId });
+    samples.forEach((s, i) => {
+      if (s.layoutRef === layout.id) score += 14 - Math.min(i, 8);
+      if (s.source === "upload" && s.layoutRef === layout.id) score += 4;
+    });
+    const learnedFrom = samples.find((s) => s.layoutRef === layout.id);
+    return {
+      ...layout,
+      score,
+      learned: Boolean(learnedFrom),
+      learnedTitle: learnedFrom?.title || "",
+    };
+  });
+  scored.sort((a, b) => b.score - a.score || (b.learned ? 1 : 0) - (a.learned ? 1 : 0));
+  const top = scored.slice(0, limit);
+  const rest = scored.slice(limit).filter((l) => !top.some((t) => t.id === l.id));
+  return [...top, ...rest.slice(0, Math.max(0, limit - top.length))].slice(0, limit);
+}
+
+export function layoutOptionsUpdatedLabel(state) {
+  const n = getAllLearnedSamples(state).filter((s) => s.source === "upload").length;
+  const total = getAllLearnedSamples(state).length;
+  if (!total) return "기본 양식 · 학습 데이터를 올리면 추천이 갱신됩니다";
+  return `학습 ${total}건 반영${n ? ` · 업로드 ${n}건` : ""} · 추천 순 자동 갱신`;
 }
 
 export function learningBannerHtml(samples = [], { compact = false } = {}) {

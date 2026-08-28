@@ -6174,10 +6174,110 @@ dialog#modal::backdrop {
   align-items: center;
   margin-top: 4px;
 }
+.art-studio-reroll {
+  display: inline-flex;
+  align-items: center;
+  gap: 8px;
+}
+.art-studio-reroll-label {
+  font-size: 0.82rem;
+  font-weight: 700;
+  color: var(--ink-soft);
+  letter-spacing: -0.02em;
+}
 .art-studio-dice {
   min-width: 52px;
   font-size: 1.55rem;
   line-height: 1;
+}
+.art-studio-dice:disabled + .art-studio-reroll-label {
+  opacity: 0.45;
+}
+.art-area-hint,
+.art-layout-hint {
+  margin: -2px 0 8px;
+  font-size: 0.78rem;
+}
+.art-layout-card {
+  position: relative;
+}
+.art-layout-card.is-learned {
+  border-color: rgba(91, 33, 182, 0.28);
+}
+.art-layout-learned {
+  display: inline-block;
+  margin-top: 2px;
+  padding: 1px 6px;
+  border-radius: 999px;
+  font-size: 0.62rem;
+  font-weight: 800;
+  color: #5b21b6;
+  background: rgba(91, 33, 182, 0.08);
+}
+.art-studio-live-panel.is-complete .art-studio-live {
+  min-height: 420px;
+  padding: 16px;
+}
+.art-studio-live-panel.is-complete .art-studio-grid {
+  grid-template-columns: repeat(auto-fill, minmax(140px, 1fr));
+}
+.art-studio-live-panel.is-complete .art-studio-tile-thumb {
+  height: 88px;
+}
+.art-studio-live-panel.is-complete .art-studio-diagram {
+  min-height: 220px;
+}
+.art-studio-complete-bar {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 12px;
+  margin-top: 12px;
+  padding: 10px 12px;
+  border-radius: 12px;
+  background: rgba(0, 113, 227, 0.06);
+  border: 1px solid rgba(0, 113, 227, 0.14);
+}
+.art-studio-complete-bar p {
+  margin: 0;
+  font-size: 0.88rem;
+}
+.art-complete-modal {
+  display: grid;
+  gap: 12px;
+}
+.art-complete-preview {
+  max-height: min(52vh, 420px);
+  overflow: auto;
+  padding: 10px;
+  border-radius: 14px;
+  border: 1px solid var(--line);
+  background: var(--bg-muted);
+}
+.art-complete-preview .art-studio-stage {
+  margin-top: 0;
+}
+.art-complete-summary {
+  margin: 0;
+  font-weight: 650;
+  line-height: 1.5;
+}
+.art-complete-reason {
+  margin: 0;
+  font-size: 0.84rem;
+  line-height: 1.45;
+}
+.art-complete-meta {
+  margin: 0;
+  padding: 0;
+  list-style: none;
+  display: grid;
+  gap: 4px;
+  font-size: 0.84rem;
+}
+.art-complete-hint {
+  margin: 0;
+  font-size: 0.78rem;
 }
 .art-studio-dice.is-bounce {
   animation: art-dice-bounce 0.58s cubic-bezier(0.22, 1.45, 0.36, 1);
