@@ -102,7 +102,7 @@ const BUDGET_CATALOG = {
 
 const VIEW_META = {
   dashboard: { title: "TF 요약", desc: "지금 열린 단계만, 내 파트만 하면 됩니다" },
-  "my-work": { title: "내 업무", desc: "확인 · 제출 · 반영 · 참석 중 지금 할 일" },
+  "my-work": { title: "요청", desc: "관리자가 등록한 업무" },
   "tf-all": { title: "모아보기", desc: "보고서·예산·성과지표 통합" },
   parts: { title: "목차·할당", desc: "목차와 파트 분량" },
   collections: { title: "보고서 통합", desc: "차수별 제출·분량 분석" },
@@ -128,16 +128,16 @@ const NAV_GROUPS = {
   },
   mywork: {
     label: "내업무",
-    views: ["ai-art", "kpi", "budget", "food", "my-work", "requests"],
+    views: ["my-work", "ai-art", "kpi", "budget", "food", "requests"],
     labels: {
+      "my-work": "받은 요청",
       "ai-art": "그림",
       kpi: "지표",
       budget: "예산",
       food: "식사",
-      "my-work": "할 일",
       requests: "요청",
     },
-    hideTabs: ["my-work", "requests"],
+    hideTabs: ["requests"],
     defaultView: "ai-art",
   },
   tfall: {
@@ -206,6 +206,23 @@ function currentMember() {
 
 function isAdmin() {
   return currentMember()?.role === "admin";
+}
+
+function myWorkRequestTabLabel() {
+  return isAdmin() ? "보낸요청" : "받은 요청";
+}
+
+function navLabelForView(viewName, group) {
+  if (viewName === "my-work") return myWorkRequestTabLabel();
+  return group?.labels?.[viewName] || VIEW_META[viewName]?.title || viewName;
+}
+
+function isAdminRegisteredWork(s) {
+  const owner = String(s?.owner || s?.createdBy || "").trim();
+  if (!owner) return true;
+  const member = memberByName(owner);
+  if (member) return member.role === "admin";
+  return owner === (state.meta?.adminName || "");
 }
 
 function isBudgetManager() {
@@ -1588,11 +1605,13 @@ function renderSubNav(navId, viewName) {
   bar.classList.add("has-area-tabs");
   bar.innerHTML = views
     .map((v) => {
-      const label = group.labels?.[v] || VIEW_META[v]?.title || v;
+      const label = navLabelForView(v, group);
       const on = v === viewName;
       const area =
         v === "collections"
           ? "area-report"
+          : v === "my-work"
+            ? "area-request"
           : v === "budget" || v === "kpi" || v === "ai-art" || v === "food"
             ? `area-${v}`
             : navId === "setup"
@@ -1639,7 +1658,7 @@ function setView(name) {
 
   const group = NAV_GROUPS[resolvedNav];
   const meta = VIEW_META[viewName] || { title: viewName, desc: "" };
-  const tabLabel = group?.labels?.[viewName] || meta.title;
+  const tabLabel = navLabelForView(viewName, group);
   const showGroupTitle = group && group.views.filter((v) => !(group.hideTabs || []).includes(v)).length > 1;
   const title = showGroupTitle ? `${group.label} · ${tabLabel}` : tabLabel || group?.label || viewName;
   let desc = meta.desc;
@@ -1678,6 +1697,9 @@ function setView(name) {
     desc = canManageKpi()
       ? "제출된 성과지표를 영역 칸으로 끌어 구성합니다."
       : "성과지표를 입력한 뒤 제출합니다.";
+  }
+  if (viewName === "my-work") {
+    desc = isAdmin() ? "Setting에서 등록한 업무입니다." : "관리자가 등록한 업무입니다.";
   }
   $("#viewTitle").textContent = title;
   $("#viewDesc").textContent = desc;
@@ -4849,8 +4871,8 @@ function emptyMyWorkCopy(admin, act) {
   if (act === "attend") return "참석할 회의가 없습니다.";
   if (act === "confirm") return "지금 확인할 요청이 없습니다.";
   return admin
-    ? "표시할 일정이 없습니다. Setting · TF 일정에서 추가하세요."
-    : "지금은 열린 할 일이 없습니다. 취합 공지가 열리면 제출 칸이 생깁니다.";
+    ? "보낸 요청이 없습니다. Setting · TF 일정에서 등록하세요."
+    : "받은 요청이 없습니다.";
 }
 
 function todayActBarHtml(who, items) {
@@ -4939,7 +4961,7 @@ function scheduleFeedPanelHtml(who, admin, items) {
   return `
     <section class="panel work-feed-panel mywork-schedule-panel is-timeline">
       <header class="tf-timeline-hero">
-        <h2>${escapeHtml(who)}님, 오늘 할 일입니다</h2>
+        <h2>${escapeHtml(admin ? `${who}님이 보낸 요청입니다` : `${who}님, 받은 요청입니다`)}</h2>
       </header>
       ${
         sorted.length
@@ -11135,7 +11157,7 @@ function renderMyWork() {
   const who = sessionUser || "작성자";
   const admin = isAdmin();
   const items = [...(state.schedule || [])]
-    .filter((s) => scheduleVisibleToUser(s, who))
+    .filter((s) => isAdminRegisteredWork(s) && scheduleVisibleToUser(s, who))
     .sort((a, b) => a.date.localeCompare(b.date));
 
   el.innerHTML = `

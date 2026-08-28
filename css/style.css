@@ -9853,6 +9853,9 @@ body.view-home .page-hero {
 .sub-tab-bar.has-area-tabs .sub-tab-btn.area-ai-art.active {
   background: #0071e3;
 }
+.sub-tab-bar.has-area-tabs .sub-tab-btn.area-request.active {
+  background: #5b21b6;
+}
 .sub-tab-bar.has-area-tabs .sub-tab-btn.area-food.active {
   background: #c2410c;
 }
