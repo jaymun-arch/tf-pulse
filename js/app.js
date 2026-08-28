@@ -4769,103 +4769,60 @@ function todayActBarHtml(who, items) {
     </div>`;
 }
 
-function scheduleFeedPanelHtml(who, admin, items) {
-  const groupFilter = state._myWorkGroup || "all";
-  const collabFilter = state._myWorkCollab || "all";
-  const actFilter = state._myWorkAct || "all";
-  const withOrigin = items.map((s) => ({ s, origin: scheduleOriginOf(s, who) }));
-  const afterCollab =
-    collabFilter === "sent"
-      ? withOrigin.filter((x) => x.origin.kind === "sent")
-      : collabFilter === "received"
-        ? withOrigin.filter((x) => x.origin.kind === "received")
-        : withOrigin;
-  const filteredItems = afterCollab
-    .map((x) => x.s)
-    .filter((s) => (groupFilter === "all" ? true : scheduleGroupOf(s) === groupFilter))
-    .filter((s) => (actFilter === "all" ? true : memberNextActionOf(s, who) === actFilter));
-
-  const groupCounts = { all: items.length };
-  SCHEDULE_GROUP_OPTIONS.forEach((g) => {
-    groupCounts[g.id] = items.filter((s) => scheduleGroupOf(s) === g.id).length;
-  });
-  const collabCounts = {
-    all: items.length,
-    sent: items.filter((s) => scheduleOriginOf(s, who).kind === "sent").length,
-    received: items.filter((s) => scheduleOriginOf(s, who).kind === "received").length,
-  };
-
-  const byGroup = scheduleByGroup(filteredItems);
-  const sections =
-    groupFilter === "all"
-      ? SCHEDULE_GROUP_OPTIONS.filter((g) => (byGroup[g.id] || []).length)
-      : SCHEDULE_GROUP_OPTIONS.filter((g) => g.id === groupFilter);
-
+function myWorkTimelineRowHtml(s, index, rows) {
+  const due = scheduleDueIso(s);
+  const prev = rows[index - 1];
+  const monthKey = due ? due.slice(0, 7) : "";
+  const prevMonth = prev ? (scheduleDueIso(prev) || "").slice(0, 7) : null;
+  const showMonth = index === 0 || monthKey !== prevMonth;
+  const status = s.status || "준비";
+  const tone = tfStatusTone(status);
+  const overdue = status !== "완료" && due && due < today();
+  const groupId = scheduleGroupOf(s);
+  const partsLine = groupId === "collect" && !isAdmin() ? myAssignedPartsLine() : "";
+  const days = due ? daysUntil(due) : null;
+  const timing = days == null ? "" : timingLabel(days);
   return `
-    <section class="panel work-feed-panel mywork-schedule-panel">
-      <div class="panel-head">
-        <div>
-          <h2 class="panel-title panel-title-mine"><span class="name-honorific">${escapeHtml(who)}</span>님, 오늘 할 일입니다.</h2>
-          <p class="muted" style="margin:4px 0 0">지금 열린 단계만, 내 파트만 하면 됩니다.</p>
-        </div>
+    <li>
+      ${showMonth ? `<p class="tf-timeline-month">${escapeHtml(formatKorYearMonth(due))}</p>` : ""}
+      <div class="tf-timeline-row is-work tone-${tone}${overdue ? " is-overdue" : ""}" data-open-upload="${escapeAttr(s.id)}" role="button" tabindex="0">
+        <span class="tf-timeline-rail" aria-hidden="true"><i></i></span>
+        <span class="tf-timeline-due">
+          <em>마감일정</em>
+          <strong>${escapeHtml(due ? formatKorDate(due) : "날짜 미정")}</strong>
+          ${timing ? `<span class="tf-sched-timing">${escapeHtml(timing)}</span>` : ""}
+        </span>
+        <span class="tf-timeline-title">
+          <em>업무명</em>
+          <strong>${escapeHtml(s.title)}</strong>
+          ${partsLine ? `<span class="tf-timeline-dept">${escapeHtml(partsLine)}</span>` : ""}
+        </span>
+        <span class="tf-timeline-status">
+          <em>진행현황</em>
+          <span class="status-select status-${tone}">${escapeHtml(status)}</span>
+        </span>
       </div>
+    </li>`;
+}
 
-      ${todayActBarHtml(who, items)}
-
-      <div class="work-filter-block" aria-label="상위 그룹">
-        <div class="work-filter-chips">
-          <button type="button" class="work-filter-chip ${groupFilter === "all" ? "is-on" : ""}" data-work-group="all">전체 ${groupCounts.all}</button>
-          ${SCHEDULE_GROUP_OPTIONS.map(
-            (g) =>
-              `<button type="button" class="work-filter-chip ${groupFilter === g.id ? "is-on" : ""}" data-work-group="${escapeAttr(g.id)}">${escapeHtml(g.label)} ${groupCounts[g.id] || 0}</button>`
-          ).join("")}
-        </div>
-      </div>
-
-      <div class="work-filter-block" aria-label="협업 구분">
-        <span class="work-filter-label">협업구분</span>
-        <div class="work-filter-chips">
-          <button type="button" class="work-filter-chip ${collabFilter === "all" ? "is-on" : ""}" data-work-collab="all">전체 ${collabCounts.all}</button>
-          <button type="button" class="work-filter-chip ${collabFilter === "sent" ? "is-on" : ""}" data-work-collab="sent">내가 요청 ${collabCounts.sent}</button>
-          <button type="button" class="work-filter-chip ${collabFilter === "received" ? "is-on" : ""}" data-work-collab="received">요청받음 ${collabCounts.received}</button>
-        </div>
-      </div>
-
+function scheduleFeedPanelHtml(who, admin, items) {
+  const sorted = [...(items || [])].sort((a, b) => {
+    const da = scheduleDueIso(a);
+    const db = scheduleDueIso(b);
+    if (!da && !db) return 0;
+    if (!da) return 1;
+    if (!db) return -1;
+    return da.localeCompare(db);
+  });
+  return `
+    <section class="panel work-feed-panel mywork-schedule-panel is-timeline">
+      <header class="tf-timeline-hero">
+        <h2>${escapeHtml(who)}님, 오늘 할 일입니다</h2>
+      </header>
       ${
-        filteredItems.length
-          ? sections
-              .map((g) => {
-                const rows = byGroup[g.id] || [];
-                if (!rows.length && groupFilter === "all") return "";
-                const byMonth = scheduleByMonth(rows);
-                const months = Object.keys(byMonth).sort((a, b) => b.localeCompare(a));
-                return `
-                <article class="work-group-card">
-                  <header class="work-group-card-head">
-                    <h3>${escapeHtml(g.label)}</h3>
-                    <span class="muted">${rows.length}건 · ${escapeHtml(g.label)}</span>
-                  </header>
-                  <div class="work-group-card-body">
-                    ${
-                      months.length
-                        ? months
-                            .map((ym) => {
-                              const [y, m] = ym.split("-");
-                              const monthLabel = `${Number(y)}년 ${Number(m)}월`;
-                              return `
-                              <div class="work-month-chunk">
-                                <p class="work-month-label">${escapeHtml(monthLabel)}</p>
-                                <div class="work-feed">${byMonth[ym].map((s) => workFeedRowHtml(s, admin)).join("")}</div>
-                              </div>`;
-                            })
-                            .join("")
-                        : `<div class="work-feed">${rows.map((s) => workFeedRowHtml(s, admin)).join("")}</div>`
-                    }
-                  </div>
-                </article>`;
-              })
-              .join("")
-          : `<div class="empty">${escapeHtml(emptyMyWorkCopy(admin, actFilter))}</div>`
+        sorted.length
+          ? `<ol class="tf-timeline">${sorted.map((item, i) => myWorkTimelineRowHtml(item, i, sorted)).join("")}</ol>`
+          : `<div class="empty">${escapeHtml(emptyMyWorkCopy(admin, "all"))}</div>`
       }
     </section>`;
 }
@@ -4949,7 +4906,7 @@ function bindScheduleFeedActions(root, onRefresh) {
     bindScheduleSwipeRow(row, onRefresh);
   });
 
-  root.querySelectorAll(".task-row.is-simple[data-open-upload]").forEach((el) => {
+  root.querySelectorAll(".task-row.is-simple[data-open-upload], .tf-timeline-row[data-open-upload]").forEach((el) => {
     const open = () => {
       const item = state.schedule.find((s) => s.id === el.dataset.openUpload);
       openScheduleUploadForItem(item);

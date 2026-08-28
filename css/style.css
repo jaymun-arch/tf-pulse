@@ -10589,6 +10589,24 @@ body.view-home .page-hero {
   width: 100%;
   padding: 10px 6px 10px 0;
 }
+.tf-timeline-row.is-work {
+  grid-template-columns: 18px 8.4rem minmax(0, 1fr) auto;
+  cursor: pointer;
+  border-radius: 12px;
+}
+.tf-timeline-row.is-work:hover,
+.tf-timeline-row.is-work:focus-visible {
+  background: var(--bg);
+  outline: none;
+}
+.tf-timeline-row.is-work .tf-timeline-title strong {
+  display: block;
+  font-size: 0.92rem;
+  font-weight: 750;
+}
+.mywork-schedule-panel.is-timeline {
+  padding: 8px 12px 18px;
+}
 
 .tf-timeline-rail {
   position: relative;
@@ -10763,6 +10781,12 @@ body.view-home .page-hero {
       "rail title title"
       "rail meta meta"
       "rail actions actions";
+  }
+  .tf-timeline-row.is-work {
+    grid-template-columns: 18px 1fr auto;
+    grid-template-areas:
+      "rail due status"
+      "rail title title";
   }
   .tf-timeline-rail { grid-area: rail; }
   .tf-timeline-due { grid-area: due; }
