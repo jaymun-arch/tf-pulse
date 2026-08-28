@@ -2816,68 +2816,16 @@ function renderUnifiedRemindList(root, scheduleItems = getUpcomingReminders(), c
   bindRemindListActions(root);
 }
 
-function animateRemindConfirmCount(total, { urgent = false } = {}) {
-  const el = $("#remindConfirmCount");
-  if (!el) return;
-  if (animateRemindConfirmCount._raf) {
-    cancelAnimationFrame(animateRemindConfirmCount._raf);
-    animateRemindConfirmCount._raf = 0;
-  }
-  const end = Math.max(0, Number(total) || 0);
-  el.classList.toggle("is-urgent", urgent);
-  if (!end) {
-    el.hidden = true;
-    el.textContent = "";
-    return;
-  }
-  el.hidden = false;
-  el.textContent = "0";
-  const start = performance.now();
-  const duration = Math.min(1100, 420 + end * 40);
-  const tick = (now) => {
-    const t = Math.min(1, (now - start) / duration);
-    const eased = 1 - (1 - t) ** 3;
-    el.textContent = String(Math.round(end * eased));
-    if (t < 1) {
-      animateRemindConfirmCount._raf = requestAnimationFrame(tick);
-    } else {
-      el.textContent = String(end);
-      animateRemindConfirmCount._raf = 0;
-    }
-  };
-  animateRemindConfirmCount._raf = requestAnimationFrame(tick);
-}
-
-function updateAlarmPopupChrome({ scheduleCount = 0, commentCount = 0 } = {}) {
-  const kicker = $("#remindKicker");
-  const who = $("#remindWho");
-  const title = $("#remindTitle");
-  const desc = $("#remindDesc");
+function updateAlarmPopupChrome() {
   const hint = $("#remindPhaseHint");
   const hideOpts = document.querySelector("#remindBackdrop .remind-hide-opts");
   const goBtn = $("#remindGoSchedule");
-  const total = scheduleCount + commentCount;
-  const overdue = getUpcomingReminders().filter((s) => s.daysUntil < 0).length;
-  const todayN = getUpcomingReminders().filter((s) => s.daysUntil === 0).length;
-
-  if (who) who.textContent = `${sessionUser || "작성자"}님`;
-  if (kicker) {
-    kicker.textContent = "알림";
-    kicker.classList.add("remind-kicker-glow");
-  }
-  if (title) {
-    title.innerHTML = `<span class="name-honorific">${escapeHtml(sessionUser || "작성자")}님</span>, 확인할 알림이 있습니다.`;
-  }
-  if (desc) {
-    desc.textContent = "닫아도 상단 알람에서 다시 볼 수 있습니다.";
-  }
   if (goBtn) goBtn.textContent = "내 업무 보기";
   if (hideOpts) hideOpts.hidden = false;
   if (hint) {
     hint.hidden = true;
     hint.textContent = "";
   }
-  animateRemindConfirmCount(total, { urgent: overdue > 0 || todayN > 0 });
 }
 
 function renderRemindList() {
@@ -2913,19 +2861,33 @@ function clearAlarmPhaseTransitionTimer() {
   }
 }
 
+function setRemindConfirmCountdown(left) {
+  const el = $("#remindConfirmCount");
+  if (!el) return;
+  const n = Math.max(0, Number(left) || 0);
+  if (!n) {
+    el.hidden = true;
+    el.textContent = "";
+    el.classList.remove("is-urgent");
+    return;
+  }
+  el.hidden = false;
+  el.textContent = String(n);
+  el.classList.toggle("is-urgent", n <= 2);
+}
+
 function clearRemindPopupAutoClose() {
   if (remindPopupCountdownTimer) {
     window.clearInterval(remindPopupCountdownTimer);
     remindPopupCountdownTimer = null;
   }
   const countEl = $("#remindAutoCloseCount");
-  const secEl = $("#remindConfirmSec");
   if (countEl) {
     countEl.hidden = true;
     countEl.textContent = "";
     countEl.classList.remove("is-urgent");
   }
-  if (secEl) secEl.textContent = "";
+  setRemindConfirmCountdown(0);
 }
 
 function cancelRemindPopupAutoClose() {
@@ -2936,14 +2898,12 @@ function cancelRemindPopupAutoClose() {
 function startRemindPopupAutoClose({ dismissScheduleOnClose = false } = {}) {
   clearRemindPopupAutoClose();
   const countEl = $("#remindAutoCloseCount");
-  const secEl = $("#remindConfirmSec");
-  let left = ALARM_AUTO_WAIT_SEC;
   if (countEl) {
-    countEl.hidden = false;
-    countEl.textContent = String(left);
-    countEl.classList.toggle("is-urgent", left <= 2);
+    countEl.hidden = true;
+    countEl.textContent = "";
   }
-  if (secEl) secEl.textContent = `(${left})`;
+  let left = ALARM_AUTO_WAIT_SEC;
+  setRemindConfirmCountdown(left);
   remindPopupCountdownTimer = window.setInterval(() => {
     left -= 1;
     if (left <= 0) {
@@ -2954,11 +2914,7 @@ function startRemindPopupAutoClose({ dismissScheduleOnClose = false } = {}) {
       closeRemindPopup({ skipHideOpts: false });
       return;
     }
-    if (countEl) {
-      countEl.textContent = String(left);
-      countEl.classList.toggle("is-urgent", left <= 2);
-    }
-    if (secEl) secEl.textContent = `(${left})`;
+    setRemindConfirmCountdown(left);
   }, 1000);
 }
 
