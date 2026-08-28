@@ -2186,7 +2186,7 @@ function heatDayTipHtml(ctx) {
   return `
     <div class="heat-tip-head">
       <strong>${escapeHtml(formatKorDate(iso))}</strong>
-      <span>클릭 시 상세</span>
+      <span>클릭하면 아래 일정</span>
     </div>
     ${scheduleBlock}
     ${collectionBlock}
@@ -2213,6 +2213,12 @@ function ensureHeatDayTip() {
     const iso = tip.dataset.iso;
     if (!iso) return;
     hideHeatDayTip(true);
+    if (activeViewName === "dashboard") {
+      state._calSelected = iso;
+      if (iso) state._calCursor = `${iso.slice(0, 7)}-01`;
+      renderDashboard();
+      return;
+    }
     openDayDeadlineDetail(iso);
   });
   if (!window.__heatTipChromeBound) {
@@ -2261,7 +2267,7 @@ function showHeatDayTip(cell, iso) {
   tip.style.top = `${top}px`;
 }
 
-function bindHeatDayInteractions(root, { onEmptyClick } = {}) {
+function bindHeatDayInteractions(root, { onEmptyClick, onDayClick } = {}) {
   let hideTimer = null;
   const clearHide = () => {
     if (hideTimer) {
@@ -2290,8 +2296,12 @@ function bindHeatDayInteractions(root, { onEmptyClick } = {}) {
     });
     btn.addEventListener("click", () => {
       const iso = btn.dataset.calDay;
-      const ctx = dayDeadlineContext(iso);
       hideHeatDayTip();
+      if (typeof onDayClick === "function") {
+        onDayClick(iso);
+        return;
+      }
+      const ctx = dayDeadlineContext(iso);
       if (ctx.schedules.length || ctx.collection || ctx.requestGroups.length) {
         openDayDeadlineDetail(iso);
         return;
@@ -3497,16 +3507,16 @@ function renderDashboard() {
       ${buildHeatCalendarHtml(cursor, { mode, selectedIso: selected, bandFilter: null })}
     </section>
 
-    ${
-      dayItems.length
-        ? `<section class="panel">
-        <div class="panel-head">
-          <h2 class="panel-title">${escapeHtml(formatKorDate(selected))} 일정</h2>
-        </div>
-        <div class="work-feed">${dayItems.map((s) => workFeedRowHtml(s, admin)).join("")}</div>
-      </section>`
-        : ""
-    }
+    <section class="panel">
+      <div class="panel-head">
+        <h2 class="panel-title">${escapeHtml(formatKorDate(selected))} 일정</h2>
+      </div>
+      ${
+        dayItems.length
+          ? `<div class="work-feed">${dayItems.map((s) => workFeedRowHtml(s, admin)).join("")}</div>`
+          : `<p class="muted" style="margin:0">이 날 등록된 일정이 없습니다.</p>`
+      }
+    </section>
   `;
 
   const tickHomeDeadline = () => {
@@ -3548,15 +3558,19 @@ function renderDashboard() {
     renderDashboard();
   });
   bindHeatDayInteractions(el, {
-    onEmptyClick: (iso) => {
+    onDayClick: (iso) => {
       state._calSelected = iso;
       renderDashboard();
     },
   });
-  bindScheduleFeedActions(el, () => {
-    renderDashboard();
-    updateAlarmButtons();
-  });
+  bindScheduleFeedActions(
+    el,
+    () => {
+      renderDashboard();
+      updateAlarmButtons();
+    },
+    { onOpenItem: () => setView("my-work") }
+  );
 }
 
 function renderParts() {
@@ -4935,7 +4949,7 @@ function scheduleFeedPanelHtml(who, admin, items) {
     </section>`;
 }
 
-function bindScheduleFeedActions(root, onRefresh) {
+function bindScheduleFeedActions(root, onRefresh, { onOpenItem } = {}) {
   root.querySelector("#addSchedule")?.addEventListener("click", () => {
     if (!isAdmin()) {
       denySchedulePermission("보고서 업무 추가는 관리자만 가능합니다.");
@@ -5011,7 +5025,7 @@ function bindScheduleFeedActions(root, onRefresh) {
   });
 
   root.querySelectorAll(".swipe-row[data-schedule-id]").forEach((row) => {
-    bindScheduleSwipeRow(row, onRefresh);
+    bindScheduleSwipeRow(row, onRefresh, onOpenItem);
   });
 
   root.querySelectorAll("[data-linked-docs] a").forEach((a) => {
@@ -5021,6 +5035,10 @@ function bindScheduleFeedActions(root, onRefresh) {
   root.querySelectorAll(".task-row.is-simple[data-open-upload], .tf-timeline-row[data-open-upload]").forEach((el) => {
     const open = () => {
       const item = state.schedule.find((s) => s.id === el.dataset.openUpload);
+      if (typeof onOpenItem === "function") {
+        onOpenItem(item);
+        return;
+      }
       openScheduleUploadForItem(item);
     };
     el.addEventListener("click", (e) => {
@@ -5036,7 +5054,7 @@ function bindScheduleFeedActions(root, onRefresh) {
   });
 }
 
-function bindScheduleSwipeRow(row, onRefresh) {
+function bindScheduleSwipeRow(row, onRefresh, onOpenItem) {
   const id = row.dataset.scheduleId;
   const front = row.querySelector(".swipe-front");
   const task = row.querySelector(".task-row");
@@ -5141,7 +5159,8 @@ function bindScheduleSwipeRow(row, onRefresh) {
 
     reset();
     if (wasTap && locked !== "v") {
-      openScheduleUploadForItem(item);
+      if (typeof onOpenItem === "function") onOpenItem(item);
+      else openScheduleUploadForItem(item);
     }
   };
 
