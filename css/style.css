@@ -2363,25 +2363,7 @@ body:not(.is-admin):not(.is-food) .food-catalog-panel {
 }
 
 .remind-autoclose {
-  position: absolute;
-  top: 14px;
-  left: 14px;
-  z-index: 2;
-  min-width: 36px;
-  height: 36px;
-  padding: 0 8px;
-  border-radius: 980px;
-  display: inline-flex;
-  align-items: center;
-  justify-content: center;
-  background: rgba(0, 113, 227, 0.12);
-  color: var(--accent);
-  font-size: 1.05rem;
-  font-weight: 800;
-  letter-spacing: -0.02em;
-  line-height: 1;
-  pointer-events: none;
-  user-select: none;
+  display: none !important;
 }
 
 .remind-autoclose.is-urgent {
