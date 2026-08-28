@@ -100,15 +100,15 @@ const BUDGET_CATALOG = {
 };
 
 const VIEW_META = {
-  dashboard: { title: "TF 요약", desc: "제출일시·잔여기간·일정 진도" },
-  "my-work": { title: "내 업무", desc: "요청받은 일을 확인하고 상태를 바꿉니다" },
+  dashboard: { title: "TF 요약", desc: "지금 열린 단계만, 내 파트만 하면 됩니다" },
+  "my-work": { title: "내 업무", desc: "확인 · 제출 · 반영 · 참석 중 지금 할 일" },
   "tf-all": { title: "TF 업무 모두보기", desc: "보고서·예산·성과지표 통합" },
   parts: { title: "목차·할당", desc: "목차와 파트 분량" },
   collections: { title: "보고서 통합", desc: "차수별 제출·분량 분석" },
   review: { title: "윤독", desc: "검토사항 기록" },
   requests: { title: "요청", desc: "작업 요청·진행" },
   budget: { title: "예산 통합", desc: "영역·비목별 통계" },
-  schedule: { title: "TF 일정", desc: "기본 마감을 넣으면 요청업무에 그대로 반영됩니다" },
+  schedule: { title: "TF 일정", desc: "마감 순 타임라인에서 일정을 작성합니다" },
   drive: { title: "드라이브", desc: "문서 링크" },
   resources: { title: "양식", desc: "공통양식·가이드" },
   food: { title: "오늘 뭐먹지", desc: "메뉴 돌림판·투표" },
@@ -1565,13 +1565,16 @@ function setView(name) {
       : "담당 영역은 내업무에서 올리고, 여기서 현황과 리뷰를 확인합니다.";
   }
   if (viewName === "dashboard") {
-    desc = "아래 순서를 따라 내업무부터 시작하면 됩니다.";
+    desc = "지금 열린 단계만, 내 파트만 하면 됩니다.";
+  }
+  if (viewName === "my-work") {
+    desc = "확인 · 제출 · 반영 · 참석 중 오늘 할 일만 고릅니다.";
   }
   if (viewName === "guide") {
     desc = "칸을 누르면 해당 화면으로 바로 이동합니다.";
   }
   if (viewName === "schedule") {
-    desc = "기본 마감을 넣으면 요청업무 등록 시 날짜와 내용이 이 일정 기준으로 채워집니다.";
+    desc = "마감 순 타임라인에서 일정을 작성합니다. 요청업무 등록 시 날짜와 내용이 이 기준으로 채워집니다.";
   }
   if (viewName === "budget") {
     const modeMeta = budgetModeMeta();
@@ -3187,7 +3190,7 @@ function processGuideDismissed() {
 function processStepsForRole() {
   if (isAdmin()) {
     return [
-      { n: "1", title: "일정 수립", desc: "Setting에서 TF 기본 일정을 넣습니다", view: "schedule" },
+      { n: "1", title: "일정 수립", desc: "Setting에서 TF 일정을 넣습니다", view: "schedule" },
       { n: "2", title: "취합 공지", desc: "보고서 통합에서 차수 공지를 올립니다", view: "collections" },
       { n: "3", title: "취합·리뷰", desc: "제출을 확인하고 리뷰회의를 남깁니다", view: "collections" },
       { n: "4", title: "사용방법", desc: "역할별 권한·메뉴를 확인합니다", view: "guide" },
@@ -3393,7 +3396,15 @@ function renderDashboard() {
     <section class="yeonu-hero yeonu-hero-simple" aria-label="TF 요약">
       <div class="yeonu-hero-brand">
         <img class="yeonu-hero-mark" src="assets/yeonuhue-login.png" alt="연어회(硏語會)" width="72" height="72" />
-        <p class="yeonu-tagline">연(硏)성에서 우리의 말(語)이 모이면(會) 풀지 못할일이 없다.</p>
+        <div class="yeonu-hero-copyblock">
+          <p class="yeonu-tagline">연(硏)성에서 우리의 말(語)이 모이면(會) 풀지 못할일이 없다.</p>
+          <p class="yeonu-nowline">${escapeHtml(nowStageAndPartLine())}</p>
+          ${
+            admin
+              ? ""
+              : `<button type="button" class="btn btn-sm yeonu-now-go" id="homeGoMyWork">오늘 할 일 보기</button>`
+          }
+        </div>
       </div>
       <aside class="yeonu-hero-aside report-deadline" aria-live="polite">
         <p class="deadline-label">보고서 제출일시</p>
@@ -3451,6 +3462,7 @@ function renderDashboard() {
   };
   tickHomeDeadline();
   bindMarathonRunner(el);
+  $("#homeGoMyWork")?.addEventListener("click", () => setView("my-work"));
 
   el.querySelectorAll("[data-goto]").forEach((btn) => {
     btn.addEventListener("click", () => setView(btn.dataset.goto));
@@ -3970,119 +3982,104 @@ function renderSchedule() {
   const el = $("#view-schedule");
   if (!el) return;
   if (!isAdmin()) return;
-  const templates = SCHEDULE_GUIDE_TEMPLATES;
-  const extras = extraTfSchedules();
-  const rowHtml = (s, tpl) => {
-    const due = s ? scheduleDueIso(s) : "";
+  const rows = unifiedTfScheduleRows();
+  const todayIso = today();
+  const applyStatusTone = (row, status) => {
+    const tone = tfStatusTone(status);
+    row.classList.remove("tone-done", "tone-active", "tone-planned");
+    row.classList.add(`tone-${tone}`);
+    const sel = row.querySelector("[data-tf-status]");
+    if (sel) {
+      sel.classList.remove("status-done", "status-active", "status-planned");
+      sel.classList.add(`status-${tone}`);
+    }
+  };
+  const rowHtml = (item, index) => {
+    const { s, tpl, due } = item;
+    const prev = rows[index - 1];
+    const monthKey = due ? due.slice(0, 7) : "";
+    const prevMonth = prev?.due ? prev.due.slice(0, 7) : prev ? "" : null;
+    const showMonth = index === 0 || monthKey !== prevMonth;
     const status = s?.status || "준비";
+    const tone = tfStatusTone(status);
     const days = due ? daysUntil(due) : null;
-    const timing =
-      days == null ? "" : days < 0 ? `${Math.abs(days)}일 지남` : days === 0 ? "오늘" : `${days}일 남음`;
+    const timing = days == null ? "" : timingLabel(days);
+    const overdue = status !== "완료" && due && due < todayIso;
+    const owner = s?.owner || s?.createdBy || "";
+    const dept = s?.dept || s?.division || tpl?.division || "";
+    const stepLabel = tpl
+      ? `${tpl.step ? `${tpl.step} ` : ""}${tpl.short}`
+      : scheduleGroupLabel(scheduleGroupOf(s));
+    const stepHtml = tpl
+      ? `<span class="tf-sched-step">${tpl.step ? `<em>${escapeHtml(tpl.step)}</em>` : ""}${escapeHtml(tpl.short)}</span>`
+      : `<span class="tf-sched-step">${escapeHtml(stepLabel)}</span>`;
     return `
-      <tr data-guide="${escapeAttr(tpl?.id || "")}" data-sched="${escapeAttr(s?.id || "")}">
-        <td>${
-          tpl
-            ? `<span class="tf-sched-step">${tpl.step ? `<em>${escapeHtml(tpl.step)}</em>` : ""}${escapeHtml(tpl.short)}</span>`
-            : `<span class="muted">추가</span>`
-        }</td>
-        <td>
-          <input class="wp-input" data-tf-title value="${escapeAttr(s?.title || tpl?.title || "")}" placeholder="업무명" />
-        </td>
-        <td>
-          <input class="wp-input" type="date" data-tf-date value="${escapeAttr(due)}" />
-          ${timing ? `<span class="muted tf-sched-timing">${escapeHtml(timing)}</span>` : ""}
-        </td>
-        <td>
-          <select class="wp-input wp-select" data-tf-status>
-            ${["준비", "진행", "완료"]
-              .map((st) => `<option value="${st}" ${status === st ? "selected" : ""}>${st}</option>`)
-              .join("")}
-          </select>
-        </td>
-        <td>
-          <div class="row">
+      <li>
+        ${showMonth ? `<p class="tf-timeline-month">${escapeHtml(formatKorYearMonth(due))}</p>` : ""}
+        <div class="tf-timeline-row tone-${tone}${overdue ? " is-overdue" : ""}" data-tf-row data-guide="${escapeAttr(tpl?.id || "")}" data-sched="${escapeAttr(s?.id || "")}">
+          <span class="tf-timeline-rail" aria-hidden="true"><i></i></span>
+          <span class="tf-timeline-due">
+            <em>마감일정</em>
+            <label class="tf-timeline-due-face">
+              <strong data-tf-date-label>${escapeHtml(due ? formatKorDate(due) : "날짜 선택")}</strong>
+              <input class="tf-timeline-date" type="date" data-tf-date value="${escapeAttr(due)}" aria-label="마감일" />
+            </label>
+            ${timing ? `<span class="tf-sched-timing">${escapeHtml(timing)}</span>` : ""}
+          </span>
+          <span class="tf-timeline-title">
+            <em>업무명</em>
+            <input data-tf-title value="${escapeAttr(s?.title || tpl?.title || "")}" placeholder="업무명" aria-label="업무명" />
+          </span>
+          <span class="tf-timeline-people">
+            <span class="tf-timeline-meta">
+              <em>단계</em>
+              ${stepHtml}
+            </span>
+            <span class="tf-timeline-meta">
+              <em>담당</em>
+              ${escapeHtml(owner || dept || "—")}
+              ${owner && dept ? `<span class="tf-timeline-dept">${escapeHtml(dept)}</span>` : ""}
+            </span>
+          </span>
+          <span class="tf-timeline-status">
+            <em>진행현황</em>
+            <select class="status-select status-${tone}" data-tf-status aria-label="진행현황">
+              ${["준비", "진행", "완료"]
+                .map((st) => `<option value="${st}" ${status === st ? "selected" : ""}>${st}</option>`)
+                .join("")}
+            </select>
+          </span>
+          <span class="tf-timeline-actions">
             <button type="button" class="btn btn-sm btn-primary" data-tf-save>저장</button>
-            ${
-              s
-                ? `<button type="button" class="btn btn-sm" data-tf-edit="${escapeAttr(s.id)}">상세</button>`
-                : ""
-            }
-          </div>
-        </td>
-      </tr>`;
+            ${s ? `<button type="button" class="btn btn-sm" data-tf-edit="${escapeAttr(s.id)}">상세</button>` : ""}
+          </span>
+        </div>
+      </li>`;
   };
 
   el.innerHTML = `
     <div class="tf-sched-page">
-      <section class="panel">
-        <div class="panel-head">
-          <div>
-            <h2 class="panel-title">TF 기본 일정</h2>
-            <p class="muted">단계별 마감을 넣으면 관리자가 요청업무를 등록할 때 이 날짜·내용이 기본값으로 채워집니다.</p>
-          </div>
-          <button type="button" class="btn btn-primary" id="addSchedule">일정 추가</button>
-        </div>
-        <div class="table-wrap">
-          <table class="tf-sched-table">
-            <thead>
-              <tr>
-                <th>단계</th>
-                <th>업무</th>
-                <th>마감</th>
-                <th>상태</th>
-                <th></th>
-              </tr>
-            </thead>
-            <tbody>
-              ${templates.map((tpl) => rowHtml(tfScheduleForGuide(tpl.id), tpl)).join("")}
-            </tbody>
-          </table>
-        </div>
+      <header class="tf-timeline-hero">
+        <h2>마감 순으로 등록된 일정을 봅니다</h2>
+        <p>기본·추가를 나누지 않고 한 목록에서 작성합니다. 단계별 마감을 넣으면 요청업무 등록 시 날짜·내용이 기본값으로 채워집니다.</p>
+        <button type="button" class="btn btn-primary" id="addSchedule">일정 추가</button>
+      </header>
+      <section class="panel tf-timeline-panel">
+        ${
+          rows.length
+            ? `<ol class="tf-timeline">${rows.map(rowHtml).join("")}</ol>`
+            : `<p class="empty">아직 일정이 없습니다. 「일정 추가」로 마감을 넣어 주세요.</p>`
+        }
       </section>
-      ${
-        extras.length
-          ? `<section class="panel">
-        <div class="panel-head">
-          <h2 class="panel-title">추가 일정</h2>
-          <p class="muted" style="margin:0">1·2·최종 취합처럼 단계에 더해 잡은 일정입니다.</p>
-        </div>
-        <div class="table-wrap">
-          <table class="tf-sched-table">
-            <thead>
-              <tr>
-                <th>구분</th>
-                <th>업무</th>
-                <th>마감</th>
-                <th>상태</th>
-                <th></th>
-              </tr>
-            </thead>
-            <tbody>
-              ${extras
-                .map((s) =>
-                  rowHtml(s, {
-                    id: "",
-                    step: "",
-                    short: scheduleGroupLabel(scheduleGroupOf(s)),
-                    title: s.title,
-                  })
-                )
-                .join("")}
-            </tbody>
-          </table>
-        </div>
-      </section>`
-          : ""
-      }
     </div>
   `;
 
-  const saveRow = (tr) => {
-    const guideId = tr.dataset.guide;
-    const schedId = tr.dataset.sched;
-    const title = (tr.querySelector("[data-tf-title]")?.value || "").trim();
-    const endDate = tr.querySelector("[data-tf-date]")?.value || "";
-    const status = tr.querySelector("[data-tf-status]")?.value || "준비";
+  const saveRow = (row) => {
+    const guideId = row.dataset.guide;
+    const schedId = row.dataset.sched;
+    const title = (row.querySelector("[data-tf-title]")?.value || "").trim();
+    const endDate = row.querySelector("[data-tf-date]")?.value || "";
+    const status = row.querySelector("[data-tf-status]")?.value || "준비";
     if (!endDate) {
       alert("마감일을 입력해 주세요.");
       return;
@@ -4090,7 +4087,7 @@ function renderSchedule() {
     if (guideId) {
       upsertTfGuideSchedule(guideId, { title, endDate, status });
     } else if (schedId) {
-      const item = state.schedule.find((s) => s.id === schedId);
+      const item = state.schedule.find((x) => x.id === schedId);
       if (!item) return;
       item.title = title || item.title;
       item.endDate = endDate;
@@ -4102,8 +4099,31 @@ function renderSchedule() {
     updateAlarmButtons();
   };
 
-  el.querySelectorAll("tr[data-guide], tr[data-sched]").forEach((tr) => {
-    tr.querySelector("[data-tf-save]")?.addEventListener("click", () => saveRow(tr));
+  el.querySelectorAll("[data-tf-row]").forEach((row) => {
+    row.querySelector("[data-tf-save]")?.addEventListener("click", () => saveRow(row));
+    row.querySelector("[data-tf-status]")?.addEventListener("change", (e) => {
+      applyStatusTone(row, e.target.value);
+    });
+    row.querySelector("[data-tf-date]")?.addEventListener("change", (e) => {
+      const iso = e.target.value;
+      const label = row.querySelector("[data-tf-date-label]");
+      if (label) label.textContent = iso ? formatKorDate(iso) : "날짜 선택";
+      const status = row.querySelector("[data-tf-status]")?.value || "준비";
+      row.classList.toggle("is-overdue", status !== "완료" && Boolean(iso) && iso < todayIso);
+      const timingEl = row.querySelector(".tf-sched-timing");
+      if (iso) {
+        const text = timingLabel(daysUntil(iso));
+        if (timingEl) timingEl.textContent = text;
+        else {
+          const span = document.createElement("span");
+          span.className = "tf-sched-timing";
+          span.textContent = text;
+          row.querySelector(".tf-timeline-due")?.appendChild(span);
+        }
+      } else if (timingEl) {
+        timingEl.remove();
+      }
+    });
   });
   el.querySelectorAll("[data-tf-edit]").forEach((btn) => {
     btn.addEventListener("click", () => openScheduleModal(btn.dataset.tfEdit));
@@ -4558,9 +4578,108 @@ function scheduleByGroup(items) {
   return map;
 }
 
+const NEXT_ACT_META = [
+  { id: "confirm", label: "확인", hint: "지침·할당·요청" },
+  { id: "submit", label: "제출", hint: "열린 취합 업로드" },
+  { id: "reflect", label: "반영", hint: "피드백·코멘트" },
+  { id: "attend", label: "참석", hint: "킥오프·리뷰회의" },
+];
+
+function scheduleHasOthersComment(s, who = sessionUser) {
+  return scheduleCommentsOf(s).some((c) => (c.author || "") && c.author !== who);
+}
+
+function memberNextActionOf(s, who = sessionUser) {
+  if (!s || (s.status || "") === "완료") return "";
+  const group = scheduleGroupOf(s);
+  const title = String(s.title || "");
+  if (scheduleHasOthersComment(s, who)) return "reflect";
+  if (group === "collect") {
+    const phase = collectionPhaseOf(collectionBySchedule(s));
+    if (phase === "open") return "submit";
+    if (phase === "closed") return "reflect";
+    return "confirm";
+  }
+  if (group === "forms") {
+    if (s.type === "meeting" || /킥오프|회의/.test(title)) return "attend";
+    return "confirm";
+  }
+  if (group === "review" || group === "committee" || s.type === "meeting") return "attend";
+  if (group === "budget" || group === "kpi") return "confirm";
+  if (scheduleOriginOf(s, who).kind === "received") return "confirm";
+  return "confirm";
+}
+
+function myPartSummaryLine() {
+  if (isAdmin()) return "전체 현황을 봅니다";
+  const ids = myPartIds();
+  if (!ids.length) return "담당 파트를 배정받는 중";
+  const parts = ids.map((id) => partById(id)).filter(Boolean);
+  const labels = parts
+    .slice(0, 2)
+    .map((p) => `${p.section || ""}. ${p.title || ""}`.replace(/^\.\s*/, "").trim());
+  const extra = parts.length > 2 ? ` 외 ${parts.length - 2}` : "";
+  return `내 파트 ${labels.join(" · ")}${extra}`;
+}
+
+function nowStageAndPartLine() {
+  const mile = milestoneProgressFromState();
+  const now = (mile.points || []).find((p) => p.state === "now");
+  const stage = now?.label || now?.short || "일정 준비";
+  return `${formatReportDeadlineWhen()}까지 · 지금 열린 단계 ${stage} · ${myPartSummaryLine()}`;
+}
+
+function emptyMyWorkCopy(admin, act) {
+  if (act === "submit") return "아직 취합 공지가 열리지 않았습니다. 공지가 열리면 여기에 제출이 생깁니다.";
+  if (act === "reflect") return "반영할 피드백이 없습니다.";
+  if (act === "attend") return "참석할 회의가 없습니다.";
+  if (act === "confirm") return "지금 확인할 요청이 없습니다.";
+  return admin
+    ? "표시할 일정이 없습니다. Setting · TF 일정에서 추가하세요."
+    : "지금은 열린 할 일이 없습니다. 취합 공지가 열리면 제출 칸이 생깁니다.";
+}
+
+function todayActBarHtml(who, items) {
+  const act = state._myWorkAct || "all";
+  const counts = { confirm: 0, submit: 0, reflect: 0, attend: 0 };
+  items.forEach((s) => {
+    const k = memberNextActionOf(s, who);
+    if (k && counts[k] != null) counts[k] += 1;
+  });
+  const reqN = myPendingRequests().length;
+  counts.confirm += reqN;
+  const reviewN = myCommentFeedItems().filter((i) => i.kind === "review").length;
+  counts.reflect += reviewN;
+  const extras = [];
+  if ((act === "all" || act === "confirm") && reqN) {
+    extras.push(
+      `<button type="button" class="today-act-jump" data-goto="requests">받은 요청 ${reqN}건 확인</button>`
+    );
+  }
+  if ((act === "all" || act === "reflect") && reviewN) {
+    extras.push(
+      `<button type="button" class="today-act-jump" data-goto="collections">내 파트 리뷰 ${reviewN}건 보기</button>`
+    );
+  }
+  return `
+    <div class="today-act" aria-label="오늘 할 일">
+      <p class="today-act-kicker">오늘 나, 뭘 하면 되지?</p>
+      <p class="today-act-line">${escapeHtml(nowStageAndPartLine())}</p>
+      <div class="today-act-chips" role="group" aria-label="할 일 종류">
+        ${NEXT_ACT_META.map((m) => {
+          const n = counts[m.id] || 0;
+          const on = act === m.id;
+          return `<button type="button" class="today-act-chip ${on ? "is-on" : ""} ${n ? "has-n" : ""}" data-work-act="${m.id}" title="${escapeAttr(m.hint)}">${escapeHtml(m.label)} <em>${n}</em></button>`;
+        }).join("")}
+      </div>
+      ${extras.length ? `<div class="today-act-extras">${extras.join("")}</div>` : ""}
+    </div>`;
+}
+
 function scheduleFeedPanelHtml(who, admin, items) {
   const groupFilter = state._myWorkGroup || "all";
   const collabFilter = state._myWorkCollab || "all";
+  const actFilter = state._myWorkAct || "all";
   const withOrigin = items.map((s) => ({ s, origin: scheduleOriginOf(s, who) }));
   const afterCollab =
     collabFilter === "sent"
@@ -4570,7 +4689,8 @@ function scheduleFeedPanelHtml(who, admin, items) {
         : withOrigin;
   const filteredItems = afterCollab
     .map((x) => x.s)
-    .filter((s) => (groupFilter === "all" ? true : scheduleGroupOf(s) === groupFilter));
+    .filter((s) => (groupFilter === "all" ? true : scheduleGroupOf(s) === groupFilter))
+    .filter((s) => (actFilter === "all" ? true : memberNextActionOf(s, who) === actFilter));
 
   const groupCounts = { all: items.length };
   SCHEDULE_GROUP_OPTIONS.forEach((g) => {
@@ -4592,10 +4712,12 @@ function scheduleFeedPanelHtml(who, admin, items) {
     <section class="panel work-feed-panel mywork-schedule-panel">
       <div class="panel-head">
         <div>
-          <h2 class="panel-title panel-title-mine"><span class="name-honorific">${escapeHtml(who)}</span>님에게 보이는 일정입니다.</h2>
-          <p class="muted" style="margin:4px 0 0">보고서 업무 추가는 관리자만 가능합니다. 수정·삭제는 관리자 또는 본인 등록분만 됩니다.</p>
+          <h2 class="panel-title panel-title-mine"><span class="name-honorific">${escapeHtml(who)}</span>님, 오늘 할 일입니다.</h2>
+          <p class="muted" style="margin:4px 0 0">지금 열린 단계만, 내 파트만 하면 됩니다.</p>
         </div>
       </div>
+
+      ${todayActBarHtml(who, items)}
 
       <div class="work-filter-block" aria-label="상위 그룹">
         <div class="work-filter-chips">
@@ -4650,7 +4772,7 @@ function scheduleFeedPanelHtml(who, admin, items) {
                 </article>`;
               })
               .join("")
-          : `<div class="empty">표시할 일정이 없습니다.${admin ? " Setting · TF 일정에서 추가하세요. 보고서 업무 추가는 관리자만 가능합니다." : " 보고서 업무 추가는 관리자만 가능합니다."}</div>`
+          : `<div class="empty">${escapeHtml(emptyMyWorkCopy(admin, actFilter))}</div>`
       }
     </section>`;
 }
@@ -4662,6 +4784,17 @@ function bindScheduleFeedActions(root, onRefresh) {
       return;
     }
     openScheduleModal();
+  });
+
+  root.querySelectorAll("[data-work-act]").forEach((btn) => {
+    btn.addEventListener("click", () => {
+      const next = btn.dataset.workAct || "all";
+      state._myWorkAct = state._myWorkAct === next ? "all" : next;
+      onRefresh?.();
+    });
+  });
+  root.querySelectorAll("[data-goto]").forEach((btn) => {
+    btn.addEventListener("click", () => setView(btn.dataset.goto));
   });
 
   root.querySelectorAll("[data-work-group]").forEach((btn) => {
@@ -5632,7 +5765,7 @@ const SCHEDULE_GUIDE_TEMPLATES = [
     goal: "공통 표지·목차 서식과 교육부/교내 작성 지침을 전원에게 공유하고 확인받는다.",
     prep: "서식·지침·정의서 링크 준비 · 공유 폴더 권한 확인",
     carePoints: "필수 확인 항목을 체크리스트로 남기고, 질의는 킥오프에서 모은다.",
-    askMessage: "관리자가 작성지침, 양식, 스타일 가이드 확인을 요청했어요!",
+    askMessage: "이 단계 지침·양식을 확인해 주세요.",
     dueOffsetDays: 0,
     assignAll: true,
   },
@@ -5648,7 +5781,7 @@ const SCHEDULE_GUIDE_TEMPLATES = [
     goal: "본문 톤·글꼴·여백·표·그림 캡션 규칙을 통일하고 확인 회신을 받는다.",
     prep: "스타일 가이드 PDF/드라이브 링크 등록",
     carePoints: "샘플 1페이지 적용 여부를 확인한다.",
-    askMessage: "관리자가 보고서 스타일 가이드 확인을 요청했어요!",
+    askMessage: "보고서 스타일 가이드를 확인하고 회신해 주세요.",
     dueOffsetDays: 3,
     assignAll: true,
   },
@@ -5664,7 +5797,7 @@ const SCHEDULE_GUIDE_TEMPLATES = [
     goal: "핵심 용어·성과지표 정의를 공유해 작성 기준을 맞춘다.",
     prep: "정의서 최신본 업로드",
     carePoints: "지표 산식·단위 해석이 다르면 즉시 질의한다.",
-    askMessage: "관리자가 용어·지표 정의서 확인을 요청했어요!",
+    askMessage: "용어·지표 정의서를 확인해 주세요.",
     dueOffsetDays: 5,
     assignAll: true,
   },
@@ -5680,7 +5813,7 @@ const SCHEDULE_GUIDE_TEMPLATES = [
     goal: "목차별 담당·페이지 범위를 확정하고 중복·누락을 점검한다.",
     prep: "할당표(엑셀) 갱신",
     carePoints: "이의·조정 요청은 마감 전 회신한다.",
-    askMessage: "관리자가 담당 영역·페이지 할당 확인을 요청했어요!",
+    askMessage: "담당 파트·작성 분량·주요 요구사항을 확인해 주세요.",
     dueOffsetDays: 7,
     assignAll: true,
   },
@@ -5696,7 +5829,7 @@ const SCHEDULE_GUIDE_TEMPLATES = [
     goal: "차수별 취합 마감을 공유하고 담당 파트 초안 업로드를 독려한다.",
     prep: "1·2·최종 취합일·드라이브 경로 안내",
     carePoints: "지연 예상 시 사전에 총괄에게 공유한다.",
-    askMessage: "관리자가 할당받은 보고서의 페이지를 작성하여 취합 업로드를 요청했어요!",
+    askMessage: "취합 일정이 잡혔습니다. 공지가 열리면 작성분을 올려 주세요.",
     dueOffsetDays: 10,
     assignAll: true,
   },
@@ -5712,7 +5845,7 @@ const SCHEDULE_GUIDE_TEMPLATES = [
     goal: "취합본 중복·누락·톤을 점검하고 수정 포인트를 확정한다.",
     prep: "취합본·체크리스트 준비",
     carePoints: "파트별 수정 기한을 회의에서 합의한다.",
-    askMessage: "관리자가 리뷰회의에 참석해 담당 파트 점검·수정을 요청했어요!",
+    askMessage: "리뷰 회의에 참석해 주세요. 내 파트 점검·수정을 함께 합니다.",
     dueOffsetDays: 20,
     assignAll: true,
   },
@@ -5728,7 +5861,7 @@ const SCHEDULE_GUIDE_TEMPLATES = [
     goal: "예산 통합 화면에 편성금액·산출근거를 입력·확정한다.",
     prep: "총액·비목·담당 항목 배정 확인",
     carePoints: "미입력 항목을 남기지 않는다.",
-    askMessage: "관리자가 담당 예산 편성·산출근거 입력을 요청했어요!",
+    askMessage: "담당 Activity의 총액과 대략의 산출내역을 입력해 주세요.",
     dueOffsetDays: 25,
     assignAll: false,
   },
@@ -5744,7 +5877,7 @@ const SCHEDULE_GUIDE_TEMPLATES = [
     goal: "핵심·자율 지표의 목표·실적·산식을 입력·확정한다.",
     prep: "지표 목록·세세부 항목 준비",
     carePoints: "미달 지표는 보완 계획을 메모한다.",
-    askMessage: "관리자가 성과지표 목표·실적 입력을 요청했어요!",
+    askMessage: "기준값·산식·목표값을 입력해 주세요. 향상률·달성 가능도는 자동입니다.",
     dueOffsetDays: 30,
     assignAll: true,
   },
@@ -5791,6 +5924,37 @@ function extraTfSchedules() {
   return (state.schedule || [])
     .filter((s) => !used.has(s.id))
     .sort((a, b) => scheduleDueIso(a).localeCompare(scheduleDueIso(b)));
+}
+
+/** 기본 틀 + 추가 일정을 마감일 순 한 목록으로 */
+function unifiedTfScheduleRows() {
+  const rows = SCHEDULE_GUIDE_TEMPLATES.map((tpl) => {
+    const s = tfScheduleForGuide(tpl.id);
+    return { s, tpl, due: s ? scheduleDueIso(s) : "" };
+  });
+  extraTfSchedules().forEach((s) => {
+    rows.push({ s, tpl: null, due: scheduleDueIso(s) });
+  });
+  rows.sort((a, b) => {
+    if (!a.due && !b.due) return (a.tpl?.step || "").localeCompare(b.tpl?.step || "");
+    if (!a.due) return 1;
+    if (!b.due) return -1;
+    return a.due.localeCompare(b.due) || (a.tpl?.step || "z").localeCompare(b.tpl?.step || "z");
+  });
+  return rows;
+}
+
+function tfStatusTone(status) {
+  if (status === "완료") return "done";
+  if (status === "진행") return "active";
+  return "planned";
+}
+
+function formatKorYearMonth(iso) {
+  if (!iso) return "날짜 미정";
+  const [y, m] = iso.split("-").map(Number);
+  if (!y || !m) return "날짜 미정";
+  return `${y}년 ${m}월`;
 }
 
 function tfScheduleForProcess(processId) {
@@ -5901,35 +6065,38 @@ function scheduleAskMessage(s) {
   const title = String(s?.title || "");
   const blob = `${title} ${s?.note || ""} ${s?.goal || ""}`;
   if (group === "forms" || /서식|지침|스타일|가이드|킥오프/.test(blob)) {
-    return "관리자가 작성지침, 양식, 스타일 가이드 확인을 요청했어요!";
+    if (/킥오프|회의/.test(blob) || s?.type === "meeting") {
+      return "킥오프 회의에 참석해 주세요. 지침·양식도 함께 확인합니다.";
+    }
+    return "이 단계 지침·양식을 확인해 주세요.";
   }
   if (group === "collect" || /취합|업로드|제출/.test(blob)) {
     const col = collectionBySchedule(s);
     const phase = collectionPhaseOf(col);
     if (phase === "planned" || !col) {
       return isAdmin()
-        ? "일정표에 취합 마감만 수립된 상태입니다. 제출 요청을 등록하면 참여자가 파일을 업로드합니다."
-        : "관리자가 취합 일정을 수립했습니다. 제출 요청이 등록되면 파일을 업로드할 수 있어요.";
+        ? "취합 마감만 잡혀 있습니다. 제출 요청을 등록하면 참여자가 파일을 올립니다."
+        : "취합 일정이 잡혔습니다. 공지가 열리면 작성분을 올려 주세요.";
     }
     if (phase === "closed") {
-      return "이 차수 취합은 마감되었습니다. 결과는 보고서 통합에서 확인할 수 있어요.";
+      return "취합이 마감되었습니다. 내 파트 피드백을 확인하고 반영해 주세요.";
     }
-    if (/1차/.test(title)) return col.requestMessage || "관리자가 할당받은 보고서의 페이지를 작성하여 1차 업로드를 요청했어요!";
-    if (/2차/.test(title)) return col.requestMessage || "관리자가 보완·수정한 원고를 2차 업로드하도록 요청했어요!";
-    if (/최종/.test(title)) return col.requestMessage || "관리자가 최종 통합본 확인 및 보고서 제출을 요청했어요!";
-    return col.requestMessage || "관리자가 할당받은 보고서의 페이지를 작성하여 취합 업로드를 요청했어요!";
+    if (/1차/.test(title)) return col.requestMessage || "1차 작성분을 제출해 주세요.";
+    if (/2차/.test(title)) return col.requestMessage || "2차 작성분을 일정 안에 제출해 주세요.";
+    if (/최종/.test(title)) return col.requestMessage || "최종본을 확인하고 리뷰 회의에 참석해 주세요.";
+    return col.requestMessage || "담당 파트 작성분을 제출해 주세요.";
   }
   if (group === "review" || /리뷰|윤독|검토회의/.test(blob)) {
-    return "관리자가 리뷰회의에 참석해 담당 파트 점검·수정을 요청했어요!";
+    return "리뷰 회의에 참석해 주세요. 내 파트 점검·수정을 함께 합니다.";
   }
   if (group === "budget" || /예산/.test(blob)) {
-    return "관리자가 담당 예산 편성·산출근거 입력을 요청했어요!";
+    return "담당 Activity의 총액과 대략의 산출내역을 입력해 주세요.";
   }
   if (group === "kpi" || /성과|지표/.test(blob)) {
-    return "관리자가 성과지표 목표·실적 입력을 요청했어요!";
+    return "기준값·산식·목표값을 입력해 주세요. 향상률·달성 가능도는 자동입니다.";
   }
   if (group === "committee") {
-    return "관리자가 위원회 안건 확인 및 참석을 요청했어요!";
+    return "위원회에 참석해 주세요. 안건을 미리 확인합니다.";
   }
   const note = String(s?.goal || s?.note || "").trim();
   if (note) return `관리자가 ${note}을(를) 요청했어요!`;
