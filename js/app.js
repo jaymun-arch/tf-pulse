@@ -108,14 +108,14 @@ const VIEW_META = {
   collections: { title: "보고서 통합", desc: "차수별 제출·분량 분석" },
   review: { title: "윤독", desc: "검토사항 기록" },
   requests: { title: "요청", desc: "작업 요청·진행" },
-  budget: { title: "예산 통합", desc: "영역·비목별 통계" },
+  budget: { title: "예산", desc: "예산을 입력·제출하고 영역별로 구성합니다" },
   schedule: { title: "TF 일정", desc: "마감 순 타임라인에서 일정을 작성합니다" },
   drive: { title: "드라이브", desc: "문서 링크" },
   resources: { title: "양식", desc: "공통양식·가이드" },
-  food: { title: "오늘 뭐먹지", desc: "메뉴 돌림판·투표" },
+  food: { title: "식사", desc: "메뉴 돌림판·투표" },
   members: { title: "구성원", desc: "TF 멤버" },
-  "ai-art": { title: "보고서 그림", desc: "영역 · 레이아웃 · 내용만 정하면 됩니다" },
-  kpi: { title: "성과지표", desc: "달성·밸런스 분석" },
+  "ai-art": { title: "그림", desc: "영역 · 레이아웃 · 내용만 정하면 됩니다" },
+  kpi: { title: "지표", desc: "성과지표를 입력·제출하고 영역별로 구성합니다" },
   guide: { title: "사용방법", desc: "처음 사용자도 순서대로 따라갈 수 있습니다" },
 };
 
@@ -128,23 +128,23 @@ const NAV_GROUPS = {
   },
   mywork: {
     label: "내업무",
-    views: ["my-work", "ai-art", "food", "requests"],
+    views: ["ai-art", "kpi", "budget", "food", "my-work", "requests"],
     labels: {
+      "ai-art": "그림",
+      kpi: "지표",
+      budget: "예산",
+      food: "식사",
       "my-work": "할 일",
-      "ai-art": "보고서 그림",
-      food: "오늘 뭐먹지",
       requests: "요청",
     },
-    adminViews: ["requests"],
-    defaultView: "my-work",
+    hideTabs: ["my-work", "requests"],
+    defaultView: "ai-art",
   },
   tfall: {
     label: "TF 업무 모두보기",
-    views: ["collections", "budget", "kpi"],
+    views: ["collections"],
     labels: {
       collections: "보고서 통합",
-      budget: "예산 통합",
-      kpi: "성과지표",
     },
     defaultView: "collections",
   },
@@ -210,6 +210,14 @@ function isBudgetManager() {
   return currentMember()?.role === "budget";
 }
 
+function isKpiManager() {
+  return currentMember()?.role === "kpi";
+}
+
+function canManageKpi() {
+  return isAdmin() || isKpiManager();
+}
+
 function isFoodManager() {
   return currentMember()?.role === "food";
 }
@@ -222,6 +230,7 @@ function roleLabel(role) {
   return {
     admin: "관리자",
     budget: "예산담당자",
+    kpi: "성과지표담당자",
     food: "식사담당",
     member: "대상자",
   }[role] || "대상자";
@@ -485,7 +494,42 @@ function normalizeBudgetItem(raw = {}) {
     title: activity || (raw.title || "").trim() || "항목",
     category: (raw.category || "").trim() || areaCategory(area),
     partId: raw.partId || "",
+    createdById: raw.createdById || "",
+    status: raw.status === "submitted" ? "submitted" : raw.status === "draft" ? "draft" : "",
+    submittedAt: raw.submittedAt || "",
+    submittedBy: raw.submittedBy || "",
+    areaOrder: Number(raw.areaOrder) || 0,
   };
+  return item;
+}
+
+const UNASSIGNED_AREA = "미분류";
+
+function workAreaColumns() {
+  return [UNASSIGNED_AREA, ...BUDGET_CATALOG.areas];
+}
+
+function workAreaKey(area) {
+  const a = String(area || "").trim();
+  return BUDGET_CATALOG.areas.includes(a) ? a : UNASSIGNED_AREA;
+}
+
+function isBudgetSubmitted(item) {
+  if (!item) return false;
+  if (item.status === "submitted" || item.submittedAt) return true;
+  if (!item.status && !item.createdById) return true;
+  return false;
+}
+
+function isBudgetMemberDraft(item) {
+  return Boolean(item?.createdById && item.status !== "submitted" && !item.submittedAt);
+}
+
+function markBudgetSubmitted(item) {
+  if (!item) return item;
+  item.status = "submitted";
+  item.submittedAt = item.submittedAt || today();
+  item.submittedBy = sessionUser || item.submittedBy || "";
   return item;
 }
 
@@ -693,7 +737,8 @@ function canEditBudgetItem(item) {
   if (!item) return false;
   if (canManageBudget()) return true;
   const me = currentMember();
-  return Boolean(me && item.assigneeId === me.id);
+  if (!me) return false;
+  return item.assigneeId === me.id || item.createdById === me.id;
 }
 
 function ensureRequests() {
@@ -852,6 +897,7 @@ async function initState() {
       ensureReviewSession();
       ensureTfTopics();
       ensureCollectionPhases();
+      ensureKpis();
       persist();
       return;
     } catch {
@@ -871,6 +917,7 @@ async function initState() {
   ensureReviewSession();
   ensureTfTopics();
   ensureCollectionPhases();
+  ensureKpis();
   persist();
 }
 
@@ -1487,7 +1534,7 @@ function resolveViewName(name) {
   if (name === "ai-brief") return "collections";
   // 제거된 하위메뉴 → 통합 화면으로 흡수
   if (name === "tf-all") return "collections";
-  if (name === "schedule" && !isAdmin()) return "my-work";
+  if (name === "schedule" && !isAdmin()) return "ai-art";
   if (name === "review") return "collections";
   if (name === "resources") return "collections";
   // 그룹 id로 들어오면 기본(또는 마지막) 뷰로
@@ -1495,7 +1542,13 @@ function resolveViewName(name) {
     const g = NAV_GROUPS[name];
     if (name === "setup") return g.defaultView || "schedule";
     const remembered = lastViewByNav[name];
-    if (remembered && g.views.includes(remembered)) return remembered;
+    if (
+      remembered &&
+      g.views.includes(remembered) &&
+      !(g.hideTabs || []).includes(remembered)
+    ) {
+      return remembered;
+    }
     return g.defaultView;
   }
   return name;
@@ -1512,7 +1565,10 @@ function renderSubNav(navId, viewName) {
     return;
   }
   const adminOnlyViews = new Set(group.adminViews || []);
-  const views = group.views.filter((v) => !adminOnlyViews.has(v) || isAdmin());
+  const hiddenTabs = new Set(group.hideTabs || []);
+  const views = group.views.filter(
+    (v) => !hiddenTabs.has(v) && (!adminOnlyViews.has(v) || isAdmin())
+  );
   if (views.length <= 1) {
     bar.hidden = true;
     bar.classList.remove("has-area-tabs");
@@ -1526,9 +1582,9 @@ function renderSubNav(navId, viewName) {
       const label = group.labels?.[v] || VIEW_META[v]?.title || v;
       const on = v === viewName;
       const area =
-        v === "collections" || v === "budget" || v === "kpi"
-          ? `area-${v === "collections" ? "report" : v}`
-          : v === "my-work" || v === "ai-art" || v === "food" || v === "requests"
+        v === "collections"
+          ? "area-report"
+          : v === "budget" || v === "kpi" || v === "ai-art" || v === "food"
             ? `area-${v}`
             : navId === "setup"
               ? "area-setup"
@@ -1584,8 +1640,11 @@ function setView(name) {
   if (viewName === "dashboard") {
     desc = "지금 열린 단계만, 내 파트만 하면 됩니다.";
   }
-  if (viewName === "my-work") {
-    desc = "확인 · 제출 · 반영 · 참석 중 오늘 할 일만 고릅니다.";
+  if (viewName === "ai-art") {
+    desc = "영역 · 레이아웃 · 내용만 정하면 됩니다.";
+  }
+  if (viewName === "food") {
+    desc = "메뉴를 고르고 투표·공지합니다.";
   }
   if (viewName === "guide") {
     desc = "칸을 누르면 해당 화면으로 바로 이동합니다.";
@@ -1595,13 +1654,16 @@ function setView(name) {
   }
   if (viewName === "budget") {
     const modeMeta = budgetModeMeta();
-    if (isBudgetManager()) {
-      desc = `${modeMeta.tabLabel} 기준으로 항목을 취합·통계로 관리합니다.`;
-    } else if (!isAdmin()) {
-      desc = `배정 항목의 ${modeMeta.amountLabel}·${modeMeta.calcLabel}을 입력 후 저장합니다.`;
+    if (canManageBudget()) {
+      desc = "제출된 예산을 영역 칸으로 끌어 구성합니다.";
     } else {
-      desc = "운영계획수립용(예산)과 결과보고작성용(실적)을 구분해 입력·취합합니다.";
+      desc = `${modeMeta.amountLabel}·${modeMeta.calcLabel}을 입력한 뒤 제출합니다.`;
     }
+  }
+  if (viewName === "kpi") {
+    desc = canManageKpi()
+      ? "제출된 성과지표를 영역 칸으로 끌어 구성합니다."
+      : "성과지표를 입력한 뒤 제출합니다.";
   }
   $("#viewTitle").textContent = title;
   $("#viewDesc").textContent = desc;
@@ -1626,11 +1688,13 @@ function currentUserName() {
 function applyRoleUi() {
   const admin = isAdmin();
   const budgetMgr = isBudgetManager();
+  const kpiMgr = isKpiManager();
   const foodMgr = isFoodManager();
   document.body.classList.toggle("is-admin", admin);
   document.body.classList.toggle("is-budget", budgetMgr);
+  document.body.classList.toggle("is-kpi", kpiMgr);
   document.body.classList.toggle("is-food", foodMgr);
-  document.body.classList.toggle("is-member", !admin && !budgetMgr && !foodMgr);
+  document.body.classList.toggle("is-member", !admin && !budgetMgr && !kpiMgr && !foodMgr);
   const badge = $("#userRoleBadge");
   const label = $("#userNameLabel");
   if (badge) {
@@ -1772,7 +1836,7 @@ function renderLoginMembers() {
     ? members
         .map(
           (m) => `
-      <button type="button" class="member-btn ${m.role === "admin" ? "is-admin" : ""} ${m.role === "budget" ? "is-budget" : ""} ${m.role === "food" ? "is-food" : ""}" data-login="${escapeAttr(m.name)}">
+      <button type="button" class="member-btn ${m.role === "admin" ? "is-admin" : ""} ${m.role === "budget" ? "is-budget" : ""} ${m.role === "kpi" ? "is-kpi" : ""} ${m.role === "food" ? "is-food" : ""}" data-login="${escapeAttr(m.name)}">
         <span class="member-name">${escapeHtml(m.name)}</span>
         <span class="role">${roleLabel(m.role)}</span>
       </button>`
@@ -5298,7 +5362,7 @@ function renderMembers() {
                 (m) => `
               <tr>
                 <td><strong>${escapeHtml(m.name)}</strong></td>
-                <td><span class="badge ${m.role === "admin" ? "admin" : m.role === "budget" ? "meeting" : m.role === "food" ? "ok" : ""}">${roleLabel(m.role)}</span></td>
+                <td><span class="badge ${m.role === "admin" ? "admin" : m.role === "budget" ? "meeting" : m.role === "kpi" ? "ok" : m.role === "food" ? "ok" : ""}">${roleLabel(m.role)}</span></td>
                 <td>${escapeHtml(m.part || "-")}</td>
                 <td class="muted">${escapeHtml(m.contact || "-")}</td>
                 <td>
@@ -5350,7 +5414,7 @@ function myRelatedBudgetItems() {
   if (canManageBudget()) return state.budget.items;
   const me = currentMember();
   if (!me) return [];
-  return state.budget.items.filter((i) => i.assigneeId === me.id);
+  return state.budget.items.filter((i) => i.assigneeId === me.id || i.createdById === me.id);
 }
 
 function budgetDetailStats(mode = getBudgetInputMode()) {
@@ -5549,6 +5613,135 @@ function sendBudgetInputRequest(itemId, { silent = false, mode = getBudgetInputM
   return true;
 }
 
+function areaBoardHtml(kind, items, cardHtmlFn) {
+  const cols = workAreaColumns();
+  const sorted = [...items].sort(
+    (a, b) => (Number(a.areaOrder) || 0) - (Number(b.areaOrder) || 0) || String(a.id).localeCompare(String(b.id))
+  );
+  return `
+    <div class="area-board" data-area-board="${escapeAttr(kind)}">
+      ${cols
+        .map((col) => {
+          const rows = sorted.filter((i) => workAreaKey(i.area) === col);
+          const sum =
+            kind === "budget" ? rows.reduce((s, i) => s + budgetAmountOf(i), 0) : 0;
+          return `
+          <section class="area-col ${rows.length ? "" : "is-empty"}" data-area="${escapeAttr(col)}">
+            <header class="area-col-head">
+              <h3>${escapeHtml(col)}</h3>
+              <span class="area-col-count">${rows.length}${
+                kind === "budget" && sum ? ` · ${formatWon(sum)}` : ""
+              }</span>
+            </header>
+            <div class="area-col-body" data-drop-area="${escapeAttr(col)}">
+              ${
+                rows.length
+                  ? rows.map((row) => cardHtmlFn(row)).join("")
+                  : `<p class="area-col-empty muted">여기로 끌어다 놓으세요</p>`
+              }
+            </div>
+          </section>`;
+        })
+        .join("")}
+    </div>`;
+}
+
+function bindAreaBoard(root, { kind, onMove }) {
+  if (!root) return;
+  let draggingId = "";
+  root.querySelectorAll("[data-area-card]").forEach((card) => {
+    card.addEventListener("dragstart", (e) => {
+      draggingId = card.dataset.areaCard || "";
+      card.classList.add("is-dragging");
+      e.dataTransfer?.setData("text/plain", `${kind}:${draggingId}`);
+      if (e.dataTransfer) e.dataTransfer.effectAllowed = "move";
+    });
+    card.addEventListener("dragend", () => {
+      card.classList.remove("is-dragging");
+      draggingId = "";
+      root.querySelectorAll(".area-col.is-over").forEach((c) => c.classList.remove("is-over"));
+    });
+  });
+  root.querySelectorAll("[data-drop-area]").forEach((zone) => {
+    const col = zone.closest(".area-col");
+    zone.addEventListener("dragover", (e) => {
+      e.preventDefault();
+      if (e.dataTransfer) e.dataTransfer.dropEffect = "move";
+      col?.classList.add("is-over");
+    });
+    zone.addEventListener("dragleave", (e) => {
+      if (!zone.contains(e.relatedTarget)) col?.classList.remove("is-over");
+    });
+    zone.addEventListener("drop", (e) => {
+      e.preventDefault();
+      col?.classList.remove("is-over");
+      const raw = e.dataTransfer?.getData("text/plain") || "";
+      const prefix = `${kind}:`;
+      const id = raw.startsWith(prefix) ? raw.slice(prefix.length) : draggingId;
+      if (!id) return;
+      onMove(id, zone.dataset.dropArea || UNASSIGNED_AREA);
+    });
+  });
+}
+
+function budgetBoardCardHtml(item) {
+  const mode = getBudgetInputMode();
+  const assignee = item.assigneeId ? memberById(item.assigneeId) : null;
+  const amount = budgetAmountOf(item, mode);
+  const filled = Boolean(budgetCalcOf(item, mode));
+  return `
+    <article class="area-card ${filled ? "is-done" : "is-todo"}" data-area-card="${escapeAttr(item.id)}" data-budget-open="${escapeAttr(item.id)}" draggable="true" role="button" tabindex="0">
+      <strong>${escapeHtml(item.activity || item.title || "항목")}</strong>
+      <span class="area-card-meta">${escapeHtml(item.expenseType || "비목")} · ${formatWon(amount)}</span>
+      <span class="area-card-who">${escapeHtml(assignee?.name || item.submittedBy || "미지정")}</span>
+      <span class="badge ${isBudgetSubmitted(item) ? "ok" : "pending"}">${isBudgetSubmitted(item) ? "제출" : "대기"}</span>
+    </article>`;
+}
+
+function kpiBoardCardHtml(row) {
+  const sim = kpiSimRow(row);
+  const assignee = row.assigneeId ? memberById(row.assigneeId) : null;
+  const scope = kpiScopeMeta(row.scope);
+  return `
+    <article class="area-card ${isKpiSubmitted(row) ? "is-done" : "is-todo"}" data-area-card="${escapeAttr(row.id)}" data-kpi-open="${escapeAttr(row.id)}" draggable="true" role="button" tabindex="0">
+      <span class="kpi-scope-badge is-${escapeAttr(row.scope || "core")}">${escapeHtml(scope.label)}</span>
+      <strong>${escapeHtml(row.name || "성과지표")}</strong>
+      <span class="area-card-meta">목표 ${escapeHtml(String(row.target || 0))}${escapeHtml(row.unit || "")} · 실적 ${escapeHtml(String(row.actual || 0))}${escapeHtml(row.unit || "")}</span>
+      <span class="area-card-who">${escapeHtml(assignee?.name || row.submittedBy || row.createdBy || "미지정")}</span>
+      <span class="badge ${isKpiSubmitted(row) ? "ok" : "pending"}">${
+        isKpiSubmitted(row)
+          ? sim.rate != null
+            ? `제출 · ${sim.rate.toFixed(0)}%`
+            : "제출"
+          : "대기"
+      }</span>
+    </article>`;
+}
+
+function moveBudgetItemArea(itemId, area) {
+  ensureBudget();
+  const item = state.budget.items.find((i) => i.id === itemId);
+  if (!item || !canManageBudget()) return;
+  const nextArea = area === UNASSIGNED_AREA ? "" : area;
+  const siblings = state.budget.items.filter((i) => i.id !== itemId && workAreaKey(i.area) === workAreaKey(nextArea));
+  item.area = nextArea;
+  item.category = areaCategory(nextArea);
+  item.areaOrder = siblings.reduce((m, i) => Math.max(m, Number(i.areaOrder) || 0), 0) + 1;
+  saveAndRender("budget");
+}
+
+function moveKpiItemArea(itemId, area) {
+  ensureKpis();
+  const row = state.kpis.find((k) => k.id === itemId);
+  if (!row || !canManageKpi()) return;
+  const nextArea = area === UNASSIGNED_AREA ? "" : area;
+  const siblings = state.kpis.filter((k) => k.id !== itemId && workAreaKey(k.area) === workAreaKey(nextArea));
+  row.area = nextArea;
+  row.areaOrder = siblings.reduce((m, k) => Math.max(m, Number(k.areaOrder) || 0), 0) + 1;
+  persist();
+  renderKpi();
+}
+
 function renderBudget() {
   ensureBudget();
   const el = $("#view-budget");
@@ -5582,9 +5775,10 @@ function renderBudget() {
   });
 
   const incompleteOnly = state._budgetShowIncomplete === true;
-  const listItems = incompleteOnly
-    ? visibleItems.filter((i) => !budgetCalcOf(i, mode))
-    : visibleItems;
+  const boardItems = (manage ? state.budget.items.filter((i) => !isBudgetMemberDraft(i)) : myItems).filter(
+    (i) => !incompleteOnly || !budgetCalcOf(i, mode)
+  );
+  const submittedN = boardItems.filter((i) => isBudgetSubmitted(i)).length;
 
   el.innerHTML = `
     <div class="budget-page">
@@ -5634,8 +5828,12 @@ function renderBudget() {
       <div class="panel budget-list-panel">
         <div class="panel-head">
           <div>
-            <h2 class="panel-title">${escapeHtml(manage ? meta.detailTitleManage : meta.detailTitleMine)}</h2>
-            <p class="muted" style="margin:4px 0 0">${escapeHtml(yearLabel)} · 카드를 누르면 수정합니다.</p>
+            <h2 class="panel-title">${escapeHtml(manage ? "영역별 예산 구성" : "내 예산 입력")}</h2>
+            <p class="muted" style="margin:4px 0 0">${
+              manage
+                ? `제출 ${submittedN}건 · 카드를 영역 칸으로 끌어 배치합니다.`
+                : "입력한 뒤 제출하면 예산담당자 화면으로 모입니다."
+            }</p>
           </div>
           <div class="row budget-toolbar">
             <button type="button" class="btn btn-sm ${incompleteOnly ? "btn-primary" : ""}" id="budgetIncompleteToggle">${
@@ -5644,70 +5842,44 @@ function renderBudget() {
             ${manage ? `<button class="btn btn-sm" id="downloadBudgetExcel">엑셀</button>` : `<button class="btn btn-sm" id="downloadBudgetExcel2">내 엑셀</button>`}
             ${admin ? `<button class="btn btn-sm" id="bulkBudgetUpload">일괄 업로드</button>` : ""}
             ${manage ? `<button class="btn btn-sm" id="editBudgetTotal">총액</button>` : ""}
-            ${manage ? `<button class="btn btn-primary" id="addBudgetItem">항목 추가</button>` : ""}
+            ${manage ? `<button class="btn btn-primary" id="addBudgetItem">항목 추가</button>` : `<button class="btn btn-primary" id="composeBudgetItem">예산 입력</button>`}
           </div>
         </div>
-
-        <div class="budget-card-list">
-          ${
-            listItems.length
-              ? listItems
-                  .map((item) => {
-                    const assignee = item.assigneeId ? memberById(item.assigneeId) : null;
-                    const canEdit = canEditBudgetItem(item);
-                    const calcPreview = budgetCalcOf(item, mode);
-                    const amount = budgetAmountOf(item, mode);
-                    const filled = Boolean(calcPreview);
-                    return `
-                    <article class="budget-item-card ${filled ? "is-done" : "is-todo"} ${canEdit || manage ? "is-clickable" : ""}" data-budget-open="${escapeAttr(item.id)}" role="button" tabindex="0">
-                      <span class="budget-item-kicker">${escapeHtml(item.no ? `${item.no}. ` : "")}${escapeHtml(item.expenseType || "비목")}</span>
-                      <div class="budget-item-main">
-                        <strong class="budget-item-title">${escapeHtml(item.activity || item.title || "항목")}</strong>
-                        <span class="budget-item-meta muted">${escapeHtml(item.area || "-")}${
-                          calcPreview ? ` · ${escapeHtml(String(calcPreview).slice(0, 42))}` : ""
-                        }</span>
-                      </div>
-                      <span class="budget-item-amount">${formatWon(amount)}</span>
-                      <span class="budget-item-who muted">${escapeHtml(assignee?.name || "미지정")}</span>
-                      <span class="badge ${filled ? "ok" : "pending"}">${filled ? "완료" : "미입력"}</span>
-                    </article>`;
-                  })
-                  .join("")
-              : `<div class="empty">${
-                  incompleteOnly
-                    ? "미입력 항목이 없습니다."
-                    : manage
-                      ? "「항목 추가」로 예산을 등록하세요."
-                      : `배정된 ${meta.short} 항목이 없습니다.`
-                }</div>`
-          }
-        </div>
-      </div>
-
-      ${
-        manage
-          ? `<div class="panel">
-        <div class="panel-head"><h2 class="panel-title">${escapeHtml(meta.assigneeTitle)}</h2></div>
         ${
-          Object.keys(byAssignee).length
-            ? `<div class="bar-list">${Object.entries(byAssignee)
-                .sort((a, b) => b[1].amount - a[1].amount)
-                .map(([name, v]) => {
-                  const pct = expenseStatus.enteredTotal
-                    ? Math.min(100, Math.round((v.amount / expenseStatus.enteredTotal) * 100))
-                    : 0;
-                  return `<div class="bar-item">
-                    <div class="meta"><strong>${escapeHtml(name)}</strong>
-                      <span>${formatWon(v.amount)} · 산출 ${v.filled}/${v.count}</span></div>
-                    <div class="progress"><span style="width:${pct}%"></span></div>
-                  </div>`;
-                })
-                .join("")}</div>`
-            : `<div class="empty">담당자 배정 전입니다.</div>`
+          manage
+            ? areaBoardHtml("budget", boardItems, budgetBoardCardHtml)
+            : `<div class="budget-card-list">
+              ${
+                boardItems.length
+                  ? boardItems
+                      .map((item) => {
+                        const calcPreview = budgetCalcOf(item, mode);
+                        const amount = budgetAmountOf(item, mode);
+                        const submitted = isBudgetSubmitted(item);
+                        return `
+                        <article class="budget-item-card ${submitted ? "is-done" : "is-todo"} is-clickable" data-budget-open="${escapeAttr(item.id)}" role="button" tabindex="0">
+                          <span class="budget-item-kicker">${escapeHtml(item.expenseType || "비목")}</span>
+                          <div class="budget-item-main">
+                            <strong class="budget-item-title">${escapeHtml(item.activity || item.title || "항목")}</strong>
+                            <span class="budget-item-meta muted">${escapeHtml(workAreaKey(item.area))}${
+                              calcPreview ? ` · ${escapeHtml(String(calcPreview).slice(0, 42))}` : ""
+                            }</span>
+                          </div>
+                          <span class="budget-item-amount">${formatWon(amount)}</span>
+                          <span class="badge ${submitted ? "ok" : "pending"}">${submitted ? "제출됨" : "입력 중"}</span>
+                          ${
+                            submitted
+                              ? ""
+                              : `<button type="button" class="btn btn-sm btn-primary" data-budget-submit="${escapeAttr(item.id)}">제출</button>`
+                          }
+                        </article>`;
+                      })
+                      .join("")
+                  : `<div class="empty">「예산 입력」으로 항목을 만든 뒤 제출하세요.</div>`
+              }
+            </div>`
         }
-      </div>`
-          : ""
-      }
+      </div>
     </div>
   `;
 
@@ -5726,13 +5898,30 @@ function renderBudget() {
   });
   $("#editBudgetTotal")?.addEventListener("click", () => openBudgetTotalModal());
   $("#addBudgetItem")?.addEventListener("click", () => openBudgetItemModal());
+  $("#composeBudgetItem")?.addEventListener("click", () => openMemberBudgetCompose());
   $("#bulkBudgetUpload")?.addEventListener("click", () => openBudgetBulkUploadModal());
   $("#downloadBudgetExcel")?.addEventListener("click", () => downloadBudgetExcel());
   $("#downloadBudgetExcel2")?.addEventListener("click", () =>
     downloadBudgetExcel({ mineOnly: !manage })
   );
+  el.querySelectorAll("[data-budget-submit]").forEach((btn) => {
+    btn.addEventListener("click", (e) => {
+      e.stopPropagation();
+      submitBudgetItem(btn.dataset.budgetSubmit);
+    });
+  });
+  let budgetDragged = false;
   el.querySelectorAll("[data-budget-open]").forEach((card) => {
-    const open = () => openBudgetCard(card.dataset.budgetOpen);
+    const open = () => {
+      if (budgetDragged) {
+        budgetDragged = false;
+        return;
+      }
+      openBudgetCard(card.dataset.budgetOpen);
+    };
+    card.addEventListener("dragstart", () => {
+      budgetDragged = true;
+    });
     card.addEventListener("click", open);
     card.addEventListener("keydown", (e) => {
       if (e.key === "Enter" || e.key === " ") {
@@ -5741,6 +5930,9 @@ function renderBudget() {
       }
     });
   });
+  if (manage) {
+    bindAreaBoard(el, { kind: "budget", onMove: moveBudgetItemArea });
+  }
   bindBudgetTips(el);
 }
 
@@ -5757,6 +5949,60 @@ function openBudgetCard(itemId) {
     return;
   }
   denySchedulePermission("권한이 없습니다. 배정된 항목만 입력할 수 있습니다.");
+}
+
+function submitBudgetItem(itemId) {
+  ensureBudget();
+  const item = state.budget.items.find((i) => i.id === itemId);
+  if (!item || !canEditBudgetItem(item)) return;
+  if (!item.activity && !item.title) {
+    alert("세부프로그램을 입력한 뒤 제출해 주세요.");
+    return;
+  }
+  markBudgetSubmitted(item);
+  if (!item.assigneeId) {
+    const me = currentMember();
+    if (me) item.assigneeId = me.id;
+  }
+  saveAndRender("budget");
+}
+
+function openMemberBudgetCompose(itemId = null) {
+  const me = currentMember();
+  if (!me || canManageBudget()) return;
+  ensureBudget();
+  const item = itemId ? state.budget.items.find((i) => i.id === itemId) : null;
+  if (item && !canEditBudgetItem(item)) return;
+  const mode = getBudgetInputMode();
+  const meta = budgetModeMeta(mode);
+  openModal({
+    kicker: `${meta.short} 입력`,
+    title: "입력한 뒤 제출하면 예산담당자에게 모입니다.",
+    submitLabel: "제출",
+    bodyHtml: `
+      <p class="muted wp-form-hint">영역 배치는 예산담당자가 담당합니다. 프로그램·비목·금액·산출근거만 적으면 됩니다.</p>
+      ${budgetFormFieldsHtml(item, { includeAssignee: false, fullEdit: true, mode, memberCompose: true })}
+      ${item && !isBudgetSubmitted(item) ? `<p class="muted wp-form-hint">임시저장은 아래 제출 대신, 카드를 다시 열어 이어서 수정하면 됩니다.</p>` : ""}
+    `,
+    onSubmit: (fd) => {
+      const data = readBudgetItemFields(fd, item || {}, { mode });
+      data.assigneeId = item?.assigneeId || me.id;
+      data.createdById = item?.createdById || me.id;
+      if (!data.activity) {
+        alert("세부프로그램을 입력해 주세요.");
+        return false;
+      }
+      markBudgetSubmitted(data);
+      if (item) Object.assign(item, data, { id: item.id });
+      else {
+        data.id = uid("b");
+        state.budget.items.push(normalizeBudgetItem(data));
+      }
+      saveAndRender("budget");
+      return true;
+    },
+  });
+  bindBudgetFormChips($("#modalBody"));
 }
 
 function typeLabel(type) {
@@ -7874,7 +8120,7 @@ const GUIDE_SECTIONS = [
     title: "역할로 보는 권한",
     body: [
       "관리자: 목차·할당, 대상자, 공통 요청, 취합 현황의 AI 분석, JSON 백업 등 전체 설정",
-      "예산담당자: 예산 항목 취합·통계·엑셀 내려받기",
+      "예산·성과지표담당자: 제출된 항목을 영역별로 끌어 배치하고 엑셀로 내려받습니다.",
       "식사담당: 종목·업체·대표메뉴 등록, 돌림판 후 TF 공지·투표 링크",
       "대상자: 담당 파트 취합 입력, 받은 요청 처리, 배정 예산 산출 입력, 보고서 만들기 활용",
     ],
@@ -7888,24 +8134,29 @@ const GUIDE_MENU = [
     how: "제출일시·잔여기간, 달력, 마라톤 진도(킥오프→최종)를 한눈에 봅니다.",
   },
   {
-    tab: "my-work",
-    name: "내업무",
-    how: "목차 할당·요청 기준 할 일 체크리스트와 작성·제출·피드백 허브입니다.",
+    tab: "ai-art",
+    name: "내업무 · 그림",
+    how: "영역 · 레이아웃 · 내용을 고르면 보고서 그림을 만듭니다.",
   },
   {
-    tab: "ai-art",
-    name: "보고서 그림",
-    how: "레고 조립 레이아웃 → 도식 → PPT. 하단 Flaticon 검색으로 그림을 받습니다.",
+    tab: "kpi",
+    name: "내업무 · 지표",
+    how: "성과지표를 입력·제출하면 담당자 화면에서 영역별로 끌어 배치합니다.",
+  },
+  {
+    tab: "budget",
+    name: "내업무 · 예산",
+    how: "예산을 입력·제출하면 예산담당자 화면에서 영역별로 끌어 배치합니다.",
   },
   {
     tab: "collections",
     name: "TF 업무 모두보기",
-    how: "보고서 통합 · 예산 통합 · 성과지표 세 화면으로만 구성합니다. 일정·윤독·양식은 내업무·보고서 쪽에 흡수했습니다.",
+    how: "보고서 취합 현황을 봅니다. 예산·지표는 내업무에서 다룹니다.",
   },
   {
     tab: "food",
-    name: "오늘 뭐먹지",
-    how: "업체·대표메뉴 3~5개·메뉴판 사진 등록 후 돌림판·투표·카톡 공유합니다.",
+    name: "내업무 · 식사",
+    how: "업체·대표메뉴 등록 후 돌림판·투표·카톡 공유합니다.",
   },
   {
     tab: "guide",
@@ -7922,10 +8173,10 @@ const GUIDE_MENU = [
 
 const GUIDE_TIPS = [
   "상단 메뉴는 TF 요약 · 내업무 · TF 업무 모두보기 · 사용방법 네 칸입니다. 관리자는 Setting이 추가됩니다.",
-  "TF 업무 모두보기는 보고서 통합 · 예산 통합 · 성과지표만 둡니다. 일정은 내업무에서 다룹니다.",
+  "내업무는 그림 · 지표 · 예산 · 식사만 둡니다. 제출한 예산·지표는 담당자가 영역별로 배치합니다.",
   "접속할 때마다 이름 선택 화면부터 시작합니다. TF주제 리스트에서 TF를 고른 뒤 참가자를 선택하세요.",
   "상단 알람(빨간·파란)을 누르면 일정과 코멘트가 한 창에 같이 보입니다.",
-  "「오늘 뭐먹지」는 내업무 안에 있습니다. 확정 후 카톡 문구·링크로 배포하면 성명·메뉴가 자동 취합됩니다.",
+  "「식사」는 내업무 안에 있습니다. 확정 후 카톡 문구·링크로 배포하면 성명·메뉴가 자동 취합됩니다.",
 ];
 
 function renderGuide() {
@@ -9553,7 +9804,51 @@ function normalizeKpi(raw = {}) {
     target: Number(raw.target) || 0,
     actual: Number(raw.actual) || 0,
     unit: String(raw.unit || fromCat?.unit || "%").trim() || "%",
+    area: String(raw.area || "").trim(),
+    assigneeId: raw.assigneeId || "",
+    createdBy: raw.createdBy || "",
+    status: raw.status === "submitted" ? "submitted" : raw.status === "draft" ? "draft" : "",
+    submittedAt: raw.submittedAt || "",
+    submittedBy: raw.submittedBy || "",
+    areaOrder: Number(raw.areaOrder) || 0,
   };
+}
+
+function isKpiSubmitted(row) {
+  if (!row) return false;
+  if (row.status === "submitted" || row.submittedAt) return true;
+  if (!row.status && !row.createdBy) return true;
+  return false;
+}
+
+function isKpiMemberDraft(row) {
+  return Boolean(row?.createdBy && row.status !== "submitted" && !row.submittedAt);
+}
+
+function markKpiSubmitted(row) {
+  if (!row) return row;
+  row.status = "submitted";
+  row.submittedAt = row.submittedAt || today();
+  row.submittedBy = sessionUser || row.submittedBy || "";
+  return row;
+}
+
+function canEditKpi(row) {
+  if (!row) return false;
+  if (canManageKpi()) return true;
+  const me = currentMember();
+  if (!me) return false;
+  return row.assigneeId === me.id || row.createdBy === me.id || row.createdBy === sessionUser;
+}
+
+function myRelatedKpis() {
+  ensureKpis();
+  if (canManageKpi()) return state.kpis;
+  const me = currentMember();
+  if (!me) return [];
+  return state.kpis.filter(
+    (k) => k.assigneeId === me.id || k.createdBy === me.id || k.createdBy === sessionUser
+  );
 }
 
 function ensureKpis() {
@@ -9687,81 +9982,78 @@ const KPI_FORMULA_SYS = [
 
 function renderKpi() {
   const el = $("#view-kpi");
+  if (!el) return;
   ensureKpis();
-  const admin = isAdmin();
+  const manage = canManageKpi();
   const filter = ["all", "core", "autonomy"].includes(state._kpiFilter) ? state._kpiFilter : "all";
   state._kpiFilter = filter;
-  const allRows = state.kpis.map(kpiSimRow);
+  const mine = myRelatedKpis();
+  const source = manage ? state.kpis.filter((k) => !isKpiMemberDraft(k)) : mine;
+  const allRows = source.map(kpiSimRow);
   const rows = filter === "all" ? allRows : allRows.filter((k) => k.scope === filter);
   const coreCount = allRows.filter((k) => k.scope === "core").length;
   const autoCount = allRows.filter((k) => k.scope === "autonomy").length;
+  const submittedN = rows.filter((k) => isKpiSubmitted(k)).length;
 
   el.innerHTML = `
     <div class="panel">
       <div class="panel-head">
         <div>
-          <h2 class="panel-title">성과지표 시뮬레이션</h2>
-          <p class="muted" style="margin:4px 0 0">핵심·자율 지표를 구분해 기준값·산식으로 달성도를 미리 봅니다.</p>
+          <h2 class="panel-title">${manage ? "영역별 성과지표 구성" : "내 성과지표 입력"}</h2>
+          <p class="muted" style="margin:4px 0 0">${
+            manage
+              ? `제출 ${submittedN}건 · 카드를 영역 칸으로 끌어 배치합니다.`
+              : "입력한 뒤 제출하면 성과지표담당자 화면으로 모입니다."
+          }</p>
         </div>
-        ${admin ? `<button type="button" class="btn btn-primary" id="addKpi">지표 추가</button>` : ""}
+        ${
+          manage
+            ? `<button type="button" class="btn btn-primary" id="addKpi">지표 추가</button>`
+            : `<button type="button" class="btn btn-primary" id="composeKpi">지표 입력</button>`
+        }
       </div>
       <div class="kpi-scope-tabs" role="tablist" aria-label="지표 구분">
         <button type="button" class="kpi-scope-tab ${filter === "all" ? "is-on" : ""}" data-kpi-filter="all">전체 <em>${allRows.length}</em></button>
         <button type="button" class="kpi-scope-tab ${filter === "core" ? "is-on" : ""}" data-kpi-filter="core">핵심 <em>${coreCount}</em></button>
         <button type="button" class="kpi-scope-tab ${filter === "autonomy" ? "is-on" : ""}" data-kpi-filter="autonomy">자율 <em>${autoCount}</em></button>
       </div>
-      <div class="kpi-grid">
-        ${
-          rows.length
-            ? rows
-                .map((k) => {
-                  const pct = k.sim.ok ? k.sim.value : null;
-                  const bar = k.rate != null ? Math.max(0, Math.min(120, k.rate)) : 0;
-                  const scope = kpiScopeMeta(k.scope);
-                  return `
-              <article class="kpi-card scope-${escapeAttr(k.scope)}" data-kpi="${escapeAttr(k.id)}">
-                <header class="kpi-card-head">
-                  <div class="kpi-card-title">
-                    <span class="kpi-scope-badge is-${escapeAttr(k.scope)}">${escapeHtml(scope.label)}</span>
-                    <h3>${escapeHtml(k.name)}</h3>
-                  </div>
-                  ${admin ? `<button type="button" class="btn btn-sm" data-edit-kpi="${escapeAttr(k.id)}">수정</button>` : ""}
-                </header>
-                <dl class="kpi-meta">
-                  <div><dt>기준값</dt><dd>${escapeHtml(String(k.baseline))} ${escapeHtml(k.unit || "")}</dd></div>
-                  <div><dt>목표</dt><dd>${escapeHtml(String(k.target))} ${escapeHtml(k.unit || "")}</dd></div>
-                  <div><dt>실적(입력)</dt><dd>${escapeHtml(String(k.actual))} ${escapeHtml(k.unit || "")}</dd></div>
-                </dl>
-                <p class="kpi-note muted">${escapeHtml(k.baselineNote || "근거 없음")}</p>
-                ${
-                  (k.parts || []).length
-                    ? `<ul class="kpi-parts-preview">${(k.parts || [])
-                        .map(
-                          (p) =>
-                            `<li><em>${escapeHtml(p.key)}</em> ${escapeHtml(p.name)} <strong>${escapeHtml(String(p.value))}</strong></li>`
-                        )
-                        .join("")}</ul>`
-                    : ""
-                }
-                <p class="kpi-formula"><code>${escapeHtml(k.formula || "")}</code></p>
-                <div class="kpi-sim">
-                  <div class="kpi-sim-bar"><i style="width:${bar}%"></i></div>
-                  <strong>${
-                    k.sim.ok
-                      ? `시뮬 ${Number(pct).toFixed(1)} · 달성률 ${k.rate != null ? k.rate.toFixed(1) + "%" : "—"}`
-                      : escapeHtml(k.sim.error || "오류")
-                  }</strong>
-                </div>
-                <label class="kpi-actual-label">실적 시뮬레이션 입력
-                  <input type="number" class="kpi-actual-input" data-kpi-actual="${escapeAttr(k.id)}" value="${escapeAttr(String(k.actual ?? 0))}" step="any" />
-                </label>
-                ${admin ? `<button type="button" class="btn btn-sm btn-danger" data-del-kpi="${escapeAttr(k.id)}">삭제</button>` : ""}
-              </article>`;
-                })
-                .join("")
-            : `<div class="empty">${filter === "all" ? "등록된 성과지표가 없습니다." : "해당 구분의 지표가 없습니다."}</div>`
-        }
-      </div>
+      ${
+        manage
+          ? areaBoardHtml("kpi", rows, kpiBoardCardHtml)
+          : `<div class="kpi-grid">
+              ${
+                rows.length
+                  ? rows
+                      .map((k) => {
+                        const submitted = isKpiSubmitted(k);
+                        const scope = kpiScopeMeta(k.scope);
+                        return `
+                    <article class="kpi-card scope-${escapeAttr(k.scope)} is-clickable" data-kpi-open="${escapeAttr(k.id)}">
+                      <header class="kpi-card-head">
+                        <div class="kpi-card-title">
+                          <span class="kpi-scope-badge is-${escapeAttr(k.scope)}">${escapeHtml(scope.label)}</span>
+                          <h3>${escapeHtml(k.name)}</h3>
+                        </div>
+                        <span class="badge ${submitted ? "ok" : "pending"}">${submitted ? "제출됨" : "입력 중"}</span>
+                      </header>
+                      <dl class="kpi-meta">
+                        <div><dt>기준값</dt><dd>${escapeHtml(String(k.baseline))} ${escapeHtml(k.unit || "")}</dd></div>
+                        <div><dt>목표</dt><dd>${escapeHtml(String(k.target))} ${escapeHtml(k.unit || "")}</dd></div>
+                        <div><dt>실적</dt><dd>${escapeHtml(String(k.actual))} ${escapeHtml(k.unit || "")}</dd></div>
+                      </dl>
+                      <p class="kpi-note muted">${escapeHtml(workAreaKey(k.area))}</p>
+                      ${
+                        submitted
+                          ? ""
+                          : `<button type="button" class="btn btn-sm btn-primary" data-kpi-submit="${escapeAttr(k.id)}">제출</button>`
+                      }
+                    </article>`;
+                      })
+                      .join("")
+                  : `<div class="empty">「지표 입력」으로 항목을 만든 뒤 제출하세요.</div>`
+              }
+            </div>`
+      }
     </div>
   `;
 
@@ -9771,32 +10063,143 @@ function renderKpi() {
       renderKpi();
     });
   });
-  el.querySelectorAll("[data-kpi-actual]").forEach((input) => {
-    input.addEventListener("change", () => {
-      const row = state.kpis.find((k) => k.id === input.dataset.kpiActual);
-      if (!row) return;
-      row.actual = Number(input.value) || 0;
-      persist();
-      renderKpi();
+  $("#addKpi")?.addEventListener("click", () => openKpiModal());
+  $("#composeKpi")?.addEventListener("click", () => openMemberKpiCompose());
+  el.querySelectorAll("[data-kpi-submit]").forEach((btn) => {
+    btn.addEventListener("click", (e) => {
+      e.stopPropagation();
+      submitKpiItem(btn.dataset.kpiSubmit);
     });
   });
-  $("#addKpi")?.addEventListener("click", () => openKpiModal());
-  el.querySelectorAll("[data-edit-kpi]").forEach((btn) => {
-    btn.addEventListener("click", () => openKpiModal(btn.dataset.editKpi));
+  let kpiDragged = false;
+  el.querySelectorAll("[data-kpi-open]").forEach((card) => {
+    const open = () => {
+      if (kpiDragged) {
+        kpiDragged = false;
+        return;
+      }
+      const id = card.dataset.kpiOpen;
+      if (manage) openKpiModal(id);
+      else openMemberKpiCompose(id);
+    };
+    card.addEventListener("dragstart", () => {
+      kpiDragged = true;
+    });
+    card.addEventListener("click", open);
+    card.addEventListener("keydown", (e) => {
+      if (e.key === "Enter" || e.key === " ") {
+        e.preventDefault();
+        open();
+      }
+    });
   });
-  el.querySelectorAll("[data-del-kpi]").forEach((btn) => {
-    btn.addEventListener("click", () => {
-      if (!isAdmin()) return;
-      if (!confirm("이 성과지표를 삭제할까요?")) return;
-      state.kpis = state.kpis.filter((k) => k.id !== btn.dataset.delKpi);
+  if (manage) {
+    bindAreaBoard(el, { kind: "kpi", onMove: moveKpiItemArea });
+  }
+}
+
+function submitKpiItem(id) {
+  ensureKpis();
+  const row = state.kpis.find((k) => k.id === id);
+  if (!row || !canEditKpi(row)) return;
+  if (!String(row.name || "").trim()) {
+    alert("지표명을 입력한 뒤 제출해 주세요.");
+    return;
+  }
+  markKpiSubmitted(row);
+  persist();
+  renderKpi();
+}
+
+function openMemberKpiCompose(id = null) {
+  const me = currentMember();
+  if (!me || canManageKpi()) return;
+  ensureKpis();
+  const row = id ? state.kpis.find((k) => k.id === id) : null;
+  if (row && !canEditKpi(row)) return;
+  const scope0 = row?.scope || "core";
+  openModal({
+    kicker: row ? "지표 수정" : "지표 입력",
+    title: "입력한 뒤 제출하면 성과지표담당자에게 모입니다.",
+    submitLabel: "제출",
+    bodyHtml: `
+      <div class="wp-form">
+        <div class="wp-field">
+          <span class="wp-label">구분</span>
+          <input type="hidden" name="scope" value="${escapeAttr(scope0)}" />
+          <div class="wp-chips" role="group">
+            ${KPI_SCOPES.map(
+              (s) =>
+                `<button type="button" class="wp-chip ${s.id === scope0 ? "is-on" : ""}" data-member-kpi-scope="${escapeAttr(s.id)}">${escapeHtml(s.label)}</button>`
+            ).join("")}
+          </div>
+        </div>
+        <label class="wp-field">
+          <span class="wp-label">성과지표명</span>
+          <input name="name" class="wp-input" required value="${escapeAttr(row?.name || "")}" placeholder="예: 재학생 취업률" />
+        </label>
+        <div class="wp-grid-2">
+          <label class="wp-field">
+            <span class="wp-label">기준값</span>
+            <input name="baseline" class="wp-input" type="number" step="any" value="${escapeAttr(String(row?.baseline ?? 0))}" />
+          </label>
+          <label class="wp-field">
+            <span class="wp-label">단위</span>
+            <input name="unit" class="wp-input" value="${escapeAttr(row?.unit || "%")}" />
+          </label>
+        </div>
+        <div class="wp-grid-2">
+          <label class="wp-field">
+            <span class="wp-label">목표값</span>
+            <input name="target" class="wp-input" type="number" step="any" required value="${escapeAttr(String(row?.target ?? 0))}" />
+          </label>
+          <label class="wp-field">
+            <span class="wp-label">실적</span>
+            <input name="actual" class="wp-input" type="number" step="any" value="${escapeAttr(String(row?.actual ?? 0))}" />
+          </label>
+        </div>
+        <label class="wp-field">
+          <span class="wp-label">근거·메모</span>
+          <textarea name="baselineNote" class="wp-input" rows="2" placeholder="전년도 공시·조사 근거">${escapeHtml(row?.baselineNote || "")}</textarea>
+        </label>
+      </div>
+    `,
+    onSubmit: (fd) => {
+      const payload = normalizeKpi({
+        ...(row || {}),
+        name: fd.get("name"),
+        scope: fd.get("scope") || scope0,
+        baseline: fd.get("baseline"),
+        unit: fd.get("unit"),
+        target: fd.get("target"),
+        actual: fd.get("actual"),
+        baselineNote: fd.get("baselineNote"),
+        assigneeId: row?.assigneeId || me.id,
+        createdBy: row?.createdBy || sessionUser || me.id,
+        area: row?.area || "",
+      });
+      markKpiSubmitted(payload);
+      if (row) Object.assign(row, payload, { id: row.id });
+      else {
+        payload.id = uid("kpi");
+        state.kpis.push(payload);
+      }
       persist();
       renderKpi();
+      return true;
+    },
+  });
+  const scopeHidden = $("#modalBody")?.querySelector('[name="scope"]');
+  $$("#modalBody [data-member-kpi-scope]").forEach((btn) => {
+    btn.addEventListener("click", () => {
+      if (scopeHidden) scopeHidden.value = btn.dataset.memberKpiScope || "core";
+      $$("#modalBody [data-member-kpi-scope]").forEach((b) => b.classList.toggle("is-on", b === btn));
     });
   });
 }
 
 function openKpiModal(id = null) {
-  if (!isAdmin()) return;
+  if (!canManageKpi()) return;
   ensureKpis();
   const row = id ? state.kpis.find((k) => k.id === id) : null;
   const scope0 = row?.scope || "core";
@@ -9844,6 +10247,18 @@ function openKpiModal(id = null) {
         <label class="wp-field">
           <span class="wp-label">성과지표명</span>
           <input name="name" id="kpiNameInput" class="wp-input" required value="${escapeAttr(row?.name || "")}" placeholder="예: 재학생 취업률" />
+        </label>
+        <label class="wp-field">
+          <span class="wp-label">입력담당자</span>
+          <select name="assigneeId" class="wp-input wp-select">
+            <option value="">미지정</option>
+            ${inputAssignees()
+              .map(
+                (m) =>
+                  `<option value="${m.id}" ${row?.assigneeId === m.id ? "selected" : ""}>${escapeHtml(m.name)}</option>`
+              )
+              .join("")}
+          </select>
         </label>
         <div class="wp-grid-2">
           <label class="wp-field">
@@ -9901,6 +10316,7 @@ function openKpiModal(id = null) {
           </div>
         </section>
       </div>
+      ${row ? `<div class="budget-modal-extra"><button type="button" class="btn btn-sm btn-danger" id="kpiDeleteInModal">삭제</button></div>` : ""}
     `,
     onSubmit: (fd) => {
       const parts = kpiPartsFromForm();
@@ -9919,6 +10335,12 @@ function openKpiModal(id = null) {
         name: fd.get("name"),
         scope: fd.get("scope"),
         catalogId: fd.get("catalogId"),
+        assigneeId: fd.get("assigneeId") || row?.assigneeId || "",
+        area: row?.area || "",
+        createdBy: row?.createdBy || "",
+        status: row?.status || "",
+        submittedAt: row?.submittedAt || "",
+        submittedBy: row?.submittedBy || "",
         baseline: fd.get("baseline"),
         baselineNote: fd.get("baselineNote"),
         target: fd.get("target"),
@@ -10173,6 +10595,15 @@ function openKpiModal(id = null) {
   syncFormulaUi();
   renderPalette();
   if (!row) applyCatalog(catalogSel?.value || catalog0, { fillName: true });
+  $("#kpiDeleteInModal")?.addEventListener("click", (e) => {
+    e.preventDefault();
+    if (!row || !canManageKpi()) return;
+    if (!confirm("이 성과지표를 삭제할까요?")) return;
+    state.kpis = state.kpis.filter((k) => k.id !== row.id);
+    closeModal();
+    persist();
+    renderKpi();
+  });
 }
 
 function renderView(name) {
@@ -11103,6 +11534,7 @@ function openMemberModal(id) {
             <option value="member" ${!item || item.role === "member" ? "selected" : ""}>대상자(사업담당)</option>
             <option value="food" ${item?.role === "food" ? "selected" : ""}>식사담당</option>
             <option value="budget" ${item?.role === "budget" ? "selected" : ""}>예산담당자</option>
+            <option value="kpi" ${item?.role === "kpi" ? "selected" : ""}>성과지표담당자</option>
             <option value="admin" ${item?.role === "admin" ? "selected" : ""}>관리자</option>
           </select>
         </label>
@@ -11157,7 +11589,7 @@ function openBudgetTotalModal() {
   });
 }
 
-function budgetFormFieldsHtml(item, { includeAssignee = false, fullEdit = true, mode = "both" } = {}) {
+function budgetFormFieldsHtml(item, { includeAssignee = false, fullEdit = true, mode = "both", memberCompose = false } = {}) {
   const suffix = uid("dl");
   const readOnly = !fullEdit;
   const ro = readOnly ? "readonly" : "";
@@ -11176,6 +11608,57 @@ function budgetFormFieldsHtml(item, { includeAssignee = false, fullEdit = true, 
         `<button type="button" class="wp-chip ${expense === name ? "is-on" : ""}" data-expense-chip="${escapeAttr(name)}">${escapeHtml(name)}</button>`
     )
     .join("");
+
+  if (memberCompose) {
+    return `
+      <div class="wp-form">
+        <label class="wp-field">
+          <span class="wp-label">세부프로그램</span>
+          <input name="activity" class="wp-input" required value="${escapeAttr(item?.activity || item?.title || "")}" placeholder="예: AI 교수법 워크숍 운영" />
+        </label>
+        <label class="wp-field">
+          <span class="wp-label">비목</span>
+          <input name="expenseType" id="budgetExpenseInput_${suffix}" list="budgetExpense_${suffix}" class="wp-input" required value="${escapeAttr(expense)}" placeholder="선택 또는 직접 입력" />
+          <div class="wp-chips" data-expense-chips>${expenseChips}</div>
+        </label>
+        ${
+          showPlan
+            ? `<label class="wp-field">
+          <span class="wp-label">편성금액 (원)</span>
+          <input name="planned" type="number" min="0" step="1000" class="wp-input wp-amount" required value="${item?.planned ?? 0}" />
+        </label>
+        <label class="wp-field">
+          <span class="wp-label">세부 산출내역</span>
+          <textarea name="calcText" rows="4" class="wp-input" placeholder="예: 강사료 000원 × N회 + 회의비 ...">${escapeHtml(item?.calcText || "")}</textarea>
+        </label>`
+            : ""
+        }
+        ${
+          showResult
+            ? `<label class="wp-field">
+          <span class="wp-label">실적금액 (원)</span>
+          <input name="spent" type="number" min="0" step="1000" class="wp-input wp-amount" value="${item?.spent ?? 0}" />
+        </label>
+        <label class="wp-field">
+          <span class="wp-label">실적 산출내역</span>
+          <textarea name="actualCalcText" rows="4" class="wp-input" placeholder="예: 실제 집행액·정산 내역 ...">${escapeHtml(item?.actualCalcText || "")}</textarea>
+        </label>`
+            : ""
+        }
+        <label class="wp-field">
+          <span class="wp-label">메모</span>
+          <textarea name="note" rows="2" class="wp-input" placeholder="참고 메모">${escapeHtml(item?.note || "")}</textarea>
+        </label>
+        <input type="hidden" name="area" value="${escapeAttr(item?.area || "")}" />
+        <input type="hidden" name="no" value="${escapeAttr(item?.no || "")}" />
+        <input type="hidden" name="content" value="${escapeAttr(item?.content || "")}" />
+        <input type="hidden" name="task" value="${escapeAttr(item?.task || "")}" />
+        <input type="hidden" name="dept" value="${escapeAttr(item?.dept || "")}" />
+        <input type="hidden" name="workDept" value="${escapeAttr(item?.workDept || "")}" />
+      </div>
+      ${datalistOptions(`budgetExpense_${suffix}`, BUDGET_CATALOG.expenseTypes)}
+    `;
+  }
 
   return `
       <div class="wp-form">
@@ -11300,6 +11783,11 @@ function readBudgetItemFields(fd, prev = {}, { mode = "both" } = {}) {
     expenseType: (fd.get("expenseType") || "").toString().trim(),
     assigneeId: fd.has("assigneeId") ? fd.get("assigneeId") || "" : prev.assigneeId || "",
     partId: prev.partId || "",
+    createdById: prev.createdById || "",
+    status: prev.status || "",
+    submittedAt: prev.submittedAt || "",
+    submittedBy: prev.submittedBy || "",
+    areaOrder: prev.areaOrder || 0,
     id: prev.id,
   };
   if (mode === "both" || mode === "plan") {
@@ -11411,22 +11899,25 @@ function openBudgetEntryModal(itemId) {
   const keepAssignee = item.assigneeId || "";
   const mode = getBudgetInputMode();
   const meta = budgetModeMeta(mode);
+  const submitted = isBudgetSubmitted(item);
   openModal({
     kicker: `${meta.short} 입력`,
-    title: "예산·실적을 입력합니다.",
-    submitLabel: "저장",
+    title: submitted ? "제출한 예산을 수정합니다." : "입력한 뒤 제출하면 예산담당자에게 모입니다.",
+    submitLabel: "제출",
     bodyHtml: `
-      <p class="muted wp-form-hint">${escapeHtml(meta.entryHint)}</p>
+      <p class="muted wp-form-hint">${escapeHtml(meta.entryHint || "프로그램·금액·산출근거를 입력하세요.")}</p>
       ${budgetFormFieldsHtml(item, {
         includeAssignee: false,
         fullEdit: true,
         mode,
+        memberCompose: true,
       })}
     `,
     onSubmit: (fd) => {
       const data = readBudgetItemFields(fd, item, { mode });
-      if (!canManageBudget()) data.assigneeId = keepAssignee;
-      Object.assign(item, data);
+      if (!canManageBudget()) data.assigneeId = keepAssignee || currentMember()?.id || "";
+      markBudgetSubmitted(data);
+      Object.assign(item, data, { id: item.id });
       saveAndRender("budget");
       return true;
     },
