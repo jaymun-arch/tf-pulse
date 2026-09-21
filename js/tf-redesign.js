@@ -276,8 +276,31 @@ export function marathonTrackHtml(progress, escapeHtml) {
     </section>`;
 }
 
+/**
+ * 글자 줄바꿈 길이는 렌더링 전에는 정확히 알 수 없으므로, 실제로 그려진 뒤
+ * 가장 아래로 내려간 지점(칩)의 실제 높이를 재서 트랙 높이를 그만큼 넉넉히 늘린다.
+ * 이렇게 하면 긴 제목이 여러 줄로 접혀도 카드 테두리를 벗어나지 않는다.
+ */
+function fitMarathonRailHeight(root = document) {
+  const rail = root.querySelector?.(".marathon-rail");
+  if (!rail) return;
+  const flags = [...rail.querySelectorAll(".marathon-flag")];
+  if (!flags.length) return;
+  const railTop = rail.getBoundingClientRect().top;
+  let maxBottom = 0;
+  flags.forEach((f) => {
+    const b = f.getBoundingClientRect().bottom - railTop;
+    if (b > maxBottom) maxBottom = b;
+  });
+  const needed = Math.ceil(maxBottom) + 12;
+  if (needed > rail.clientHeight) {
+    rail.style.height = `${needed}px`;
+  }
+}
+
 export function bindMarathonRunner(root = document) {
   bindMarathonFlags(root);
+  fitMarathonRailHeight(root);
   const runner = root.querySelector?.(".marathon-runner.is-running") || null;
   const bar = root.querySelector?.(".marathon-bar.is-running") || null;
   if (!runner && !bar) return;

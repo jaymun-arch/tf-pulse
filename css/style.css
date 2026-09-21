@@ -10152,7 +10152,7 @@ body.view-home .page-hero {
   top: 2px;
   width: auto;
   min-width: 46px;
-  max-width: 108px;
+  max-width: 128px;
   gap: 0;
 }
 .marathon-flag-connector {
@@ -10185,7 +10185,7 @@ body.view-home .page-hero {
   gap: 0;
   margin-top: 5px;
   width: auto;
-  max-width: 104px;
+  max-width: 124px;
   padding: 3px 7px;
   border-radius: 8px;
   background: #fff;
