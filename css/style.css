@@ -10149,36 +10149,37 @@ body.view-home .page-hero {
   top: 4px;
 }
 .marathon-flag {
-  top: 2px;
+  top: 21px;
   width: auto;
   min-width: 46px;
   max-width: 128px;
   gap: 0;
 }
+.marathon-peg {
+  order: 0;
+  margin: 0;
+  width: 9px;
+  height: 9px;
+  flex: none;
+}
 .marathon-flag-connector {
-  order: -1;
+  order: 1;
   display: block;
   width: 1px;
   margin: 0 auto;
-  background: rgba(0, 0, 0, 0.18);
+  background: rgba(0, 0, 0, 0.22);
 }
 .marathon-flag-date {
-  order: 0;
-  margin: 0 0 3px;
+  order: 2;
+  margin: 4px 0 3px;
   font-size: 0.56rem;
   font-weight: 750;
   color: var(--ink-soft);
   line-height: 1;
   white-space: nowrap;
 }
-.marathon-peg {
-  order: 1;
-  margin: 0;
-  width: 9px;
-  height: 9px;
-}
 .marathon-flag-copy {
-  order: 2;
+  order: 3;
   display: flex;
   flex-direction: column;
   align-items: center;

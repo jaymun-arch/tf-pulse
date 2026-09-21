@@ -255,10 +255,10 @@ export function marathonTrackHtml(progress, escapeHtml) {
               const row = rowById.get(m.id ?? i) || 0;
               const dropPx = row * ROW_HEIGHT_PX;
               return `
-            <button type="button" class="marathon-flag is-${escapeHtml(m.state || "todo")}" style="left:${Number(m.left) || 0}%;transform:translate(-50%, ${dropPx}px)" data-mile="${escapeAttrSafe(m.id)}" aria-label="${escapeHtml(m.label)} ${escapeHtml(formatMileDate(m.date))}">
+            <button type="button" class="marathon-flag is-${escapeHtml(m.state || "todo")}" style="left:${Number(m.left) || 0}%" data-mile="${escapeAttrSafe(m.id)}" aria-label="${escapeHtml(m.label)} ${escapeHtml(formatMileDate(m.date))}">
+              <span class="marathon-peg" aria-hidden="true"></span>
               ${row > 0 ? `<span class="marathon-flag-connector" style="height:${dropPx}px" aria-hidden="true"></span>` : ""}
               <span class="marathon-flag-date">${escapeHtml(formatMileDate(m.date))}</span>
-              <span class="marathon-peg" aria-hidden="true"></span>
               <span class="marathon-flag-copy">
                 <em class="marathon-flag-short">${escapeHtml(m.short)}</em>
                 <strong class="marathon-flag-label">${escapeHtml(m.label)}</strong>
