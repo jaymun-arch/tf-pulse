@@ -207,6 +207,25 @@ export function marathonTrackHtml(progress, escapeHtml) {
   const iso = todayIso || new Date().toISOString().slice(0, 10);
   const [, tm, td] = String(iso).split("-").map(Number);
   const todayLabel = `오늘(${tm || 0}월${td || 0}일)`;
+
+  // 지점이 가까이 몰려 있으면 글자가 서로 겹치므로, 겹칠 만큼 가까운 지점은
+  // 아래쪽으로 한 단씩 내려서(깃발 높이를 달리해서) 각 지점의 글자가 따로 읽히게 한다.
+  const ROW_GAP_PCT = 7.5; // 이 값(퍼센트)보다 가까우면 다음 단으로 내림
+  const ROW_HEIGHT_PX = 34;
+  const rowById = new Map();
+  const lastLeftAtRow = [];
+  [...flags]
+    .map((m, i) => ({ id: m.id ?? i, left: Number(m.left) || 0 }))
+    .sort((a, b) => a.left - b.left)
+    .forEach(({ id, left }) => {
+      let row = 0;
+      while (lastLeftAtRow[row] !== undefined && left - lastLeftAtRow[row] < ROW_GAP_PCT) row += 1;
+      lastLeftAtRow[row] = left;
+      rowById.set(id, row);
+    });
+  const maxRow = lastLeftAtRow.length ? lastLeftAtRow.length - 1 : 0;
+  const railHeight = 88 + maxRow * ROW_HEIGHT_PX;
+
   return `
     <section class="marathon-panel" aria-label="TF 일정 진도">
       <div class="marathon-head">
@@ -217,7 +236,7 @@ export function marathonTrackHtml(progress, escapeHtml) {
         <span class="marathon-pct">${pct}% · ${escapeHtml(current?.label || "")}</span>
       </div>
       <div class="marathon-track" role="img" aria-label="마라톤 진도 ${pct}% · 오늘 위치까지 달린 뒤 정지">
-        <div class="marathon-rail">
+        <div class="marathon-rail" style="height:${railHeight}px">
           <div
             class="marathon-bar is-running"
             style="--run-from:2%;--run-to:${runTo}%;--run-duration:${durationSec}s"
@@ -232,9 +251,12 @@ export function marathonTrackHtml(progress, escapeHtml) {
             <span class="marathon-runner-today">${escapeHtml(todayLabel)}</span>
           </div>
           ${flags
-            .map(
-              (m) => `
-            <button type="button" class="marathon-flag is-${escapeHtml(m.state || "todo")}" style="left:${Number(m.left) || 0}%" data-mile="${escapeAttrSafe(m.id)}" aria-label="${escapeHtml(m.label)} ${escapeHtml(formatMileDate(m.date))}">
+            .map((m, i) => {
+              const row = rowById.get(m.id ?? i) || 0;
+              const dropPx = row * ROW_HEIGHT_PX;
+              return `
+            <button type="button" class="marathon-flag is-${escapeHtml(m.state || "todo")}" style="left:${Number(m.left) || 0}%;transform:translate(-50%, ${dropPx}px)" data-mile="${escapeAttrSafe(m.id)}" aria-label="${escapeHtml(m.label)} ${escapeHtml(formatMileDate(m.date))}">
+              ${row > 0 ? `<span class="marathon-flag-connector" style="height:${dropPx}px" aria-hidden="true"></span>` : ""}
               <span class="marathon-flag-date">${escapeHtml(formatMileDate(m.date))}</span>
               <span class="marathon-peg" aria-hidden="true"></span>
               <span class="marathon-flag-copy">
@@ -246,8 +268,8 @@ export function marathonTrackHtml(progress, escapeHtml) {
                 <em>${escapeHtml(formatMileDate(m.date))} · ${m.state === "done" ? "완료" : m.state === "now" ? "진행중" : "예정"}</em>
                 <span>${escapeHtml(m.summary || m.tip || "")}</span>
               </span>
-            </button>`
-            )
+            </button>`;
+            })
             .join("")}
         </div>
       </div>
