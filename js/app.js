@@ -4183,6 +4183,7 @@ function renderSchedule() {
           <span class="tf-timeline-actions">
             <button type="button" class="btn btn-sm btn-primary" data-tf-save>저장</button>
             ${s ? `<button type="button" class="btn btn-sm" data-tf-edit="${escapeAttr(s.id)}">상세</button>` : ""}
+            ${s && isAdmin() ? `<button type="button" class="btn btn-sm btn-danger" data-tf-delete="${escapeAttr(s.id)}" title="이 일정을 삭제합니다">삭제</button>` : ""}
           </span>
         </div>
       </li>`;
@@ -4296,7 +4297,27 @@ function renderSchedule() {
       openScheduleModal(btn.dataset.tfEdit);
     });
   });
+  el.querySelectorAll("[data-tf-delete]").forEach((btn) => {
+    btn.addEventListener("click", (e) => {
+      e.stopPropagation();
+      deleteScheduleItem(btn.dataset.tfDelete);
+    });
+  });
   $("#addSchedule")?.addEventListener("click", () => openScheduleModal());
+}
+
+function deleteScheduleItem(id) {
+  const item = state.schedule.find((s) => s.id === id);
+  if (!item) return;
+  if (!canEditScheduleItem(item)) {
+    denySchedulePermission();
+    return;
+  }
+  const label = item.title || "이 일정";
+  if (!confirm(`「${label}」 일정을 삭제할까요?\n삭제 후에는 되돌릴 수 없습니다.`)) return;
+  state.schedule = state.schedule.filter((s) => s.id !== id);
+  persist();
+  refreshActiveScheduleSurface();
 }
 
 function canEditScheduleItem(s) {
