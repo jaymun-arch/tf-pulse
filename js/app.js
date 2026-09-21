@@ -809,6 +809,98 @@ function markDirty(dirty = true) {
 
 let persistScheduled = false;
 
+const STATE_API_URL = "/api/state";
+
+function withTimeout(promise, ms) {
+  return Promise.race([
+    promise,
+    new Promise((_, reject) => setTimeout(() => reject(new Error("timeout")), ms)),
+  ]);
+}
+
+/** 서버(Vercel Storage)에 저장된 공용 데이터를 가져온다. 연결 안 됐거나 실패하면 null. */
+async function fetchServerState() {
+  try {
+    const resp = await withTimeout(fetch(STATE_API_URL, { method: "GET" }), 6000);
+    if (!resp.ok) return null;
+    const data = await resp.json();
+    return data?.state || null;
+  } catch {
+    return null;
+  }
+}
+
+let serverSyncTimer = null;
+
+/** 로컬 저장 직후, 잦은 입력을 묶어서(디바운스) 서버에도 반영한다. */
+function scheduleServerSync() {
+  clearTimeout(serverSyncTimer);
+  serverSyncTimer = setTimeout(() => {
+    fetch(STATE_API_URL, {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ state }),
+    }).catch((err) => {
+      console.warn("서버 동기화 실패(내 브라우저에는 저장됨):", err?.message || err);
+    });
+  }, 900);
+}
+
+let serverPollTimer = null;
+
+/** 다른 사람이 바꾼 내용을 주기적으로 받아온다. 편집 중(모달 열림)일 때는 덮어쓰지 않는다. */
+function startServerPolling() {
+  stopServerPolling();
+  serverPollTimer = setInterval(async () => {
+    if (document.hidden) return;
+    if ($("#modal")?.open) return;
+    const serverState = await fetchServerState();
+    if (!serverState) return;
+    const serverTime = Date.parse(serverState.meta?.updatedAt || "") || 0;
+    const localTime = Date.parse(state.meta?.updatedAt || "") || 0;
+    if (serverTime <= localTime) return;
+    state = serverState;
+    ensureAllSlices();
+    try {
+      localStorage.setItem(STORAGE_KEY, JSON.stringify(state));
+    } catch {
+      /* ignore */
+    }
+    markDirty(false);
+    renderAll();
+  }, 20000);
+}
+
+function stopServerPolling() {
+  if (serverPollTimer) clearInterval(serverPollTimer);
+  serverPollTimer = null;
+}
+
+/** 페이지를 벗어날 때(탭 닫기 등) 대기 중인 서버 동기화를 즉시, 신뢰성 있게 보낸다. */
+function flushServerSyncOnUnload() {
+  clearTimeout(serverSyncTimer);
+  try {
+    const payload = JSON.stringify({ state });
+    if (navigator.sendBeacon) {
+      const blob = new Blob([payload], { type: "application/json" });
+      navigator.sendBeacon(STATE_API_URL, blob);
+      return;
+    }
+  } catch {
+    /* fall through to fetch keepalive */
+  }
+  try {
+    fetch(STATE_API_URL, {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ state }),
+      keepalive: true,
+    }).catch(() => {});
+  } catch {
+    /* ignore */
+  }
+}
+
 function flushPersist() {
   state.meta.updatedAt = new Date().toISOString();
   let level = 0;
@@ -816,6 +908,7 @@ function flushPersist() {
     try {
       localStorage.setItem(STORAGE_KEY, JSON.stringify(state));
       markDirty(false);
+      scheduleServerSync();
       return true;
     } catch (err) {
       const quota =
@@ -907,40 +1000,7 @@ async function loadSeed() {
   }
 }
 
-async function initState() {
-  const cached = localStorage.getItem(STORAGE_KEY);
-  if (cached) {
-    try {
-      state = JSON.parse(cached);
-      if (!state.budget) {
-        const seed = await loadSeed();
-        state.budget = seed.budget;
-      }
-      if (!state.requests) {
-        const seed = await loadSeed();
-        state.requests = seed.requests || [];
-      }
-      ensureBudget();
-      ensureReportDoc();
-      ensureRequests();
-      ensureFoodPolls();
-      ensureFoodCatalog();
-      ensureFoodHistory();
-      ensureAiBriefs();
-      ensureAiArts();
-      ensureReviewDocs();
-      ensureReviewSession();
-      ensureTfTopics();
-      ensureCollectionPhases();
-      ensureKpis();
-      ensureSharedResources();
-      persist();
-      return;
-    } catch {
-      /* fall through */
-    }
-  }
-  state = await loadSeed();
+function ensureAllSlices() {
   ensureBudget();
   ensureReportDoc();
   ensureRequests();
@@ -955,6 +1015,43 @@ async function initState() {
   ensureCollectionPhases();
   ensureKpis();
   ensureSharedResources();
+}
+
+/** 여러 사람이 같은 데이터를 보도록, 로컬 저장 전에 서버(Vercel Storage)의 최신 값을 먼저 확인한다. */
+async function initState() {
+  const cached = localStorage.getItem(STORAGE_KEY);
+  let localParsed = null;
+  if (cached) {
+    try {
+      localParsed = JSON.parse(cached);
+    } catch {
+      localParsed = null;
+    }
+  }
+
+  const serverState = await fetchServerState();
+  const serverTime = Date.parse(serverState?.meta?.updatedAt || "") || 0;
+  const localTime = Date.parse(localParsed?.meta?.updatedAt || "") || 0;
+
+  if (serverState && serverTime >= localTime) {
+    // 서버(공용) 데이터가 더 최신이거나 로컬에 아무 것도 없으면 서버 값을 기준으로 삼는다.
+    state = serverState;
+  } else if (localParsed) {
+    state = localParsed;
+  } else {
+    state = await loadSeed();
+  }
+
+  if (!state.budget) {
+    const seed = await loadSeed();
+    state.budget = seed.budget;
+  }
+  if (!state.requests) {
+    const seed = await loadSeed();
+    state.requests = seed.requests || [];
+  }
+
+  ensureAllSlices();
   persist();
 }
 
@@ -1910,12 +2007,14 @@ function enterAs(name) {
   applyRoleUi();
   renderAll();
   setView("dashboard");
+  startServerPolling();
   window.setTimeout(() => {
     openUnifiedAlarmPopup({ mode: "unified", browseAll: false });
   }, 280);
 }
 
 function logout() {
+  stopServerPolling();
   sessionUser = null;
   localStorage.removeItem(USER_KEY);
   updateAlarmButtons();
@@ -13048,8 +13147,14 @@ async function boot() {
   await initState();
   markDirty(false);
   startReportDeadlineClock();
-  window.addEventListener("pagehide", () => flushPersist());
-  window.addEventListener("beforeunload", () => flushPersist());
+  window.addEventListener("pagehide", () => {
+    flushPersist();
+    flushServerSyncOnUnload();
+  });
+  window.addEventListener("beforeunload", () => {
+    flushPersist();
+    flushServerSyncOnUnload();
+  });
 
   // 링크 접속 시마다 권한(이름) 선택 화면부터 시작
   sessionUser = null;

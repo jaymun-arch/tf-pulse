@@ -13,3 +13,4 @@ _patch_*
 _budget_*.png
 .vercel
 .env*
+data/.local-state.json

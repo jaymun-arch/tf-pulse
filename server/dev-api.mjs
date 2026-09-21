@@ -55,6 +55,7 @@ const server = http.createServer(async (req, res) => {
     if (path === "/api/review-summary") return runApi("review-summary", req, res);
     if (path === "/api/plan-diagram") return runApi("plan-diagram", req, res);
     if (path === "/api/learn-style") return runApi("learn-style", req, res);
+    if (path === "/api/state") return runApi("state", req, res);
 
     if (req.method === "OPTIONS") {
       res.statusCode = 204;
