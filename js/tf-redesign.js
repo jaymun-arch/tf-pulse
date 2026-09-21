@@ -210,8 +210,8 @@ export function marathonTrackHtml(progress, escapeHtml) {
 
   // 지점이 가까이 몰려 있으면 글자가 서로 겹치므로, 겹칠 만큼 가까운 지점은
   // 아래쪽으로 한 단씩 내려서(깃발 높이를 달리해서) 각 지점의 글자가 따로 읽히게 한다.
-  const ROW_GAP_PCT = 7.5; // 이 값(퍼센트)보다 가까우면 다음 단으로 내림
-  const ROW_HEIGHT_PX = 34;
+  const ROW_GAP_PCT = 8.5; // 이 값(퍼센트)보다 가까우면 다음 단으로 내림
+  const ROW_HEIGHT_PX = 42;
   const rowById = new Map();
   const lastLeftAtRow = [];
   [...flags]
@@ -224,7 +224,7 @@ export function marathonTrackHtml(progress, escapeHtml) {
       rowById.set(id, row);
     });
   const maxRow = lastLeftAtRow.length ? lastLeftAtRow.length - 1 : 0;
-  const railHeight = 88 + maxRow * ROW_HEIGHT_PX;
+  const railHeight = 88 + maxRow * ROW_HEIGHT_PX + (maxRow > 0 ? 16 : 0);
 
   return `
     <section class="marathon-panel" aria-label="TF 일정 진도">

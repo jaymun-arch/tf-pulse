@@ -10133,9 +10133,13 @@ body.view-home .page-hero {
 }
 
 /* Unified marathon flags (no separate legend row) */
+.marathon-track {
+  padding-left: 30px;
+  padding-right: 30px;
+}
 .marathon-rail {
   height: 88px;
-  margin: 2px 2px 0;
+  margin: 2px 0 0;
 }
 .marathon-bar {
   top: 22px;
@@ -10146,7 +10150,9 @@ body.view-home .page-hero {
 }
 .marathon-flag {
   top: 2px;
-  width: 56px;
+  width: auto;
+  min-width: 46px;
+  max-width: 108px;
   gap: 0;
 }
 .marathon-flag-connector {
@@ -10154,15 +10160,16 @@ body.view-home .page-hero {
   display: block;
   width: 1px;
   margin: 0 auto;
-  background: repeating-linear-gradient(to bottom, rgba(0, 0, 0, 0.28) 0 3px, transparent 3px 6px);
+  background: rgba(0, 0, 0, 0.18);
 }
 .marathon-flag-date {
   order: 0;
-  margin: 0 0 1px;
-  font-size: 0.5rem;
+  margin: 0 0 3px;
+  font-size: 0.56rem;
   font-weight: 750;
   color: var(--ink-soft);
   line-height: 1;
+  white-space: nowrap;
 }
 .marathon-peg {
   order: 1;
@@ -10176,28 +10183,40 @@ body.view-home .page-hero {
   flex-direction: column;
   align-items: center;
   gap: 0;
-  margin-top: 2px;
-  width: 100%;
+  margin-top: 5px;
+  width: auto;
+  max-width: 104px;
+  padding: 3px 7px;
+  border-radius: 8px;
+  background: #fff;
+  border: 1px solid rgba(0, 0, 0, 0.07);
+  box-shadow: 0 1px 3px rgba(15, 23, 42, 0.06);
 }
 .marathon-flag-short {
   display: block;
   font-style: normal;
-  font-size: 0.56rem;
+  font-size: 0.6rem;
   font-weight: 800;
   color: var(--ink);
-  line-height: 1.1;
+  line-height: 1.25;
+  white-space: normal;
+  word-break: keep-all;
+  text-align: center;
 }
 .marathon-flag-label {
   display: none;
 }
+.marathon-flag.is-done .marathon-flag-copy { border-color: rgba(10, 126, 164, 0.25); }
 .marathon-flag.is-done .marathon-flag-short { color: #0a7ea4; }
+.marathon-flag.is-now .marathon-flag-copy { border-color: rgba(230, 126, 0, 0.35); box-shadow: 0 1px 4px rgba(230, 126, 0, 0.18); }
 .marathon-flag.is-now .marathon-flag-short { color: #e67e00; }
 .marathon-legend {
   display: none !important;
 }
 @media (max-width: 720px) {
   .marathon-rail { height: 86px; }
-  .marathon-flag { width: 48px; }
+  .marathon-track { padding-left: 22px; padding-right: 22px; }
+  .marathon-flag { max-width: 84px; }
   .marathon-runner-today { top: 56px; }
 }
 

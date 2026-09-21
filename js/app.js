@@ -1201,7 +1201,7 @@ function milestoneProgressFromState() {
       label = d === deadlineIso ? "보고서 제출" : "일정";
       tip = "최종 제출일";
     }
-    const short = label.length > 5 ? `${label.slice(0, 4)}…` : label;
+    const short = label.length > 16 ? `${label.slice(0, 15)}…` : label;
     const st = d < todayIso ? "done" : d === todayIso ? "now" : "todo";
     return {
       id: `sd_${d}_${i}`,
