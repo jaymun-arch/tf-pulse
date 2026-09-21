@@ -4182,13 +4182,22 @@ function renderSchedule() {
           </span>
           <span class="tf-timeline-actions">
             <button type="button" class="btn btn-sm btn-primary" data-tf-save>저장</button>
-            ${s ? `<button type="button" class="btn btn-sm" data-tf-edit="${escapeAttr(s.id)}">상세</button>` : ""}
-            ${s && isAdmin() ? `<button type="button" class="btn btn-sm btn-danger" data-tf-delete="${escapeAttr(s.id)}" title="이 일정을 삭제합니다">삭제</button>` : ""}
+            <button type="button" class="btn btn-sm" data-tf-edit="${escapeAttr(s?.id || "")}" data-tf-guide-edit="${escapeAttr(!s && tpl ? tpl.id : "")}">상세</button>
+            ${
+              isAdmin()
+                ? s
+                  ? `<button type="button" class="btn btn-sm btn-danger" data-tf-delete="${escapeAttr(s.id)}" title="이 일정을 삭제합니다">삭제</button>`
+                  : tpl
+                  ? `<button type="button" class="btn btn-sm btn-danger" data-tf-hide-guide="${escapeAttr(tpl.id)}" title="이 기본 단계를 목록에서 숨깁니다">삭제</button>`
+                  : ""
+                : ""
+            }
           </span>
         </div>
       </li>`;
   };
 
+  const hiddenGuideIds = state.meta.hiddenScheduleGuides || [];
   el.innerHTML = `
     <div class="tf-sched-page">
       <header class="tf-timeline-hero tf-sched-hero">
@@ -4197,6 +4206,11 @@ function renderSchedule() {
           <p>기본·추가를 나누지 않고 한 목록에서 작성합니다. 단계별 마감을 넣으면 요청업무 등록 시 날짜·내용이 기본값으로 채워집니다.</p>
         </div>
         <div class="tf-sched-hero-actions">
+          ${
+            hiddenGuideIds.length
+              ? `<button type="button" class="btn btn-sm" id="restoreHiddenGuides">숨긴 기본 단계 ${hiddenGuideIds.length}개 다시 보기</button>`
+              : ""
+          }
           <button type="button" class="btn btn-primary" id="addSchedule">일정 추가</button>
         </div>
       </header>
@@ -4245,7 +4259,12 @@ function renderSchedule() {
       const guideId = row.dataset.guide;
       if (guideId) {
         const existing = tfScheduleForGuide(guideId);
-        if (existing) openScheduleModal(existing.id);
+        if (existing) {
+          openScheduleModal(existing.id);
+          return;
+        }
+        const tpl = SCHEDULE_GUIDE_TEMPLATES.find((t) => t.id === guideId);
+        if (tpl) openScheduleModal(null, { guideId: tpl.id, prefill: tpl });
       }
     };
     row.querySelector("[data-tf-save]")?.addEventListener("click", (e) => {
@@ -4294,7 +4313,14 @@ function renderSchedule() {
   el.querySelectorAll("[data-tf-edit]").forEach((btn) => {
     btn.addEventListener("click", (e) => {
       e.stopPropagation();
-      openScheduleModal(btn.dataset.tfEdit);
+      const schedId = btn.dataset.tfEdit;
+      if (schedId) {
+        openScheduleModal(schedId);
+        return;
+      }
+      const guideId = btn.dataset.tfGuideEdit;
+      const tpl = guideId ? SCHEDULE_GUIDE_TEMPLATES.find((t) => t.id === guideId) : null;
+      if (tpl) openScheduleModal(null, { guideId: tpl.id, prefill: tpl });
     });
   });
   el.querySelectorAll("[data-tf-delete]").forEach((btn) => {
@@ -4302,6 +4328,17 @@ function renderSchedule() {
       e.stopPropagation();
       deleteScheduleItem(btn.dataset.tfDelete);
     });
+  });
+  el.querySelectorAll("[data-tf-hide-guide]").forEach((btn) => {
+    btn.addEventListener("click", (e) => {
+      e.stopPropagation();
+      hideScheduleGuide(btn.dataset.tfHideGuide);
+    });
+  });
+  $("#restoreHiddenGuides")?.addEventListener("click", () => {
+    state.meta.hiddenScheduleGuides = [];
+    persist();
+    refreshActiveScheduleSurface();
   });
   $("#addSchedule")?.addEventListener("click", () => openScheduleModal());
 }
@@ -4316,6 +4353,26 @@ function deleteScheduleItem(id) {
   const label = item.title || "이 일정";
   if (!confirm(`「${label}」 일정을 삭제할까요?\n삭제 후에는 되돌릴 수 없습니다.`)) return;
   state.schedule = state.schedule.filter((s) => s.id !== id);
+  persist();
+  refreshActiveScheduleSurface();
+}
+
+function hideScheduleGuide(guideId) {
+  if (!isAdmin()) {
+    denySchedulePermission();
+    return;
+  }
+  const tpl = SCHEDULE_GUIDE_TEMPLATES.find((t) => t.id === guideId);
+  if (!tpl) return;
+  if (
+    !confirm(
+      `「${tpl.title}」 기본 단계를 목록에서 숨길까요?\n아직 저장된 값이 없어 언제든 헤더의 「숨긴 기본 단계 다시 보기」로 되돌릴 수 있습니다.`
+    )
+  )
+    return;
+  const hidden = new Set(state.meta.hiddenScheduleGuides || []);
+  hidden.add(guideId);
+  state.meta.hiddenScheduleGuides = [...hidden];
   persist();
   refreshActiveScheduleSurface();
 }
@@ -6801,10 +6858,13 @@ function extraTfSchedules() {
 
 /** 기본 틀 + 추가 일정을 마감일 순 한 목록으로 */
 function unifiedTfScheduleRows() {
-  const rows = SCHEDULE_GUIDE_TEMPLATES.map((tpl) => {
-    const s = tfScheduleForGuide(tpl.id);
-    return { s, tpl, due: s ? scheduleDueIso(s) : "" };
-  });
+  const hiddenGuideIds = new Set(state.meta?.hiddenScheduleGuides || []);
+  const rows = SCHEDULE_GUIDE_TEMPLATES.filter((tpl) => !hiddenGuideIds.has(tpl.id) || tfScheduleForGuide(tpl.id)).map(
+    (tpl) => {
+      const s = tfScheduleForGuide(tpl.id);
+      return { s, tpl, due: s ? scheduleDueIso(s) : "" };
+    }
+  );
   extraTfSchedules().forEach((s) => {
     rows.push({ s, tpl: null, due: scheduleDueIso(s) });
   });
@@ -11859,7 +11919,7 @@ function openRoundModal(round) {
   });
 }
 
-function openScheduleModal(id) {
+function openScheduleModal(id, opts = {}) {
   const item = id ? state.schedule.find((s) => s.id === id) : null;
   if (item && !canEditScheduleItem(item)) {
     denySchedulePermission();
@@ -11869,13 +11929,23 @@ function openScheduleModal(id) {
     denySchedulePermission("보고서 업무 추가는 관리자만 가능합니다.");
     return;
   }
+  // 아직 저장되지 않은 기본 단계(템플릿)를 상세 편집하는 경우, 템플릿 기본값으로 폼을 채운다.
+  const prefill = !item ? opts.prefill || null : null;
+  const prefillGuideId = opts.guideId || prefill?.id || "";
+  const src = item || prefill || {};
   const canDelete = Boolean(item) && canEditScheduleItem(item);
   const members = scheduleOwnerOptions();
-  const selectedAssignees = new Set(scheduleAssigneesOf(item));
+  const selectedAssignees = new Set(
+    item
+      ? scheduleAssigneesOf(item)
+      : prefill?.assignAll
+      ? members.map((m) => m.name)
+      : scheduleAssigneesOf(null)
+  );
   const noneSelected = selectedAssignees.size === 0;
   const allSelected = !noneSelected && members.length > 0 && members.every((m) => selectedAssignees.has(m.name));
-  const currentType = normalizeScheduleType(item?.type || "meeting");
-  const currentGroup = scheduleGroupOf(item || { type: currentType });
+  const currentType = normalizeScheduleType(src.type || "meeting");
+  const currentGroup = scheduleGroupOf(item || { ...src, type: currentType });
   const ownerName = item?.owner || item?.createdBy || currentUserName();
   const deptOpts = scheduleDeptOptions();
   const projectOpts = [
@@ -11889,19 +11959,26 @@ function openScheduleModal(id) {
     ]),
   ];
   const statusNow = item?.status || "준비";
-  const dueThisYear = item?.endDate || item?.date || today();
+  const dueThisYear =
+    item?.endDate ||
+    item?.date ||
+    (prefill && Number.isFinite(prefill.dueOffsetDays) ? addDaysIso(today(), prefill.dueOffsetDays) : today());
   const dl = uid("sdl");
 
   openModal({
-    kicker: item ? "업무 수정" : "새 일정",
-    title: item ? "주요 업무를 수정합니다." : "업무일정을 입력합니다.",
+    kicker: item ? "업무 수정" : prefill ? "기본 단계 설정" : "새 일정",
+    title: item
+      ? "주요 업무를 수정합니다."
+      : prefill
+      ? `${prefill.short || prefill.title} 단계의 세부 정보를 입력합니다.`
+      : "업무일정을 입력합니다.",
     submitLabel: item ? "저장" : "일정 등록",
     bodyHtml: `
       <div class="wp-form schedule-form">
-        <input type="hidden" name="guideId" id="schedGuideId" value="${escapeAttr(item?.guideId || "")}" />
+        <input type="hidden" name="guideId" id="schedGuideId" value="${escapeAttr(item?.guideId || prefillGuideId || "")}" />
         <label class="wp-field">
           <span class="wp-label">업무명</span>
-          <input name="title" id="schedTitleInput" class="wp-input" required value="${escapeAttr(item?.title || "")}" placeholder="예: AID 예산 수정 및 담당자 지정" />
+          <input name="title" id="schedTitleInput" class="wp-input" required value="${escapeAttr(src.title || "")}" placeholder="예: AID 예산 수정 및 담당자 지정" />
         </label>
         <label class="wp-field">
           <span class="wp-label">상위 그룹</span>
@@ -11948,7 +12025,7 @@ function openScheduleModal(id) {
           </label>
           <label class="wp-field">
             <span class="wp-label">부서</span>
-            <input name="dept" list="schedDept_${dl}" class="wp-input" value="${escapeAttr(item?.dept || "")}" placeholder="선택 또는 입력" />
+            <input name="dept" list="schedDept_${dl}" class="wp-input" value="${escapeAttr(src.dept || "")}" placeholder="선택 또는 입력" />
           </label>
         </div>
 
@@ -11981,7 +12058,7 @@ function openScheduleModal(id) {
           </label>
           <label class="wp-field">
             <span class="wp-label">업무분장</span>
-            <input name="division" id="schedDivisionInput" list="schedDivision_${dl}" class="wp-input" value="${escapeAttr(item?.division || "")}" placeholder="담당 영역" />
+            <input name="division" id="schedDivisionInput" list="schedDivision_${dl}" class="wp-input" value="${escapeAttr(src.division || "")}" placeholder="담당 영역" />
           </label>
         </div>
 
@@ -11992,20 +12069,20 @@ function openScheduleModal(id) {
 
         <label class="wp-field">
           <span class="wp-label">담당자에게 보이는 요청 말풍선</span>
-          <textarea name="askMessage" id="schedAskInput" rows="2" class="wp-input" placeholder="예: 관리자가 작성지침, 양식, 스타일 가이드 확인을 요청했어요!">${escapeHtml(item?.askMessage || "")}</textarea>
+          <textarea name="askMessage" id="schedAskInput" rows="2" class="wp-input" placeholder="예: 관리자가 작성지침, 양식, 스타일 가이드 확인을 요청했어요!">${escapeHtml(src.askMessage || "")}</textarea>
           <span class="muted" style="display:block;margin-top:4px;font-size:var(--text-xs)">비워 두면 업무 그룹·제목에 맞춰 자동으로 안내합니다. 요청받은 담당자의 내 업무에 말풍선으로 표시됩니다.</span>
         </label>
         <label class="wp-field">
           <span class="wp-label">관리 목표값</span>
-          <textarea name="goal" id="schedGoalInput" rows="2" class="wp-input" placeholder="관리 목표값">${escapeHtml(item?.goal || item?.note || "")}</textarea>
+          <textarea name="goal" id="schedGoalInput" rows="2" class="wp-input" placeholder="관리 목표값">${escapeHtml(src.goal || src.note || "")}</textarea>
         </label>
         <label class="wp-field">
           <span class="wp-label">준비사항 · 검토사항</span>
-          <input name="prep" id="schedPrepInput" class="wp-input" value="${escapeAttr(item?.prep || "")}" placeholder="준비·검토 항목" />
+          <input name="prep" id="schedPrepInput" class="wp-input" value="${escapeAttr(src.prep || "")}" placeholder="준비·검토 항목" />
         </label>
         <label class="wp-field">
           <span class="wp-label">서로 챙길 점</span>
-          <textarea name="carePoints" id="schedCareInput" rows="2" class="wp-input" placeholder="서로 챙길 점">${escapeHtml(item?.carePoints || "")}</textarea>
+          <textarea name="carePoints" id="schedCareInput" rows="2" class="wp-input" placeholder="서로 챙길 점">${escapeHtml(src.carePoints || "")}</textarea>
         </label>
 
         <fieldset class="wp-field schedule-collab-field">
