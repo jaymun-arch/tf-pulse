@@ -33,7 +33,6 @@ import {
 } from "./report-style-learning.js";
 import {
   DEFAULT_TF_TOPICS,
-  computeMilestoneProgress,
   marathonTrackHtml,
   bindMarathonRunner,
   flaticonSearchHtml,
@@ -832,8 +831,16 @@ async function fetchServerState() {
 
 let serverSyncTimer = null;
 
+/**
+ * 실제로 로그인한 사용자의 세션에서만 서버로 데이터를 밀어올린다.
+ * 로그인 전(예: 배포 후 미리보기 스크린샷을 찍는 자동화 봇, 빈 브라우저 방문 등)에는
+ * 절대 서버 데이터를 덮어쓰지 않도록 막는 안전장치. enterAs()에서 true, logout()에서 false.
+ */
+let serverSyncEnabled = false;
+
 /** 로컬 저장 직후, 잦은 입력을 묶어서(디바운스) 서버에도 반영한다. */
 function scheduleServerSync() {
+  if (!serverSyncEnabled) return;
   clearTimeout(serverSyncTimer);
   serverSyncTimer = setTimeout(() => {
     fetch(STATE_API_URL, {
@@ -878,6 +885,7 @@ function stopServerPolling() {
 
 /** 페이지를 벗어날 때(탭 닫기 등) 대기 중인 서버 동기화를 즉시, 신뢰성 있게 보낸다. */
 function flushServerSyncOnUnload() {
+  if (!serverSyncEnabled) return;
   clearTimeout(serverSyncTimer);
   try {
     const payload = JSON.stringify({ state });
@@ -1128,6 +1136,8 @@ function liveTfMilestones() {
 }
 
 function reportDeadlineIso() {
+  const explicit = String(state.meta?.reportDeadline || "").slice(0, 10);
+  if (explicit) return explicit;
   const miles = liveTfMilestones();
   return miles[miles.length - 1]?.date || "2026-09-15";
 }
@@ -1144,54 +1154,87 @@ function formatReportDeadlineWhen(iso = reportDeadlineIso()) {
   return `${d.getFullYear()}년 ${d.getMonth() + 1}월 ${d.getDate()}일 오후 4시`;
 }
 
+/**
+ * "TF 일정 진도" 마라톤 바.
+ * 상위 그룹(workGroup)·연결 회차 같은 구분값과는 무관하게, TF 일정에 등록된 실제 날짜만으로
+ * 진행 상황을 계산한다. 같은 날짜에 여러 일정이 있으면 하나의 지점으로 합쳐서 보여준다.
+ */
 function milestoneProgressFromState() {
-  ensureBudget();
-  ensureKpis();
-  const cols = state.collections || [];
-  const r1 = cols.find((c) => c.round === 1);
-  const r2 = cols.find((c) => c.round === 2);
-  const r3 = cols.find((c) => c.round === 3);
-  const roundDone = (col) => {
-    if (!col?.submissions?.length) return false;
-    return col.submissions.every((s) => submissionBoardStatus(s).id === "done");
-  };
-  const finalDone = roundDone(r3);
-  const roundSummary = (col, emptyLabel) => {
-    if (!col?.submissions?.length) return emptyLabel;
-    const done = col.submissions.filter((s) => submissionBoardStatus(s).id === "done").length;
-    return `${col.name || "취합"} · 제출 ${done}/${col.submissions.length}`;
-  };
-  const mode = getBudgetInputMode();
-  const budItems = state.budget?.items || [];
-  const budgetDone =
-    budItems.length > 0 && budItems.every((i) => !!budgetCalcOf(i, mode));
-  const budgetFilled = budItems.filter((i) => !!budgetCalcOf(i, mode)).length;
-  const totalBudget = Number(state.budget?.total) || 0;
-  const kpis = state.kpis || [];
-  const kpiDone =
-    kpis.length > 0 &&
-    kpis.every((k) => Number(k.target) > 0 && Number(k.actual) >= Number(k.target) * 0.8);
-  const kpiHit = kpis.filter((k) => Number(k.target) > 0 && Number(k.actual) >= Number(k.target) * 0.8).length;
-  const miles = liveTfMilestones();
   const todayIso = typeof today === "function" ? today() : new Date().toISOString().slice(0, 10);
-  return computeMilestoneProgress({
-    hasKickoff: true,
-    round1Done: roundDone(r1),
-    round2Done: roundDone(r2),
-    budgetDone,
-    kpiDone,
-    finalDone,
-    todayIso,
-    milestones: miles,
-    summaries: {
-      kickoff: "역할·일정·서식 공유 완료",
-      round1: roundSummary(r1, "1차 취합 대기"),
-      round2: roundSummary(r2, "2차 취합 대기"),
-      budget: `총 ${totalBudget ? `${Math.round(totalBudget / 1e8)}억` : "—"} · 산출근거 ${budgetFilled}/${budItems.length}`,
-      kpi: `지표 ${kpiHit}/${kpis.length} 목표 80% 이상`,
-      final: finalDone ? "최종 통합 제출 완료" : `최종 제출일 ${formatMileDateSafe(miles[5]?.date)} 오후 4시`,
-    },
+
+  const byDate = new Map();
+  (state.schedule || []).forEach((s) => {
+    const due = scheduleDueIso(s);
+    if (!due) return;
+    if (!byDate.has(due)) byDate.set(due, []);
+    byDate.get(due).push(s);
   });
+
+  const deadlineIso = String(state.meta?.reportDeadline || "").slice(0, 10);
+  let dates = [...byDate.keys()];
+  if (deadlineIso) dates.push(deadlineIso);
+  dates = [...new Set(dates)].sort();
+  if (!dates.length) dates = [todayIso];
+
+  const startDate = dates[0];
+  const endDate = dates[dates.length - 1];
+
+  const isoToPctLocal = (iso) => {
+    const t = Date.parse(`${iso}T12:00:00+09:00`);
+    const a = Date.parse(`${startDate}T12:00:00+09:00`);
+    const b = Date.parse(`${endDate}T12:00:00+09:00`);
+    if (!Number.isFinite(t) || !Number.isFinite(a) || !Number.isFinite(b) || b <= a) return 0;
+    return Math.max(0, Math.min(100, ((t - a) / (b - a)) * 100));
+  };
+
+  const points = dates.map((d, i) => {
+    const items = byDate.get(d) || [];
+    let label;
+    let tip;
+    if (items.length === 1) {
+      label = items[0].title || "일정";
+      tip = items[0].goal || items[0].note || items[0].askMessage || "";
+    } else if (items.length > 1) {
+      label = `${items[0].title || "일정"} 외 ${items.length - 1}건`;
+      tip = items.map((it) => it.title).filter(Boolean).join(" · ");
+    } else {
+      label = d === deadlineIso ? "보고서 제출" : "일정";
+      tip = "최종 제출일";
+    }
+    const short = label.length > 5 ? `${label.slice(0, 4)}…` : label;
+    const st = d < todayIso ? "done" : d === todayIso ? "now" : "todo";
+    return {
+      id: `sd_${d}_${i}`,
+      label,
+      short,
+      date: d,
+      tip,
+      state: st,
+      left: isoToPctLocal(d),
+      summary: tip,
+    };
+  });
+
+  const doneCount = points.filter((p) => p.state === "done").length;
+  const currentIndex = Math.min(doneCount, points.length - 1);
+  const stagePct = points.length ? Math.round((doneCount / points.length) * 100) : 0;
+  const timePct = isoToPctLocal(todayIso);
+  const barPct = Math.max(stagePct, Math.round(timePct * 0.35 + stagePct * 0.65));
+  const todayPct = Math.min(96, Math.max(4, timePct || 4));
+
+  return {
+    doneCount,
+    total: points.length,
+    pct: stagePct,
+    barPct: Math.min(100, barPct),
+    currentIndex,
+    startDate,
+    endDate,
+    points,
+    runnerLeft: todayPct,
+    todayPct,
+    todayIso,
+  };
 }
 
 function formatMileDateSafe(iso) {
@@ -2007,6 +2050,7 @@ function enterAs(name) {
   applyRoleUi();
   renderAll();
   setView("dashboard");
+  serverSyncEnabled = true;
   startServerPolling();
   window.setTimeout(() => {
     openUnifiedAlarmPopup({ mode: "unified", browseAll: false });
@@ -2014,6 +2058,7 @@ function enterAs(name) {
 }
 
 function logout() {
+  serverSyncEnabled = false;
   stopServerPolling();
   sessionUser = null;
   localStorage.removeItem(USER_KEY);
