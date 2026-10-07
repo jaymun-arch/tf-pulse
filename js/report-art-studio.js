@@ -227,8 +227,7 @@ export function svgToPngDataUrl(svg, { scale = 2 } = {}) {
 function figureHtml(figure) {
   return `
     <figure class="art-ai-figure">
-      <img src="${escapeAttr(svgDataUrl(figure.svg))}" alt="${escapeAttr(figure.title || "Claude가 그린 보고서 도식")}" />
-      ${figure.caption ? `<figcaption>${escapeHtml(figure.caption)}</figcaption>` : ""}
+      <img src="${escapeAttr(svgDataUrl(figure.svg))}" alt="${escapeAttr(figure.caption || figure.title || "보고서 도식")}" />
     </figure>`;
 }
 
@@ -254,7 +253,7 @@ export function studioStageHtml({ layoutIds = [], diagramTypeId = "overview", vi
           .join("")}
       </div>
       <div class="art-studio-diagram-wrap ${visibleCount >= layouts.length || hasFigure ? "is-on" : ""}" id="artStudioDiagramWrap">
-        <p class="art-studio-diagram-label">핵심 도식${hasFigure ? ` <span class="art-ai-badge">Claude</span>` : ""}</p>
+        <p class="art-studio-diagram-label">핵심 도식${hasFigure ? ` <span class="art-ai-badge">${figure.source === "local" ? "무료" : "Claude"}</span>` : ""}</p>
         ${
           hasFigure
             ? figureHtml(figure)
