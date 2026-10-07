@@ -147,7 +147,8 @@ export function composeStudioPack({
   }
 
   let layoutIds = [primary];
-  if (learnedSamples.length) {
+  // 사용자가 레이아웃을 직접 골랐으면 그대로 쓴다 (학습 결과는 고르지 않았을 때만 반영)
+  if (learnedSamples.length && (!known || reroll)) {
     layoutIds = boostLayoutsFromLearning(layoutIds, learnedSamples).slice(0, 1);
   }
 
