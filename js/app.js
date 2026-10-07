@@ -4330,7 +4330,7 @@ function renderSchedule() {
           </span>
           <span class="tf-timeline-actions">
             <button type="button" class="btn btn-sm btn-primary" data-tf-save>저장</button>
-            <button type="button" class="btn btn-sm" data-tf-edit="${escapeAttr(s?.id || "")}" data-tf-guide-edit="${escapeAttr(!s && tpl ? tpl.id : "")}">상세</button>
+            <button type="button" class="btn btn-sm" data-tf-edit="${escapeAttr(s?.id || "")}" data-tf-guide-edit="${escapeAttr(!s && tpl ? tpl.id : "")}">수정</button>
             ${
               isAdmin()
                 ? s
