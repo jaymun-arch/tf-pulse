@@ -200,8 +200,8 @@ function drawProcess(items) {
   const bw = Math.min(300, (W - PAD * 2 - gap * (n - 1)) / n);
   const total = bw * n + gap * (n - 1);
   const x0 = (W - total) / 2;
-  const by = 330;
-  const bh = 200;
+  const bh = 240;
+  const by = Math.round((TOP + BOTTOM) / 2 - bh / 2) - 20;
   let out = "";
   steps.forEach((it, i) => {
     const x = x0 + i * (bw + gap);
@@ -216,7 +216,6 @@ function drawProcess(items) {
     }
     if (!last) out += arrow(x + bw + 8, by + bh / 2, x + bw + gap - 8, by + bh / 2);
   });
-  out += `<line x1="${x0}" y1="${by + bh + 100}" x2="${x0 + total}" y2="${by + bh + 100}" stroke="${C.line}" stroke-width="2" stroke-dasharray="8 8"/>`;
   return out;
 }
 
@@ -282,7 +281,7 @@ function drawBars(items, { share = false } = {}) {
 function drawCards(items) {
   const cards = items.slice(0, 6);
   if (!cards.length) return emptyHint();
-  const cols = cards.length <= 3 ? cards.length : 3;
+  const cols = cards.length <= 4 ? cards.length : 3;
   const rows = Math.ceil(cards.length / cols);
   const gap = 32;
   const cw = (W - PAD * 2 - gap * (cols - 1)) / cols;
