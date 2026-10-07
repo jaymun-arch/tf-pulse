@@ -105,7 +105,7 @@ const BUDGET_CATALOG = {
 
 const VIEW_META = {
   dashboard: { title: "TF 요약", desc: "지금 열린 단계만, 내 파트만 하면 됩니다" },
-  "my-work": { title: "요청", desc: "관리자가 등록한 업무" },
+  "my-work": { title: "내 업무", desc: "관리자가 등록한 업무" },
   "tf-all": { title: "모아보기", desc: "보고서·예산·성과지표 통합" },
   parts: { title: "목차·할당", desc: "목차와 파트 분량" },
   collections: { title: "보고서 통합", desc: "차수별 제출·분량 분석" },
@@ -133,7 +133,7 @@ const NAV_GROUPS = {
     label: "내업무",
     views: ["my-work", "ai-art", "kpi", "budget", "food", "requests"],
     labels: {
-      "my-work": "받은 요청",
+      "my-work": "내 업무",
       "ai-art": "그림",
       kpi: "지표",
       budget: "예산",
@@ -141,7 +141,7 @@ const NAV_GROUPS = {
       requests: "요청",
     },
     hideTabs: ["requests"],
-    defaultView: "ai-art",
+    defaultView: "my-work",
   },
   tfall: {
     label: "모아보기",
@@ -212,7 +212,7 @@ function isAdmin() {
 }
 
 function myWorkRequestTabLabel() {
-  return isAdmin() ? "보낸요청" : "받은 요청";
+  return "내 업무";
 }
 
 function navLabelForView(viewName, group) {
@@ -1725,6 +1725,8 @@ function resolveViewName(name) {
   if (NAV_GROUPS[name]) {
     const g = NAV_GROUPS[name];
     if (name === "setup") return g.defaultView || "schedule";
+    // 상단 「내업무」를 누르면 항상 「내 업무」 탭부터 보여 준다
+    if (name === "mywork") return g.defaultView;
     const remembered = lastViewByNav[name];
     if (
       remembered &&
@@ -8959,7 +8961,7 @@ const GUIDE_MENU = [
 
 const GUIDE_TIPS = [
   "상단 메뉴는 TF 요약 · 내업무 · 모아보기 · 사용방법 네 칸입니다. 관리자는 Setting이 추가됩니다.",
-  "내업무는 그림 · 지표 · 예산 · 식사만 둡니다. 제출한 예산·지표는 담당자가 영역별로 배치합니다.",
+  "내업무를 누르면 「내 업무」 탭이 먼저 열립니다. 그 옆에 그림 · 지표 · 예산 · 식사 탭이 있습니다.",
   "접속할 때마다 이름 선택 화면부터 시작합니다. TF주제 리스트에서 TF를 고른 뒤 참가자를 선택하세요.",
   "상단 알람(빨간·파란)을 누르면 일정과 코멘트가 한 창에 같이 보입니다.",
   "「식사」는 내업무 안에 있습니다. 확정 후 카톡 문구·링크로 배포하면 성명·메뉴가 자동 취합됩니다.",
