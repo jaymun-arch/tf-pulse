@@ -15,7 +15,7 @@
  */
 import { z } from "zod";
 import { json, readJsonBody } from "./_lib/openai.mjs";
-import { claudeJson, imageBlockFromDataUrl, CLAUDE_MODEL } from "./_lib/claude.mjs";
+import { claudeJson, imageBlockFromDataUrl, hasClaudeKey, CLAUDE_MODEL } from "./_lib/claude.mjs";
 
 const Figure = z.object({
   title: z.string(),
@@ -83,6 +83,8 @@ export function sanitizeSvg(raw) {
 
 export default async function handler(req, res) {
   if (req.method === "OPTIONS") return json(res, 204, {});
+  // 화면이 「AI로 더 잘 그리기」 버튼을 보여 줄지 확인용 (키 값은 절대 내보내지 않음)
+  if (req.method === "GET") return json(res, 200, { enabled: hasClaudeKey() });
   if (req.method !== "POST") return json(res, 405, { error: "POST only" });
 
   try {

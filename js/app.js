@@ -3,7 +3,6 @@ import {
   analyzeReportText,
   analyzeReviewSummary,
   generateYeonsungImage,
-  planReportDiagram,
   learnStyleFromImage,
   drawReportFigure,
   downloadImagesAsPpt,
@@ -11,6 +10,7 @@ import {
 import { REPORT_LAYOUTS, downloadReportLayoutPpt, layoutPreviewWireHtml } from "./report-layouts.js";
 import { downloadEditableDiagramPpt, diagramPreviewWireHtml } from "./report-diagrams.js";
 import { downloadReportArtPackagePpt } from "./report-art-pack.js";
+import { drawLocalFigure } from "./report-figure-local.js";
 import {
   composeStudioPack,
   buildStudioUsageGuide,
@@ -9614,6 +9614,22 @@ async function figureForPpt(figure) {
   }
 }
 
+/** 서버에 Claude 키가 있는지 한 번만 확인한다 (없으면 유료 버튼을 숨긴다) */
+let claudeFigureEnabled = null;
+function checkClaudeFigure() {
+  if (claudeFigureEnabled !== null) return;
+  claudeFigureEnabled = false;
+  fetch("/api/draw-diagram", { method: "GET", cache: "no-store" })
+    .then((r) => (r.ok ? r.json() : null))
+    .then((d) => {
+      if (d?.enabled) {
+        claudeFigureEnabled = true;
+        if ($("#view-ai-art")?.classList.contains("active")) renderAiArt();
+      }
+    })
+    .catch(() => {});
+}
+
 function openArtStudioCompleteModal({ pack, guide, frame, direction, plan, figure = null }) {
   const type = reportArtTypeById(pack.typeId);
   const previewHtml = studioStageHtml({
@@ -9739,6 +9755,8 @@ function renderAiArt() {
   const lastGuide = state._artStudioGuide || null;
   const liveComplete = Boolean(lastGuide);
   const lastFigure = state._artStudioFigure?.svg ? state._artStudioFigure : null;
+  checkClaudeFigure();
+  const aiOn = claudeFigureEnabled === true;
 
   el.innerHTML = `
     <div class="ai-page report-make art-studio is-simple">
@@ -9824,23 +9842,24 @@ function renderAiArt() {
           ${
             liveComplete
               ? `<div class="art-studio-complete-bar">
-                  <p><strong>완성</strong> · ${escapeHtml(lastGuide?.variantLabel || lastPack.variant?.label || "")}${
+                  <p><strong>완성</strong> · ${lastFigure?.source === "claude" ? "Claude가 그림" : "무료 그리기"}${
                     lastFigure?.references ? ` · 학습 그림 ${lastFigure.references}장 참고` : ""
                   }</p>
                   <div class="art-studio-complete-actions">
                     ${
                       lastFigure
                         ? `<button type="button" class="btn btn-sm" id="artFigurePng">PNG 저장</button>
-                    <button type="button" class="btn btn-sm" id="artFigureLearn" title="이 그림을 양식학습에 넣어 다음 그림의 참고로 씁니다">학습에 추가</button>`
+                    <button type="button" class="btn btn-sm" id="artFigureLearn" title="이 그림을 양식학습에 넣어 다음 그림의 참고로 씁니다">학습에 추가</button>
+                    ${aiOn ? `<button type="button" class="btn btn-sm" id="artFigureAi" title="Claude AI가 다시 그립니다. 한 번에 몇백 원이 듭니다.">AI로 더 잘 그리기 (유료)</button>` : ""}`
                         : ""
                     }
                     <button type="button" class="btn btn-primary btn-sm" id="artStudioRedownload">PPT 다운로드</button>
                   </div>
                 </div>
                 ${
-                  lastFigure
+                  lastFigure && aiOn
                     ? `<div class="art-figure-refine">
-                  <label class="wp-label" for="artFigureFeedback">고칠 점</label>
+                  <label class="wp-label" for="artFigureFeedback">고칠 점 (AI · 유료)</label>
                   <div class="art-figure-refine-row">
                     <input type="text" id="artFigureFeedback" class="wp-input" maxlength="500" placeholder="예: 2026년 막대를 강조하고, 오른쪽 비교표 글자를 더 크게" />
                     <button type="button" class="btn btn-sm" id="artFigureRefine">고쳐 그리기</button>
@@ -10015,34 +10034,14 @@ function renderAiArt() {
     if (createBtn) createBtn.disabled = true;
     if (diceBtn) diceBtn.disabled = true;
 
-    const type = reportArtTypeById(pack.typeId);
-    const styleGuide =
-      buildYeonsungStyleGuide(type, frameNow) +
-      (learnedForRun.length ? `\n\n${buildLearnedStyleGuideBlock(learnedForRun)}` : "");
-    const title = type.name;
-    const extraPrompt = reroll
-      ? `${pack.variant?.hint || ""} · 전체 틀과 목차 방향은 유지하고 레이아웃·표현만 한 단계만 다르게`
-      : `${pack.variant?.hint || ""} · ${frameNow.name} 영역에 맞춰 ${partNow?.note || "목차 방향"}을 반영`;
-
-    const planPromise = planReportDiagram({
-      title,
-      context: direction,
-      prompt: extraPrompt,
-      styleGuide,
-      reportFrame: frameNow.id,
-      reportFrameName: frameNow.name,
-      reportType: type.id,
-      reportTypeName: type.name,
-      reportTypeDesc: type.desc,
-      reportTypeVisual: type.visual,
+    // 무료: AI(유료 API)를 부르지 않고 브라우저에서 바로 그린다
+    const layoutNow = REPORT_LAYOUTS.find((l) => l.id === pack.layoutIds?.[0]);
+    const local = drawLocalFigure({
+      layoutId: pack.layoutIds?.[0] || "process",
+      direction,
+      title: frameNow?.name || layoutNow?.name || "",
+      frameName: frameNow?.name || "",
     });
-
-    // Claude가 실제 그림(SVG)을 그린다 — 기획(plan)과 동시에 시작
-    const figureRequest = buildFigureRequest({ pack, frame: frameNow, direction, learnedSamples: learnedForRun, styleGuide });
-    const figurePromise = drawReportFigure(figureRequest).then(
-      (fig) => ({ ok: true, fig }),
-      (err) => ({ ok: false, err })
-    );
 
     try {
       const plan = await animateStudioBuild({
@@ -10053,29 +10052,18 @@ function renderAiArt() {
         learnedSamples: learnedForRun,
         onProgress: (pct, label) => setStudioProgress(pct, label, reroll ? "다른 형태로 그리는 중…" : "그리는 중…"),
         onStep: () => {},
-        planPromise,
+        planPromise: Promise.resolve(null),
       });
       state._lastDiagramPlan = plan || null;
 
-      let waitPct = 85;
-      setStudioProgress(waitPct, "Claude가 그림을 그리는 중… (1~2분 걸릴 수 있습니다)", "그리는 중…");
-      const tick = setInterval(() => {
-        waitPct = Math.min(98, waitPct + (98 - waitPct) * 0.08);
-        setStudioProgress(waitPct, null, null);
-      }, 2000);
-      const drawn = await figurePromise;
-      clearInterval(tick);
-
-      const figure = drawn.ok
-        ? {
-            svg: drawn.fig.svg,
-            title: drawn.fig.title || "",
-            caption: drawn.fig.caption || "",
-            references: drawn.fig.references || 0,
-            createdAt: new Date().toISOString(),
-            by: sessionUser || "",
-          }
-        : null;
+      const figure = {
+        svg: local.svg,
+        title: local.title,
+        caption: local.caption,
+        source: "local",
+        createdAt: new Date().toISOString(),
+        by: sessionUser || "",
+      };
       state._artStudioFigure = figure;
 
       const guide = buildStudioUsageGuide({
@@ -10086,36 +10074,19 @@ function renderAiArt() {
         variant: pack.variant,
         learnedSamples: learnedForRun,
       });
-      if (drawn.ok) {
-        guide.reasoning = drawn.fig.reasoning || guide.reasoning;
-        guide.summary = drawn.fig.purpose || guide.summary;
-        if (drawn.fig.keyMessages?.length) {
-          guide.keyMessages = drawn.fig.keyMessages;
-          guide.contents = drawn.fig.keyMessages;
-        }
+      guide.reasoning = local.reasoning;
+      if (local.keyMessages.length) {
+        guide.keyMessages = local.keyMessages;
+        guide.contents = local.keyMessages;
       }
       state._artStudioGuide = guide;
       renderGuideDom(guide);
 
       const livePanel = el.querySelector(".art-studio-live-panel");
-      const liveInner = el.querySelector(".art-studio-live");
-      if (liveInner) {
-        liveInner.innerHTML = studioStageHtml({
-          layoutIds: pack.layoutIds,
-          diagramTypeId: pack.typeId,
-          visibleCount: pack.layoutIds.length,
-          phase: 5,
-          variant: pack.variant,
-          figure,
-        });
-      }
       livePanel?.classList.add("is-complete");
       $("#artStudioProgress")?.setAttribute("hidden", "");
       persist();
       renderAiArt();
-      if (!drawn.ok) {
-        alert(`Claude 그림을 만들지 못해 기본 도식으로 보여 줍니다.\n${drawn.err?.message || ""}`);
-      }
       openArtStudioCompleteModal({ pack, guide, frame: frameNow, direction, plan, figure });
     } catch (err) {
       alert(err.message || "그림 생성에 실패했습니다.");
@@ -10204,6 +10175,49 @@ function renderAiArt() {
     }
   });
 
+  $("#artFigureAi")?.addEventListener("click", async (e) => {
+    const pack = state._artStudioPack;
+    if (!pack) return;
+    if (!confirm("Claude AI가 그림을 다시 그립니다. 한 번에 몇백 원이 청구됩니다. 진행할까요?")) return;
+    const btn = e.currentTarget;
+    btn.disabled = true;
+    btn.textContent = "AI가 그리는 중… (1~2분)";
+    try {
+      const frameNow = reportFrameById(state._aiArtFrame);
+      const direction = state._aiArtContextSeed || "";
+      const learned = pickSamplesForGeneration(state, { themeId: state._aiArtFrame, direction, limit: 4 });
+      const type = reportArtTypeById(pack.typeId);
+      const styleGuide =
+        buildYeonsungStyleGuide(type, frameNow) + (learned.length ? `\n\n${buildLearnedStyleGuideBlock(learned)}` : "");
+      const out = await drawReportFigure(buildFigureRequest({ pack, frame: frameNow, direction, learnedSamples: learned, styleGuide }));
+      const hist = Array.isArray(state._artStudioHistory) ? state._artStudioHistory : [];
+      hist.push(snapshotNow());
+      state._artStudioHistory = hist.slice(-8);
+      state._artStudioFigure = {
+        svg: out.svg,
+        title: out.title || "",
+        caption: out.caption || "",
+        references: out.references || 0,
+        source: "claude",
+        createdAt: new Date().toISOString(),
+        by: sessionUser || "",
+      };
+      if (state._artStudioGuide) {
+        state._artStudioGuide.reasoning = out.reasoning || state._artStudioGuide.reasoning;
+        if (out.keyMessages?.length) {
+          state._artStudioGuide.keyMessages = out.keyMessages;
+          state._artStudioGuide.contents = out.keyMessages;
+        }
+      }
+      persist();
+      renderAiArt();
+    } catch (err) {
+      btn.disabled = false;
+      btn.textContent = "AI로 더 잘 그리기 (유료)";
+      alert(err.message || "AI 그림 그리기에 실패했습니다.");
+    }
+  });
+
   $("#artFigureRefine")?.addEventListener("click", async (e) => {
     const fig = state._artStudioFigure;
     const pack = state._artStudioPack;
@@ -10214,6 +10228,7 @@ function renderAiArt() {
       alert("고칠 점을 적어 주세요.");
       return;
     }
+    if (!confirm("Claude AI가 고쳐 그립니다. 한 번에 몇백 원이 청구됩니다. 진행할까요?")) return;
     const btn = e.currentTarget;
     btn.disabled = true;
     if (status) status.textContent = "Claude가 고쳐 그리는 중… (1~2분 걸릴 수 있습니다)";
@@ -10238,6 +10253,7 @@ function renderAiArt() {
         caption: out.caption || fig.caption,
         references: out.references || 0,
         createdAt: new Date().toISOString(),
+        source: "claude",
         by: sessionUser || "",
         feedback,
       };

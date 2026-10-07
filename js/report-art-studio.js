@@ -297,7 +297,7 @@ export async function animateStudioBuild({
   const sleep = (ms) => new Promise((r) => setTimeout(r, ms));
 
   onProgress?.(5, "테마·방향 분석");
-  onStep?.("GPT가 보고서 목적과 키워드를 해석합니다");
+  onStep?.("보고서 목적과 키워드를 읽습니다");
   if (learnedSamples.length) {
     onStep?.(`학습 양식 ${learnedSamples.length}건 반영 · ${learnedSamples.map((s) => s.title).slice(0, 2).join(", ")}${learnedSamples.length > 2 ? " …" : ""}`);
   }
@@ -326,8 +326,8 @@ export async function animateStudioBuild({
   }
   await sleep(360);
 
-  onProgress?.(84, "GPT 도식 기획");
-  onStep?.("연결 API로 활용 가이드·라벨을 생성합니다");
+  onProgress?.(84, "도식 그리기");
+  onStep?.("내용을 칸에 넣어 그림을 완성합니다");
   let plan = null;
   try {
     plan = await planPromise;
