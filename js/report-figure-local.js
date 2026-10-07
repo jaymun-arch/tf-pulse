@@ -495,10 +495,15 @@ export function drawLocalFigure({ layoutId = "process", direction = "", title = 
       how = "시간 순서대로 이어지는 일정이라 가로 타임라인으로 그렸습니다.";
       break;
     case "kpi":
-    case "competency":
+    case "competency": {
+      const nums = items.filter((it) => it.num != null);
+      const sameUnit = nums.length >= 2 && new Set(nums.map(unitOf)).size === 1;
       body = drawBars(items);
-      how = "숫자를 비교하기 쉽도록 막대그래프로 그렸습니다. 가장 큰 값은 진하게 표시했습니다.";
+      how = sameUnit
+        ? "숫자를 비교하기 쉽도록 막대그래프로 그렸습니다. 가장 큰 값은 진하게 표시했습니다."
+        : "단위가 서로 다른 지표라서 숫자를 크게 보여 주는 카드로 그렸습니다.";
       break;
+    }
     case "budget":
       body = drawBars(items, { share: true });
       how = "항목별 금액과 전체에서 차지하는 비율을 막대로 보여 줍니다.";
