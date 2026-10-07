@@ -163,7 +163,9 @@ export function composeStudioPack({
     variant = rest[Math.floor(rng() * rest.length)] || variant;
   }
 
-  return { layoutIds, typeId, variant, seed, learnedSamples: learnedSamples.slice(0, 5), primary };
+  // 이미지는 양식학습 원본에 있으므로 조합 기록에는 글자 정보만 남긴다 (데이터 크기 절약)
+  const lightSamples = learnedSamples.slice(0, 5).map(({ dataUrl, thumbDataUrl, ...rest }) => rest);
+  return { layoutIds, typeId, variant, seed, learnedSamples: lightSamples, primary };
 }
 
 export function buildStudioUsageGuide({ layoutIds = [], plan, theme, direction, variant, learnedSamples = [] }) {

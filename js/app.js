@@ -796,6 +796,8 @@ function budgetSummary() {
 }
 
 function markDirty(dirty = true) {
+  // 서버 저장이 실패한 상태면 「저장됨」으로 덮어쓰지 않는다
+  if (!dirty && $("#saveDotWrap")?.classList.contains("is-error")) return;
   const hint = $("#saveHint");
   const dot = $("#saveDot");
   const wrap = $("#saveDotWrap");
@@ -848,19 +850,74 @@ let serverSyncTimer = null;
  */
 let serverSyncEnabled = false;
 
+let serverSyncRetry = 0;
+
+/** 「저장됨」 표시를 서버 저장 결과에 맞춘다 */
+function showServerSyncError(message) {
+  const hint = $("#saveHint");
+  const wrap = $("#saveDotWrap");
+  if (hint) hint.textContent = "저장 실패";
+  if (wrap) {
+    wrap.classList.remove("is-saving", "is-saved", "is-shared");
+    wrap.classList.add("is-error");
+    wrap.title = `${message}\n내 브라우저에만 저장되어 다른 사람에게는 보이지 않습니다. 누르면 다시 저장합니다.`;
+  }
+}
+
+function clearServerSyncError() {
+  $("#saveDotWrap")?.classList.remove("is-error");
+  serverSyncRetry = 0;
+  markDirty(false);
+}
+
+async function pushStateToServer() {
+  if (!serverSyncEnabled) return;
+  const hint = $("#saveHint");
+  if (hint && $("#saveDotWrap")?.classList.contains("is-error")) hint.textContent = "다시 저장 중";
+  try {
+    const resp = await withTimeout(
+      fetch(STATE_API_URL, {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ state }),
+      }),
+      20000
+    );
+    if (!resp.ok) {
+      const data = await resp.json().catch(() => ({}));
+      const err = new Error(
+        resp.status === 413 ? "데이터가 너무 커서 서버에 저장하지 못했습니다." : data.error || `서버 저장 실패 (${resp.status})`
+      );
+      err.status = resp.status;
+      throw err;
+    }
+    clearServerSyncError();
+  } catch (err) {
+    console.warn("서버 동기화 실패(내 브라우저에는 저장됨):", err?.message || err);
+    showServerSyncError(err?.message || "서버에 연결하지 못했습니다.");
+    // 잠깐의 네트워크 문제일 수 있으니 10초 · 30초 · 60초 뒤 다시 시도
+    const waits = [10000, 30000, 60000];
+    if (err?.status !== 413 && serverSyncRetry < waits.length) {
+      clearTimeout(serverSyncTimer);
+      serverSyncTimer = setTimeout(pushStateToServer, waits[serverSyncRetry++]);
+    }
+  }
+}
+
 /** 로컬 저장 직후, 잦은 입력을 묶어서(디바운스) 서버에도 반영한다. */
 function scheduleServerSync() {
   if (!serverSyncEnabled) return;
   clearTimeout(serverSyncTimer);
-  serverSyncTimer = setTimeout(() => {
-    fetch(STATE_API_URL, {
-      method: "POST",
-      headers: { "Content-Type": "application/json" },
-      body: JSON.stringify({ state }),
-    }).catch((err) => {
-      console.warn("서버 동기화 실패(내 브라우저에는 저장됨):", err?.message || err);
-    });
-  }, 900);
+  serverSyncRetry = 0;
+  serverSyncTimer = setTimeout(pushStateToServer, 900);
+}
+
+/** 로그인할 때, 내 브라우저에만 있고 서버에 못 올라간 변경이 있으면 올린다 */
+async function pushIfLocalNewer() {
+  const serverState = await fetchServerState();
+  const serverTime = Date.parse(serverState?.meta?.updatedAt || "") || 0;
+  const localTime = Date.parse(state.meta?.updatedAt || "") || 0;
+  if (localTime > serverTime) pushStateToServer();
 }
 
 let serverPollTimer = null;
@@ -1018,7 +1075,15 @@ async function loadSeed() {
   }
 }
 
+/** 그림 조합 기록에 붙은 학습 이미지는 원본(양식학습)에 이미 있으므로 빼서 데이터 크기를 줄인다 */
+function slimArtStudioPack() {
+  const pack = state._artStudioPack;
+  if (!pack || !Array.isArray(pack.learnedSamples)) return;
+  pack.learnedSamples = pack.learnedSamples.map(({ dataUrl, thumbDataUrl, ...rest }) => rest);
+}
+
 function ensureAllSlices() {
+  slimArtStudioPack();
   ensureBudget();
   ensureReportDoc();
   ensureRequests();
@@ -1096,6 +1161,10 @@ function ensureTfTopics() {
   if (!state.activeTfTopicId || !state.tfTopics.some((t) => t.id === state.activeTfTopicId)) {
     state.activeTfTopicId = state.tfTopics[0]?.id || "";
   }
+  const listed = new Set(state.tfTopics.flatMap((t) => t.memberIds || []));
+  const orphans = (state.members || []).filter((m) => !listed.has(m.id)).map((m) => m.id);
+  const active = state.tfTopics.find((t) => t.id === state.activeTfTopicId);
+  if (orphans.length && active) active.memberIds = [...active.memberIds, ...orphans];
 }
 
 function activeTfTopic() {
@@ -2064,10 +2133,18 @@ function enterAs(name) {
   setView("dashboard");
   serverSyncEnabled = true;
   startServerPolling();
+  pushIfLocalNewer();
   window.setTimeout(() => {
     openUnifiedAlarmPopup({ mode: "unified", browseAll: false });
   }, 280);
 }
+
+document.addEventListener("click", (e) => {
+  if (e.target.closest?.("#saveDotWrap.is-error")) {
+    serverSyncRetry = 0;
+    pushStateToServer();
+  }
+});
 
 function logout() {
   serverSyncEnabled = false;
@@ -12993,7 +13070,12 @@ function openMemberModal(id) {
         contact: fd.get("contact").trim(),
       };
       if (item) Object.assign(item, data);
-      else state.members.push({ id: uid("m"), ...data });
+      else {
+        const id = uid("m");
+        state.members.push({ id, ...data });
+        const topic = activeTfTopic();
+        if (topic && !topic.memberIds.includes(id)) topic.memberIds.push(id);
+      }
       saveAndRender("members");
       return true;
     },

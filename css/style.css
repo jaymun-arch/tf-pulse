@@ -12359,3 +12359,14 @@ body.view-home .page-hero {
     display: block;
   }
 }
+
+/* 서버 저장 실패 표시 (누르면 다시 저장) */
+.save-dot.is-error {
+  cursor: pointer;
+}
+.save-dot.is-error .save-dot-label {
+  color: #c62828;
+}
+.save-dot.is-error .api-dot {
+  background: #e53935;
+}
