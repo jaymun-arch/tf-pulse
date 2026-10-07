@@ -12,6 +12,14 @@ import { downloadEditableDiagramPpt, diagramPreviewWireHtml } from "./report-dia
 import { downloadReportArtPackagePpt } from "./report-art-pack.js";
 import { drawLocalFigure } from "./report-figure-local.js";
 import {
+  myWorkCalendarHtml,
+  filterCalendarItems,
+  deptColorMap,
+  deptOf as calendarDeptOf,
+  scheduleDetailHtml,
+  dayListHtml,
+} from "./my-work-calendar.js";
+import {
   composeStudioPack,
   buildStudioUsageGuide,
   studioStageHtml,
@@ -11935,6 +11943,81 @@ function buildMyWorkChecklist() {
   return items;
 }
 
+/* ── 내 업무: 달력 보기 상태 (화면 전용, 팀 데이터에 저장하지 않음) ── */
+let myCalCursor = "";
+let myCalQuery = "";
+let myCalDept = "";
+
+/** 관리자만 달력/목록을 고른다. 참여자는 항상 달력. */
+function myWorkMode() {
+  if (!isAdmin()) return "calendar";
+  try {
+    const v = localStorage.getItem("tf-mywork-mode");
+    if (v === "calendar" || v === "list") return v;
+  } catch {
+    /* 저장소를 못 쓰면 기본값 */
+  }
+  return "list";
+}
+
+function setMyWorkMode(v) {
+  try {
+    localStorage.setItem("tf-mywork-mode", v);
+  } catch {
+    /* ignore */
+  }
+}
+
+function myWorkModeToggleHtml(mode) {
+  return `<div class="mwc-mode" role="group" aria-label="보기 방식">
+      <button type="button" class="${mode === "calendar" ? "active" : ""}" data-mwc-mode="calendar">달력</button>
+      <button type="button" class="${mode === "list" ? "active" : ""}" data-mwc-mode="list">목록</button>
+    </div>`;
+}
+
+function openMyWorkItemDetail(s, colors) {
+  if (!s) return;
+  const start = (s.date || "").slice(0, 10);
+  const due = scheduleDueIso(s);
+  const range = due && due !== start ? `${formatKorDate(start)} ~ ${formatKorDate(due)}` : formatKorDate(start || due);
+  const admin = isAdmin();
+  openModal({
+    kicker: "TF 일정",
+    title: s.title || "일정",
+    submitLabel: admin ? "수정" : "자료 보기·올리기",
+    bodyHtml: scheduleDetailHtml(s, {
+      color: colors[calendarDeptOf(s)] || "#0a84ff",
+      statusLabel: scheduleStatusLabel(s.status),
+      dateLabel: due ? `${range} · ${timingLabel(daysUntil(due))}` : range,
+      assignees: scheduleAssigneesOf(s),
+    }),
+    onSubmit: () => {
+      closeModal();
+      if (admin) openScheduleModal(s.id);
+      else openScheduleUploadForItem(s);
+      return false;
+    },
+  });
+}
+
+function openMyWorkDayList(dayIso, events, colors) {
+  openModal({
+    kicker: "TF 일정",
+    title: `${formatKorDate(dayIso)} 일정 ${events.length}건`,
+    bodyHtml: dayListHtml(events, colors),
+    hideFooter: true,
+  });
+  $("#modalBody")
+    ?.querySelectorAll("[data-mwc-item]")
+    .forEach((btn) =>
+      btn.addEventListener("click", () => {
+        const item = events.find((e) => e.id === btn.dataset.mwcItem);
+        closeModal();
+        openMyWorkItemDetail(item, colors);
+      })
+    );
+}
+
 function renderMyWork() {
   const el = $("#view-my-work");
   if (!el) return;
@@ -11942,20 +12025,130 @@ function renderMyWork() {
   const admin = isAdmin();
   const items = [...(state.schedule || [])]
     .filter((s) => isAdminRegisteredWork(s) && scheduleVisibleToUser(s, who))
-    .sort((a, b) => a.date.localeCompare(b.date));
+    .sort((a, b) => (a.date || "").localeCompare(b.date || ""));
+  const mode = myWorkMode();
+
+  const bindModeToggle = () => {
+    el.querySelectorAll("[data-mwc-mode]").forEach((btn) =>
+      btn.addEventListener("click", () => {
+        setMyWorkMode(btn.dataset.mwcMode);
+        renderMyWork();
+      })
+    );
+  };
+
+  if (mode === "list") {
+    el.innerHTML = `
+      <div class="mywork-page">
+        <div class="mwc-mode-bar">${myWorkModeToggleHtml("list")}</div>
+        ${scheduleFeedPanelHtml(who, admin, items)}
+      </div>
+    `;
+    bindModeToggle();
+    bindScheduleFeedActions(el, refreshActiveScheduleSurface, {
+      onOpenItem: (item) => {
+        if (isAdmin()) openScheduleModal(item?.id);
+        else openScheduleUploadForItem(item);
+      },
+    });
+    return;
+  }
+
+  if (!myCalCursor) myCalCursor = `${today().slice(0, 7)}-01`;
+  const searched = filterCalendarItems(items, { query: myCalQuery });
+  if (myCalDept && !searched.some((s) => calendarDeptOf(s) === myCalDept)) myCalDept = "";
+  const shown = filterCalendarItems(searched, { dept: myCalDept });
+  const colors = deptColorMap(searched);
 
   el.innerHTML = `
     <div class="mywork-page">
-      ${scheduleFeedPanelHtml(who, admin, items)}
+      ${myWorkCalendarHtml({
+        items: shown,
+        allItems: searched,
+        cursor: myCalCursor,
+        todayIso: today(),
+        holidays: KR_HOLIDAYS,
+        query: myCalQuery,
+        dept: myCalDept,
+        who,
+        showModeToggle: admin,
+      })}
     </div>
   `;
 
-  bindScheduleFeedActions(el, refreshActiveScheduleSurface, {
-    onOpenItem: (item) => {
-      if (isAdmin()) openScheduleModal(item?.id);
-      else openScheduleUploadForItem(item);
-    },
+  bindModeToggle();
+
+  el.querySelectorAll("[data-mwc-nav]").forEach((btn) =>
+    btn.addEventListener("click", () => {
+      const v = btn.dataset.mwcNav;
+      if (v === "today") {
+        myCalCursor = `${today().slice(0, 7)}-01`;
+      } else {
+        const [y, m] = myCalCursor.split("-").map(Number);
+        const d = new Date(y, m - 1 + Number(v), 1);
+        myCalCursor = `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, "0")}-01`;
+      }
+      renderMyWork();
+    })
+  );
+
+  const search = $("#mwcSearch");
+  let searchTimer = null;
+  search?.addEventListener("input", () => {
+    clearTimeout(searchTimer);
+    searchTimer = setTimeout(() => {
+      myCalQuery = search.value.trim();
+      renderMyWork();
+      const again = $("#mwcSearch");
+      if (again) {
+        again.focus();
+        const end = again.value.length;
+        again.setSelectionRange(end, end);
+      }
+    }, 250);
   });
+
+  el.querySelectorAll("[data-mwc-dept]").forEach((btn) =>
+    btn.addEventListener("click", () => {
+      const k = btn.dataset.mwcDept;
+      myCalDept = myCalDept === k ? "" : k;
+      renderMyWork();
+    })
+  );
+
+  el.querySelectorAll("[data-mwc-item]").forEach((btn) =>
+    btn.addEventListener("click", (e) => {
+      e.stopPropagation();
+      openMyWorkItemDetail(
+        shown.find((s) => s.id === btn.dataset.mwcItem),
+        colors
+      );
+    })
+  );
+
+  const eventsOn = (dayIso) =>
+    shown.filter((s) => {
+      const a = (s.date || s.endDate || "").slice(0, 10);
+      const b = scheduleDueIso(s);
+      return a && dayIso >= a && dayIso <= (b && b >= a ? b : a);
+    });
+
+  el.querySelectorAll("[data-mwc-day-more]").forEach((btn) =>
+    btn.addEventListener("click", (e) => {
+      e.stopPropagation();
+      const dayIso = btn.dataset.mwcDayMore;
+      openMyWorkDayList(dayIso, eventsOn(dayIso), colors);
+    })
+  );
+
+  el.querySelectorAll(".mwc-day.has-events").forEach((cell) =>
+    cell.addEventListener("click", () => {
+      const dayIso = cell.dataset.mwcDay;
+      const evs = eventsOn(dayIso);
+      if (evs.length === 1) openMyWorkItemDetail(evs[0], colors);
+      else if (evs.length) openMyWorkDayList(dayIso, evs, colors);
+    })
+  );
 }
 
 function renderTfAll() {
