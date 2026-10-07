@@ -11,6 +11,7 @@ import { REPORT_LAYOUTS, downloadReportLayoutPpt, layoutPreviewWireHtml } from "
 import { downloadEditableDiagramPpt, diagramPreviewWireHtml } from "./report-diagrams.js";
 import { downloadReportArtPackagePpt } from "./report-art-pack.js";
 import { drawLocalFigure } from "./report-figure-local.js";
+import { fileStoreEnabled, uploadTeamFile, countPdfPages, formatBytes } from "./file-store.js";
 import {
   myWorkCalendarHtml,
   filterCalendarItems,
@@ -4204,22 +4205,178 @@ function openCheckRequestModal(partId, editable = true) {
   });
 }
 
+/* ── 보고서 통합: 제출(한글 필수·PDF 선택) + 함께 읽고 리뷰 ── */
+let reportStoreEnabled = null;
+const openReviewParts = new Set();
+
+function ensureReportStoreStatus() {
+  if (reportStoreEnabled !== null) return;
+  reportStoreEnabled = false;
+  fileStoreEnabled().then((on) => {
+    reportStoreEnabled = on;
+    if (activeViewName === "collections") renderCollections();
+  });
+}
+
+function submissionFor(col, partId) {
+  if (!col) return null;
+  if (!Array.isArray(col.submissions)) col.submissions = [];
+  let sub = col.submissions.find((s) => s.partId === partId);
+  if (!sub) {
+    sub = { partId, pageCount: 0, status: "pending", submittedAt: "", memo: "", partDone: false, checkFiles: [] };
+    col.submissions.push(sub);
+  }
+  return sub;
+}
+
+function partLabel(p, fallback = "") {
+  return p ? `${p.section}. ${p.title}` : fallback;
+}
+
+function isPartAuthor(partId) {
+  const p = partById(partId);
+  const m = p ? memberById(p.assigneeId) : null;
+  return Boolean(m && m.name === sessionUser);
+}
+
+function reviewTimeLabel(iso = "") {
+  return String(iso).slice(0, 16).replace("T", " ");
+}
+
+function reportCommentHtml(c, partId) {
+  const mine = c.by === sessionUser;
+  const canResolve = isAdmin() || isPartAuthor(partId);
+  const images = [
+    ...(Array.isArray(c.images) ? c.images : []),
+    ...(c.photoDataUrl ? [{ url: c.photoDataUrl, name: c.photoName || "사진" }] : []),
+  ];
+  return `
+    <div class="rh-comment ${c.resolved ? "is-resolved" : ""}">
+      <div class="rh-comment-head">
+        <b>${escapeHtml(c.by || "-")}</b>
+        <span class="muted">${escapeHtml(reviewTimeLabel(c.createdAt))}</span>
+        ${c.rating ? `<span class="badge ${c.rating === "need" ? "warn" : c.rating === "hold" ? "pending" : "ok"}">${escapeHtml(reviewRatingLabel(c.rating))}</span>` : ""}
+        ${c.resolved ? `<span class="badge ok" title="${escapeAttr(c.resolvedBy ? `${c.resolvedBy} 확인` : "")}">반영함 ✓</span>` : ""}
+        <span class="rh-comment-actions">
+          ${canResolve ? `<button type="button" class="link-btn" data-rh-resolve="${escapeAttr(c.id)}">${c.resolved ? "반영 취소" : "반영함 표시"}</button>` : ""}
+          ${mine || isAdmin() ? `<button type="button" class="link-btn is-danger" data-rh-del-comment="${escapeAttr(c.id)}">삭제</button>` : ""}
+        </span>
+      </div>
+      ${c.text ? `<p class="rh-comment-text">${escapeHtml(c.text)}</p>` : ""}
+      ${c.photoCaption && !c.text?.includes(c.photoCaption) ? `<p class="rh-comment-text muted">${escapeHtml(c.photoCaption)}</p>` : ""}
+      ${
+        images.length
+          ? `<div class="rh-comment-images">${images
+              .map(
+                (im) =>
+                  `<a href="${escapeAttr(im.url)}" target="_blank" rel="noopener" title="${escapeAttr(im.name || "")}"><img src="${escapeAttr(im.url)}" alt="${escapeAttr(im.name || "첨부 그림")}" loading="lazy" /></a>`
+              )
+              .join("")}</div>`
+          : ""
+      }
+    </div>`;
+}
+
+function reportCardHtml(col, sub, { phaseOpen, storeOn }) {
+  const p = partById(sub.partId);
+  const m = p ? memberById(p.assigneeId) : null;
+  const alloc = p ? pagesOf(p) : 0;
+  const done = submissionBoardStatus(sub).id === "done";
+  const isMine = myPartIds().includes(sub.partId);
+  const canUpload = canEditSubmission(sub.partId) && (phaseOpen || isAdmin());
+  const files = sub.files || {};
+  const written = Number(sub.pageCount) || 0;
+  const comments = partReviewComments(sub.partId, col.round);
+  const pendingFix = comments.filter((c) => !c.resolved).length;
+  const open = openReviewParts.has(`${col.round}:${sub.partId}`);
+  return `
+    <article class="rh-card ${done ? "is-done" : "is-todo"} ${isMine ? "is-mine" : ""}">
+      <header class="rh-card-head">
+        <div class="rh-card-title">
+          <strong>${escapeHtml(partLabel(p, sub.partId))}</strong>
+          <span>${escapeHtml(m?.name || "미지정")} · 할당 ${alloc}p${isMine ? " · <b>내 담당</b>" : ""}</span>
+        </div>
+        <div class="rh-card-meta">
+          <span class="badge ${done ? "ok" : "pending"}">${done ? "제출" : "미제출"}</span>
+          ${
+            done
+              ? `<span class="rh-pages ${written && alloc && written > alloc ? "is-over" : ""}">작성 <b>${written || "?"}</b>p / ${alloc}p</span>`
+              : ""
+          }
+          ${done && sub.submittedAt ? `<span class="muted">${escapeHtml(formatKorDate(String(sub.submittedAt).slice(0, 10)))} 제출</span>` : ""}
+        </div>
+      </header>
+
+      <div class="rh-body">
+        ${sub.memo ? `<p class="rh-memo"><span>주요 내용</span>${escapeHtml(sub.memo)}</p>` : ""}
+        <div class="rh-files">
+          ${
+            files.hwp?.url
+              ? `<a class="rh-file is-hwp" href="${escapeAttr(files.hwp.url)}" download="${escapeAttr(files.hwp.name || "보고서.hwp")}">
+                  <b>한글</b> ${escapeHtml(files.hwp.name || "파일")} <em>${escapeHtml(formatBytes(files.hwp.size))}</em>
+                </a>`
+              : done
+              ? `<span class="rh-file is-empty">한글 파일 없음${sub.checkFiles?.length ? " (예전 방식으로 제출)" : ""}</span>`
+              : ""
+          }
+          ${
+            files.pdf?.url
+              ? `<a class="rh-file is-pdf" href="${escapeAttr(files.pdf.url)}" target="_blank" rel="noopener"><b>PDF</b> 바로 읽기</a>`
+              : ""
+          }
+          ${
+            canUpload
+              ? `<button type="button" class="btn btn-sm ${done ? "" : "btn-primary"}" data-rh-upload="${escapeAttr(sub.partId)}" ${storeOn ? "" : "disabled title=\"파일 저장소 연결이 필요합니다\""}>${done ? "다시 올리기" : "제출하기"}</button>`
+              : ""
+          }
+        </div>
+      </div>
+
+      <details class="rh-review" data-rh-review="${escapeAttr(`${col.round}:${sub.partId}`)}" ${open ? "open" : ""}>
+        <summary>
+          <span>리뷰 <b>${comments.length}</b></span>
+          ${pendingFix ? `<span class="rh-review-todo">반영 전 ${pendingFix}</span>` : comments.length ? `<span class="rh-review-ok">모두 반영</span>` : ""}
+        </summary>
+        <div class="rh-comments">
+          ${comments.length ? comments.map((c) => reportCommentHtml(c, sub.partId)).join("") : `<p class="muted rh-empty">아직 리뷰가 없습니다. 읽고 느낀 점을 남겨 주세요.</p>`}
+        </div>
+        <form class="rh-comment-form" data-rh-comment-form="${escapeAttr(sub.partId)}">
+          <textarea name="text" rows="2" class="wp-input" placeholder="이 원고에 대한 의견을 적어 주세요. 예: 3쪽 표의 단위를 통일해 주세요." maxlength="1500"></textarea>
+          <div class="rh-comment-form-row">
+            ${
+              storeOn
+                ? `<label class="rh-attach"><input type="file" name="images" accept="image/*" multiple hidden /><span>🖼 그림 첨부</span><em data-rh-attach-names></em></label>`
+                : `<span class="muted rh-attach-off">그림 첨부는 파일 저장소 연결 후 가능합니다</span>`
+            }
+            <button type="submit" class="btn btn-primary btn-sm">리뷰 남기기</button>
+          </div>
+        </form>
+      </details>
+    </article>`;
+}
+
 function renderCollections() {
   const el = $("#view-collections");
+  ensureReportStoreStatus();
+  ensureReviewSession();
   if (!state.collections.find((c) => c.round === activeRound)) {
     activeRound = latestCollection()?.round || state.collections[0]?.round || 1;
   }
   const rounds = collectionsNewestFirst();
   const col = state.collections.find((c) => c.round === activeRound);
-  const summary = collectionSummary(activeRound);
-  const allSubmitted = col ? isCollectionFullySubmitted(col) : false;
   const phase = col ? collectionPhaseOf(col) : "planned";
   const phaseOpen = phase === "open";
   const showBoard = col && isCollectionRequestOpened(col);
-  const showReview = showBoard && (allSubmitted || phase === "closed");
-  const submitPct = summary.totalParts ? Math.round((summary.submitted / summary.totalParts) * 100) : 0;
-  const ordered = col ? submissionsInPartOrder(col) : [];
-  const hangulReady = col ? orderedCollectionHangulFiles(col).length : 0;
+  const storeOn = reportStoreEnabled === true;
+  if (col) (state.parts || []).forEach((p) => submissionFor(col, p.id));
+  const ordered = col ? submissionsInPartOrder(col).filter((s) => partById(s.partId)) : [];
+  const doneSubs = ordered.filter((s) => submissionBoardStatus(s).id === "done");
+  const writtenPages = doneSubs.reduce((n, s) => n + (Number(s.pageCount) || 0), 0);
+  const allocPages = ordered.reduce((n, s) => n + pagesOf(partById(s.partId)), 0);
+  const reviewCount = ordered.reduce((n, s) => n + partReviewComments(s.partId, activeRound).length, 0);
+  const hwpCount = ordered.filter((s) => s.files?.hwp?.url).length;
+  const submitPct = ordered.length ? Math.round((doneSubs.length / ordered.length) * 100) : 0;
+  const dueIso = col ? col.dueDate || scheduleDueIso(scheduleForCollectionRound(col.round)) : "";
 
   el.innerHTML = `
     ${tfallHubBarHtml()}
@@ -4228,11 +4385,9 @@ function renderCollections() {
         .map((c) => {
           const s = collectionSummary(c.round);
           const opened = isCollectionRequestOpened(c);
-          const waiting = !opened;
           const on = c.round === activeRound;
-          const label = waiting ? "공지 전" : `${s.submitted}/${s.totalParts}`;
-          return `<button type="button" class="round-tab ${on ? "active" : ""} ${waiting ? "is-waiting" : ""} ${opened ? "is-opened" : ""}" data-round="${c.round}">
-            ${escapeHtml(c.name)} · ${escapeHtml(label)}
+          return `<button type="button" class="round-tab ${on ? "active" : ""} ${opened ? "is-opened" : "is-waiting"}" data-round="${c.round}">
+            ${escapeHtml(c.name)} · ${escapeHtml(opened ? `${s.submitted}/${s.totalParts}` : "공지 전")}
           </button>`;
         })
         .join("")}
@@ -4244,151 +4399,297 @@ function renderCollections() {
             <div>
               <p class="collect-waiting-kicker">${escapeHtml(col.name)}</p>
               <strong>${escapeHtml(collectionWaitingMessage(col))}</strong>
-              <p class="muted">관리자가 취합 공지를 올리면 담당자는 <strong>내업무</strong>에서 한글 파일을 올립니다.</p>
+              <p class="muted">관리자가 제출 요청을 올리면, 담당자는 이 화면에서 한글 파일을 올립니다.</p>
             </div>
-            ${isAdmin() ? `<button type="button" class="btn btn-primary" id="openCollectRequest">취합 공지 올리기</button>` : ""}
+            ${isAdmin() ? `<button type="button" class="btn btn-primary" id="openCollectRequest">제출 요청 올리기</button>` : ""}
           </div>`
         : ""
     }
     ${
-      col && phase === "open"
-        ? `<div class="collect-phase-banner is-open">
+      col && phase !== "planned"
+        ? `<div class="collect-phase-banner ${phaseOpen ? "is-open" : "is-closed"}">
             <div>
-              <strong>취합 중 · ${summary.submitted}/${summary.totalParts} 제출</strong>
-              <p class="muted">${escapeHtml(col.requestMessage || "담당자는 내업무에서 한글 파일을 올리면 됩니다.")}</p>
+              <strong>${phaseOpen ? "제출 받는 중" : "제출 마감"}${dueIso ? ` · ${escapeHtml(formatKorDate(dueIso))}까지` : ""}</strong>
+              <p class="muted">${
+                phaseOpen
+                  ? escapeHtml(col.requestMessage || "담당 영역의 한글 파일을 올리고, 다른 영역 원고를 읽고 리뷰를 남겨 주세요.")
+                  : "제출된 원고를 함께 읽고 리뷰를 남깁니다. 작성자는 리뷰를 보고 고친 뒤 「반영함」을 표시합니다."
+              }</p>
             </div>
-            ${isAdmin() ? `<button type="button" class="btn" id="closeCollectRequest">취합 마감</button>` : ""}
+            ${isAdmin() && phaseOpen ? `<button type="button" class="btn" id="closeCollectRequest">제출 마감</button>` : ""}
           </div>`
         : ""
     }
+
     ${
-      col && phase === "closed"
-        ? `<div class="collect-phase-banner is-closed">
-            <div>
-              <strong>취합 마감</strong>
-              <p class="muted">아래 현황·리뷰를 확인하고, 한글 파일을 목차 순서로 묶을 수 있습니다.</p>
-            </div>
+      showBoard && !storeOn && reportStoreEnabled === false && isAdmin()
+        ? `<div class="rh-store-warning">
+            <strong>파일 저장소 연결이 필요합니다 (관리자 1회)</strong>
+            <p>Vercel 대시보드 → <b>tf-pulse</b> 프로젝트 → <b>Storage</b> → <b>Create Database</b> → <b>Blob</b> 선택 → 만들기 → <b>Connect</b> 를 누른 뒤 다시 배포(Redeploy)해 주세요. 연결 전에는 파일을 올릴 수 없습니다.</p>
           </div>`
         : ""
     }
 
     ${
       !col
-        ? `<div class="empty">취합 차수가 없습니다.</div>`
+        ? `<div class="empty">제출 차수가 없습니다.</div>`
         : !showBoard
         ? ""
         : `
-      <section class="collect-progress panel">
-        <div class="collect-progress-head">
-          <strong>취합 현황</strong>
-          <span>제출 ${summary.submitted}/${summary.totalParts} · 할당 ${summary.pages}/${summary.allocPages}p</span>
+      <section class="rh-summary panel">
+        <div class="rh-stats">
+          <div><span>제출</span><b>${doneSubs.length}<small>/${ordered.length}</small></b></div>
+          <div><span>작성 분량</span><b>${writtenPages}<small>p / ${allocPages}p</small></b></div>
+          <div><span>리뷰</span><b>${reviewCount}<small>건</small></b></div>
         </div>
         <div class="progress collect-progress-bar"><span style="width:${submitPct}%"></span></div>
+        <div class="rh-summary-actions">
+          <button type="button" class="btn btn-sm" id="rhZipAll" ${hwpCount ? "" : "disabled"}>한글 파일 모두 받기 (${hwpCount})</button>
+        </div>
       </section>
 
-      <div class="collect-board">
-        ${ordered
-          .map((s) => {
-            const p = partById(s.partId);
-            const m = p ? memberById(p.assigneeId) : null;
-            const alloc = p ? pagesOf(p) : 0;
-            const editable = canEditSubmission(s.partId);
-            const canUpload = editable && phaseOpen;
-            const isMine = myPartIds().includes(s.partId);
-            const boardSt = submissionBoardStatus(s);
-            const reviewComments = showReview ? partReviewComments(s.partId, activeRound) : [];
-            return `
-            <article class="collect-row is-${boardSt.id} ${isMine ? "is-mine" : ""}">
-              <div class="collect-row-main">
-                <strong>${escapeHtml(p ? `${p.section}. ${p.title}` : s.partId)}</strong>
-                <span>${escapeHtml(m?.name || "미지정")} · 할당 ${alloc}p${isMine ? " · 내 담당" : ""}</span>
-              </div>
-              <span class="badge ${boardSt.cls}">${escapeHtml(boardSt.label)}</span>
-              <button type="button" class="btn btn-sm ${canUpload ? "btn-primary" : ""}" data-check="${s.partId}" data-editable="${canUpload ? "1" : "0"}">
-                ${canUpload ? "파일 올리기" : escapeHtml(checkRequestSummary(s))}
-              </button>
-              ${
-                showReview
-                  ? `<button type="button" class="btn btn-sm ${reviewComments.length ? "btn-primary" : ""}" data-part-review="${s.partId}">
-                      ${reviewComments.length ? `리뷰 ${reviewComments.length}` : "리뷰"}
-                    </button>`
-                  : ""
-              }
-            </article>`;
-          })
-          .join("")}
-      </div>
-
-      <section class="collect-merge-bar">
-        <div>
-          <strong>한글 파일 묶기</strong>
-          <p class="muted">목차 순서대로 하나의 ZIP으로 내려받습니다. 이 기기에서 올린 파일만 포함됩니다.</p>
-        </div>
-        <button type="button" class="btn btn-primary" id="mergeHangulZip" ${hangulReady ? "" : "disabled"}>${hangulReady ? `순서대로 묶기 (${hangulReady})` : "묶을 파일 없음"}</button>
-      </section>
-
-      ${
-        showReview
-          ? `<div class="panel collection-review-panel">
-        <div class="panel-head">
-          <div>
-            <h2>회의 리뷰</h2>
-            <p class="muted">전체 취합본을 보고 영역별로 정리합니다.</p>
-          </div>
-        </div>
-        <div class="collection-review-grid">
-          ${ordered
-            .map((s) => {
-              const p = partById(s.partId);
-              const m = p ? memberById(p.assigneeId) : null;
-              const comments = partReviewComments(s.partId, activeRound);
-              return `
-            <article class="collection-review-part ${comments.some((c) => c.photoDataUrl) ? "has-photo-note" : ""}">
-              <header>
-                <strong>${escapeHtml(p ? `${p.section}. ${p.title}` : s.partId)}</strong>
-                <span class="muted">담당 ${escapeHtml(m?.name || "-")}</span>
-                ${isAdmin() ? `<button type="button" class="btn btn-sm" data-part-review="${escapeAttr(s.partId)}">+ 코멘트</button>` : ""}
-              </header>
-              <div class="review-comment-list">
-                ${
-                  comments.length
-                    ? comments.map((c) => renderReviewCommentCardHtml(c, { admin: isAdmin(), largePhoto: true })).join("")
-                    : `<p class="muted empty-inline">아직 리뷰가 없습니다</p>`
-                }
-              </div>
-            </article>`;
-            })
-            .join("")}
-        </div>
+      <div class="rh-list">
+        ${ordered.map((s) => reportCardHtml(col, s, { phaseOpen, storeOn })).join("")}
       </div>`
-          : ""
-      }`
     }
   `;
 
   bindTfallHubBar(el);
-  el.querySelectorAll("[data-round]").forEach((btn) => {
+  el.querySelectorAll("[data-round]").forEach((btn) =>
     btn.addEventListener("click", () => {
       activeRound = Number(btn.dataset.round);
       renderCollections();
-    });
-  });
-
+    })
+  );
   $("#openCollectRequest")?.addEventListener("click", () => openCollectionRequestModal(activeRound));
   $("#closeCollectRequest")?.addEventListener("click", () => closeCollectionRequest(activeRound));
-  $("#mergeHangulZip")?.addEventListener("click", () => downloadMergedHangulZip(col));
+  $("#rhZipAll")?.addEventListener("click", (e) => downloadReportZip(col, e.currentTarget));
 
-  el.querySelectorAll("[data-part-review]").forEach((btn) => {
-    btn.addEventListener("click", () => openPartReviewCommentModal(btn.dataset.partReview, activeRound));
-  });
+  el.querySelectorAll("[data-rh-upload]").forEach((btn) =>
+    btn.addEventListener("click", () => openReportUploadModal(col.round, btn.dataset.rhUpload))
+  );
 
-  bindReviewCommentDeletes(el);
+  el.querySelectorAll("[data-rh-review]").forEach((d) =>
+    d.addEventListener("toggle", () => {
+      if (d.open) openReviewParts.add(d.dataset.rhReview);
+      else openReviewParts.delete(d.dataset.rhReview);
+    })
+  );
 
-  el.querySelectorAll("[data-check]").forEach((btn) => {
-    btn.addEventListener("click", () => {
-      openCheckRequestModal(btn.dataset.check, btn.dataset.editable === "1");
+  el.querySelectorAll("[data-rh-comment-form]").forEach((form) => {
+    const fileInput = form.querySelector('input[name="images"]');
+    fileInput?.addEventListener("change", () => {
+      const names = form.querySelector("[data-rh-attach-names]");
+      if (names) names.textContent = [...fileInput.files].map((f) => f.name).join(", ");
+    });
+    form.addEventListener("submit", (e) => {
+      e.preventDefault();
+      addReportReview(col, form.dataset.rhCommentForm, form);
     });
   });
+
+  el.querySelectorAll("[data-rh-resolve]").forEach((btn) =>
+    btn.addEventListener("click", () => {
+      const c = state.reviewSession.comments.find((x) => x.id === btn.dataset.rhResolve);
+      if (!c) return;
+      c.resolved = !c.resolved;
+      c.resolvedBy = c.resolved ? sessionUser || "" : "";
+      c.resolvedAt = c.resolved ? new Date().toISOString() : "";
+      persist();
+      renderCollections();
+    })
+  );
+
+  el.querySelectorAll("[data-rh-del-comment]").forEach((btn) =>
+    btn.addEventListener("click", () => {
+      if (!confirm("이 리뷰를 삭제할까요?")) return;
+      state.reviewSession.comments = state.reviewSession.comments.filter((x) => x.id !== btn.dataset.rhDelComment);
+      persist();
+      renderCollections();
+    })
+  );
+}
+
+async function addReportReview(col, partId, form) {
+  const text = (form.querySelector("textarea")?.value || "").trim();
+  const files = [...(form.querySelector('input[name="images"]')?.files || [])].slice(0, 6);
+  if (!text && !files.length) {
+    alert("의견을 적거나 그림을 첨부해 주세요.");
+    return;
+  }
+  const btn = form.querySelector('button[type="submit"]');
+  if (btn) {
+    btn.disabled = true;
+    btn.textContent = files.length ? "그림 올리는 중…" : "남기는 중…";
+  }
+  try {
+    const images = [];
+    for (const f of files) {
+      if (!f.type.startsWith("image/")) continue;
+      images.push(await uploadTeamFile(f, `reviews/r${col.round}/${partId}`));
+    }
+    ensureReviewSession();
+    state.reviewSession.comments.push({
+      id: uid("rc"),
+      partId,
+      round: col.round,
+      text,
+      images: images.map(({ url, name }) => ({ url, name })),
+      by: sessionUser || "",
+      createdAt: new Date().toISOString(),
+      resolved: false,
+    });
+    openReviewParts.add(`${col.round}:${partId}`);
+    persist();
+    renderCollections();
+  } catch (err) {
+    alert(err?.message || "리뷰를 남기지 못했습니다.");
+    if (btn) {
+      btn.disabled = false;
+      btn.textContent = "리뷰 남기기";
+    }
+  }
+}
+
+function openReportUploadModal(round, partId) {
+  const col = state.collections.find((c) => c.round === Number(round));
+  const p = partById(partId);
+  if (!col || !p) return;
+  if (!canEditSubmission(partId)) {
+    alert("배정된 영역만 올릴 수 있습니다.");
+    return;
+  }
+  if (reportStoreEnabled !== true) {
+    alert("파일 저장소가 아직 연결되지 않아 올릴 수 없습니다. 관리자에게 알려 주세요.");
+    return;
+  }
+  const sub = submissionFor(col, partId);
+  const files = sub.files || {};
+  openModal({
+    kicker: col.name || "보고서 제출",
+    title: `${partLabel(p)} 제출`,
+    submitLabel: "제출하기",
+    bodyHtml: `
+      <p class="schedule-comment-lead">할당 ${pagesOf(p)}쪽 · 한글 파일은 꼭, PDF는 있으면 함께 올려 주세요. PDF가 있으면 모두가 바로 읽을 수 있고 쪽수도 자동으로 셉니다.</p>
+      <div class="rh-upload-form">
+        <label class="field">한글 파일 (필수 · .hwp .hwpx)
+          <input type="file" name="hwp" accept=".hwp,.hwpx" />
+          ${files.hwp?.name ? `<span class="muted">지금 올라가 있는 파일: ${escapeHtml(files.hwp.name)} (새로 고르지 않으면 그대로 둡니다)</span>` : ""}
+        </label>
+        <label class="field">PDF (선택 · 한글에서 「PDF로 저장하기」)
+          <input type="file" name="pdf" accept=".pdf,application/pdf" />
+          ${files.pdf?.name ? `<span class="muted">지금 올라가 있는 PDF: ${escapeHtml(files.pdf.name)}</span>` : ""}
+        </label>
+        <label class="field">작성 분량 (쪽)
+          <input type="number" name="pages" min="1" max="999" required value="${escapeAttr(String(Number(sub.pageCount) || ""))}" placeholder="예: 12" />
+          <span class="muted" id="rhPagesHint">PDF를 고르면 자동으로 채워집니다.</span>
+        </label>
+        <label class="field">주요 내용 한 줄 (윤독 때 참고)
+          <textarea name="memo" rows="2" maxlength="300" placeholder="예: 핵심사업 3개 재설계, 연차별 로드맵 표 추가">${escapeHtml(sub.memo || "")}</textarea>
+        </label>
+        <p class="muted" id="rhUploadStatus" aria-live="polite"></p>
+      </div>
+    `,
+    onSubmit: async (fd) => {
+      const hwp = fd.get("hwp");
+      const pdf = fd.get("pdf");
+      const hasHwp = hwp && hwp.size > 0;
+      const hasPdf = pdf && pdf.size > 0;
+      if (!hasHwp && !files.hwp?.url) {
+        alert("한글 파일을 골라 주세요.");
+        return false;
+      }
+      if (hasHwp && !/\.(hwp|hwpx)$/i.test(hwp.name)) {
+        alert("한글 파일(.hwp, .hwpx)만 올릴 수 있습니다.");
+        return false;
+      }
+      const pages = Number(fd.get("pages")) || 0;
+      if (pages < 1) {
+        alert("작성 분량(쪽수)을 적어 주세요.");
+        return false;
+      }
+      const status = $("#rhUploadStatus");
+      const submitBtn = $("#modalSubmit");
+      if (submitBtn) submitBtn.disabled = true;
+      try {
+        const folder = `reports/r${col.round}/${partId}`;
+        const next = { ...files };
+        if (hasHwp) {
+          next.hwp = await uploadTeamFile(hwp, folder, (pct) => status && (status.textContent = `한글 파일 올리는 중… ${pct}%`));
+        }
+        if (hasPdf) {
+          next.pdf = await uploadTeamFile(pdf, folder, (pct) => status && (status.textContent = `PDF 올리는 중… ${pct}%`));
+        }
+        sub.files = next;
+        sub.pageCount = pages;
+        sub.memo = String(fd.get("memo") || "").trim();
+        sub.status = "submitted";
+        sub.partDone = true;
+        sub.submittedAt = new Date().toISOString();
+        sub.submittedBy = sessionUser || "";
+        persist();
+        renderCollections();
+        return true;
+      } catch (err) {
+        if (status) status.textContent = "";
+        alert(err?.message || "올리지 못했습니다. 잠시 후 다시 시도해 주세요.");
+        return false;
+      } finally {
+        if (submitBtn) submitBtn.disabled = false;
+      }
+    },
+  });
+  const pdfInput = $("#modalBody")?.querySelector('input[name="pdf"]');
+  pdfInput?.addEventListener("change", async () => {
+    const f = pdfInput.files?.[0];
+    const hint = $("#rhPagesHint");
+    if (!f) return;
+    if (hint) hint.textContent = "PDF 쪽수를 세는 중…";
+    const n = await countPdfPages(f);
+    const pagesInput = $("#modalBody")?.querySelector('input[name="pages"]');
+    if (n && pagesInput) pagesInput.value = String(n);
+    if (hint) hint.textContent = n ? `PDF에서 ${n}쪽을 찾았습니다.` : "쪽수를 셀 수 없어 직접 적어 주세요.";
+  });
+}
+
+async function downloadReportZip(col, btn) {
+  const subs = submissionsInPartOrder(col).filter((s) => s.files?.hwp?.url);
+  if (!subs.length) return;
+  const label = btn?.textContent;
+  if (btn) {
+    btn.disabled = true;
+    btn.textContent = "묶는 중…";
+  }
+  try {
+    const JSZip = (await import("https://cdn.jsdelivr.net/npm/jszip@3.10.1/+esm")).default;
+    const zip = new JSZip();
+    let i = 0;
+    for (const s of subs) {
+      i += 1;
+      const p = partById(s.partId);
+      const m = p ? memberById(p.assigneeId) : null;
+      const ext = (s.files.hwp.name.match(/\.[^.]+$/) || [".hwp"])[0];
+      const name = `${String(i).padStart(2, "0")}_${partLabel(p, s.partId)}_${m?.name || ""}${ext}`.replace(/[\\/:*?"<>|]/g, "_");
+      const resp = await fetch(s.files.hwp.url);
+      if (!resp.ok) throw new Error(`${partLabel(p)} 파일을 받지 못했습니다.`);
+      zip.file(name, await resp.blob());
+    }
+    const blob = await zip.generateAsync({ type: "blob" });
+    const a = document.createElement("a");
+    a.href = URL.createObjectURL(blob);
+    a.download = `${col.name || "보고서"}_한글파일_목차순.zip`;
+    document.body.appendChild(a);
+    a.click();
+    a.remove();
+    setTimeout(() => URL.revokeObjectURL(a.href), 4000);
+  } catch (err) {
+    alert(err?.message || "묶어 받기에 실패했습니다.");
+  } finally {
+    if (btn) {
+      btn.disabled = false;
+      btn.textContent = label;
+    }
+  }
 }
 
 function isSchedulePast(item) {
@@ -4744,7 +5045,8 @@ function openMyAssignedUpload(col) {
       alert("배정된 영역만 올릴 수 있습니다.");
       return;
     }
-    openCheckRequestModal(part.id, editable);
+    setView("collections");
+    if (editable) openReportUploadModal(col.round, part.id);
     return;
   }
   const dueIso = col.dueDate || scheduleDueIso(scheduleForCollectionRound(col.round));
@@ -4777,7 +5079,9 @@ function openMyAssignedUpload(col) {
     ?.querySelectorAll("[data-upload-part]")
     .forEach((btn) => {
       btn.addEventListener("click", () => {
-        openCheckRequestModal(btn.dataset.uploadPart, editable && canEditSubmission(btn.dataset.uploadPart));
+        closeModal();
+        setView("collections");
+        if (editable && canEditSubmission(btn.dataset.uploadPart)) openReportUploadModal(col.round, btn.dataset.uploadPart);
       });
     });
 }

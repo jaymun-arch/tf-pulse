@@ -12481,3 +12481,337 @@ body.view-home .page-hero {
     font-size: 0.8rem;
   }
 }
+
+/* ── 보고서 통합: 제출 + 리뷰 ── */
+.rh-store-warning {
+  margin: 12px 0;
+  padding: 14px 16px;
+  border-radius: 14px;
+  border: 1px solid #ffd38a;
+  background: #fff7e6;
+}
+.rh-store-warning strong {
+  display: block;
+  margin-bottom: 4px;
+  color: #8a5300;
+}
+.rh-store-warning p {
+  margin: 0;
+  font-size: 0.85rem;
+  line-height: 1.55;
+  color: var(--ink-soft);
+}
+.rh-summary {
+  margin: 12px 0;
+}
+.rh-stats {
+  display: grid;
+  grid-template-columns: repeat(3, minmax(0, 1fr));
+  gap: 10px;
+  margin-bottom: 12px;
+}
+.rh-stats div {
+  display: flex;
+  flex-direction: column;
+  gap: 2px;
+  padding: 10px 12px;
+  border-radius: 12px;
+  background: var(--bg);
+}
+.rh-stats span {
+  font-size: 0.75rem;
+  font-weight: 700;
+  color: var(--ink-faint);
+}
+.rh-stats b {
+  font-size: 1.45rem;
+  font-weight: 800;
+  font-variant-numeric: tabular-nums;
+}
+.rh-stats small {
+  margin-left: 2px;
+  font-size: 0.8rem;
+  font-weight: 600;
+  color: var(--ink-soft);
+}
+.rh-summary-actions {
+  display: flex;
+  justify-content: flex-end;
+  margin-top: 10px;
+}
+.rh-list {
+  display: flex;
+  flex-direction: column;
+  gap: 12px;
+}
+.rh-card {
+  border: 1px solid var(--line);
+  border-radius: 16px;
+  background: var(--bg-elevated);
+  overflow: hidden;
+}
+.rh-card.is-done {
+  border-color: #bfe8c9;
+}
+.rh-card.is-mine {
+  box-shadow: 0 0 0 2px rgba(0, 113, 227, 0.18);
+}
+.rh-card-head {
+  display: flex;
+  justify-content: space-between;
+  align-items: flex-start;
+  gap: 12px;
+  flex-wrap: wrap;
+  padding: 14px 16px 6px;
+}
+.rh-card-title {
+  display: flex;
+  flex-direction: column;
+  gap: 3px;
+}
+.rh-card-title strong {
+  font-size: 1.02rem;
+  font-weight: 800;
+}
+.rh-card-title span {
+  font-size: 0.82rem;
+  color: var(--ink-soft);
+}
+.rh-card-meta {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  flex-wrap: wrap;
+  font-size: 0.82rem;
+}
+.rh-pages b {
+  font-size: 1rem;
+}
+.rh-pages.is-over b {
+  color: #c62828;
+}
+.rh-body {
+  padding: 4px 16px 12px;
+}
+.rh-memo {
+  margin: 0 0 8px;
+  padding: 8px 10px;
+  border-radius: 10px;
+  background: var(--bg);
+  font-size: 0.86rem;
+  line-height: 1.5;
+}
+.rh-memo span {
+  margin-right: 8px;
+  font-size: 0.72rem;
+  font-weight: 800;
+  color: var(--ink-faint);
+}
+.rh-files {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 8px;
+}
+.rh-file {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  max-width: 100%;
+  padding: 6px 12px;
+  border: 1px solid var(--line-strong);
+  border-radius: 10px;
+  background: var(--bg-elevated);
+  color: var(--ink);
+  font-size: 0.82rem;
+  text-decoration: none;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+.rh-file b {
+  padding: 1px 6px;
+  border-radius: 5px;
+  font-size: 0.7rem;
+  color: #fff;
+}
+.rh-file.is-hwp b {
+  background: #1f6fd1;
+}
+.rh-file.is-pdf b {
+  background: #d93025;
+}
+.rh-file em {
+  font-style: normal;
+  color: var(--ink-faint);
+}
+.rh-file:hover {
+  border-color: var(--accent);
+}
+.rh-file.is-empty {
+  border-style: dashed;
+  color: var(--ink-faint);
+}
+.rh-review {
+  border-top: 1px solid var(--line);
+  background: var(--bg-muted);
+}
+.rh-review > summary {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  padding: 10px 16px;
+  cursor: pointer;
+  font-size: 0.86rem;
+  font-weight: 700;
+  list-style: none;
+}
+.rh-review > summary::-webkit-details-marker {
+  display: none;
+}
+.rh-review > summary::before {
+  content: "▸";
+  color: var(--ink-faint);
+  transition: transform 0.15s ease;
+}
+.rh-review[open] > summary::before {
+  transform: rotate(90deg);
+}
+.rh-review-todo {
+  padding: 2px 8px;
+  border-radius: 980px;
+  background: #fff0db;
+  color: #a35b00;
+  font-size: 0.74rem;
+}
+.rh-review-ok {
+  padding: 2px 8px;
+  border-radius: 980px;
+  background: #e4f6e8;
+  color: #2f7d45;
+  font-size: 0.74rem;
+}
+.rh-comments {
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+  padding: 0 16px 10px;
+}
+.rh-empty {
+  margin: 0;
+  font-size: 0.84rem;
+}
+.rh-comment {
+  padding: 10px 12px;
+  border: 1px solid var(--line);
+  border-radius: 12px;
+  background: var(--bg-elevated);
+}
+.rh-comment.is-resolved {
+  opacity: 0.72;
+}
+.rh-comment-head {
+  display: flex;
+  align-items: center;
+  flex-wrap: wrap;
+  gap: 6px;
+  font-size: 0.8rem;
+}
+.rh-comment-actions {
+  margin-left: auto;
+  display: inline-flex;
+  gap: 8px;
+}
+.rh-comment-actions .link-btn {
+  border: none;
+  background: transparent;
+  padding: 2px 4px;
+  color: var(--accent);
+  font-size: 0.76rem;
+  font-weight: 700;
+  cursor: pointer;
+}
+.rh-comment-actions .link-btn.is-danger {
+  color: #c62828;
+}
+.rh-comment-text {
+  margin: 6px 0 0;
+  font-size: 0.88rem;
+  line-height: 1.55;
+  white-space: pre-wrap;
+  word-break: keep-all;
+  overflow-wrap: anywhere;
+}
+.rh-comment-images {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 6px;
+  margin-top: 8px;
+}
+.rh-comment-images img {
+  display: block;
+  width: 120px;
+  height: 90px;
+  object-fit: cover;
+  border-radius: 8px;
+  border: 1px solid var(--line);
+}
+.rh-comment-form {
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+  padding: 0 16px 14px;
+}
+.rh-comment-form textarea {
+  resize: vertical;
+}
+.rh-comment-form-row {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 8px;
+  flex-wrap: wrap;
+}
+.rh-attach {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  cursor: pointer;
+  font-size: 0.82rem;
+  font-weight: 700;
+  color: var(--ink-soft);
+}
+.rh-attach span {
+  padding: 5px 10px;
+  border-radius: 980px;
+  background: var(--bg-chip);
+}
+.rh-attach em {
+  font-style: normal;
+  font-weight: 500;
+  color: var(--ink-faint);
+  max-width: 220px;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+.rh-attach-off {
+  font-size: 0.76rem;
+}
+.rh-upload-form {
+  display: flex;
+  flex-direction: column;
+  gap: 4px;
+}
+.rh-upload-form .field span.muted {
+  font-size: 0.75rem;
+}
+@media (max-width: 560px) {
+  .rh-stats b {
+    font-size: 1.15rem;
+  }
+  .rh-comment-images img {
+    width: 96px;
+    height: 72px;
+  }
+}
