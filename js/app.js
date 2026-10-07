@@ -2101,24 +2101,80 @@ function showLoginGate() {
   }
 }
 
+/** 내선번호: 숫자만 4자리 */
+function normalizeExt(v) {
+  return String(v || "").replace(/\D/g, "").slice(0, 4);
+}
+
 function renderLoginMembers() {
   const list = $("#loginMemberList");
   if (!list) return;
   const members = membersForActiveTopic();
-  list.innerHTML = members.length
-    ? members
-        .map(
-          (m) => `
-      <button type="button" class="member-btn ${m.role === "admin" ? "is-admin" : ""} ${m.role === "budget" ? "is-budget" : ""} ${m.role === "kpi" ? "is-kpi" : ""} ${m.role === "food" ? "is-food" : ""}" data-login="${escapeAttr(m.name)}">
-        <span class="member-name">${escapeHtml(m.name)}</span>
-        <span class="role">${roleLabel(m.role)}</span>
-      </button>`
-        )
-        .join("")
-    : `<p class="empty">이 TF주제에 등록된 참가자가 없습니다.</p>`;
-  list.querySelectorAll("[data-login]").forEach((btn) => {
-    btn.addEventListener("click", () => enterAs(btn.dataset.login));
+  if (!members.length) {
+    list.innerHTML = `<p class="empty">이 TF에 등록된 참가자가 없습니다.</p>`;
+    return;
+  }
+  list.innerHTML = `
+    <form class="login-form" id="loginForm" autocomplete="off" novalidate>
+      <label class="login-field">
+        <span class="login-field-label">성함</span>
+        <input class="login-input" id="loginName" name="name" placeholder="홍길동" maxlength="20" autocomplete="off" />
+      </label>
+      <label class="login-field">
+        <span class="login-field-label">내선번호</span>
+        <input class="login-input is-pin" id="loginExt" name="ext" placeholder="4자리" inputmode="numeric" maxlength="4" autocomplete="off" />
+      </label>
+      <p class="login-error" id="loginError" role="alert" hidden></p>
+      <button type="submit" class="login-submit" id="loginSubmit" disabled>접속하기</button>
+      <p class="login-help">관리자가 Setting · 구성원에 등록한 성함과 내선번호로 접속합니다.</p>
+    </form>`;
+
+  const form = $("#loginForm");
+  const nameEl = $("#loginName");
+  const extEl = $("#loginExt");
+  const errEl = $("#loginError");
+  const submit = $("#loginSubmit");
+  const showError = (msg) => {
+    if (!errEl) return;
+    errEl.textContent = msg;
+    errEl.hidden = !msg;
+  };
+  const sync = () => {
+    extEl.value = normalizeExt(extEl.value);
+    submit.disabled = !nameEl.value.trim();
+    showError("");
+  };
+  nameEl.addEventListener("input", sync);
+  extEl.addEventListener("input", sync);
+  form.addEventListener("submit", (e) => {
+    e.preventDefault();
+    const name = nameEl.value.trim().replace(/\s+/g, "");
+    const ext = normalizeExt(extEl.value);
+    const same = (m) => String(m.name || "").replace(/\s+/g, "") === name;
+    const member = members.find(same);
+    if (!member) {
+      const elsewhere = (state.members || []).find(same);
+      showError(
+        elsewhere
+          ? "이 TF의 참가자가 아닙니다. 위에서 TF 구분을 확인해 주세요."
+          : "등록되지 않은 성함입니다. 관리자에게 등록을 요청해 주세요."
+      );
+      nameEl.focus();
+      return;
+    }
+    const saved = normalizeExt(member.ext);
+    if (saved) {
+      if (ext !== saved) {
+        showError(ext.length < 4 ? "내선번호 4자리를 입력해 주세요." : "내선번호가 맞지 않습니다.");
+        extEl.focus();
+        extEl.select();
+        return;
+      }
+    }
+    // 내선번호가 아직 등록되지 않은 사람은 성함만으로 접속 (관리자가 등록하면 번호가 필요해짐)
+    enterAs(member.name);
   });
+  nameEl.focus();
 }
 
 function enterAs(name) {
@@ -5972,7 +6028,7 @@ function renderMembers() {
               <th>이름</th>
               <th>역할</th>
               <th>담당 파트</th>
-              <th>연락</th>
+              <th>내선번호</th>
               <th></th>
             </tr>
           </thead>
@@ -5984,7 +6040,7 @@ function renderMembers() {
                 <td><strong>${escapeHtml(m.name)}</strong></td>
                 <td><span class="badge ${m.role === "admin" ? "admin" : m.role === "budget" ? "meeting" : m.role === "kpi" ? "ok" : m.role === "food" ? "ok" : ""}">${roleLabel(m.role)}</span></td>
                 <td>${escapeHtml(m.part || "-")}</td>
-                <td class="muted">${escapeHtml(m.contact || "-")}</td>
+                <td>${m.ext ? `<strong>${escapeHtml(m.ext)}</strong>` : `<span class="badge warn" title="성함만으로 접속할 수 있습니다">미등록</span>`}</td>
                 <td>
                   <div class="row">
                     <button class="btn btn-sm" data-edit="${m.id}">수정</button>
@@ -13057,17 +13113,29 @@ function openMemberModal(id) {
         <label class="field">담당 파트
           <input name="part" value="${escapeAttr(item?.part || "")}" />
         </label>
-        <label class="field">연락처
-          <input name="contact" value="${escapeAttr(item?.contact || "")}" />
+        <label class="field">내선번호 (접속용 4자리)
+          <input name="ext" inputmode="numeric" maxlength="4" pattern="\\d{4}" placeholder="예: 1234" value="${escapeAttr(item?.ext || "")}" />
         </label>
       </div>
+      <p class="muted" style="margin:8px 0 0;font-size:var(--text-xs)">로그인 화면에서 성함과 이 내선번호로 접속합니다. 비워 두면 성함만으로 접속할 수 있습니다.</p>
     `,
     onSubmit: (fd) => {
+      const ext = normalizeExt(fd.get("ext"));
+      if (fd.get("ext") && ext.length !== 4) {
+        alert("내선번호는 숫자 4자리로 입력해 주세요.");
+        return false;
+      }
+      const name = fd.get("name").trim();
+      const dup = (state.members || []).find((m) => m.name.replace(/\s+/g, "") === name.replace(/\s+/g, "") && m !== item);
+      if (dup) {
+        alert("같은 성함이 이미 등록되어 있습니다. 구분할 수 있게 이름을 바꿔 주세요.");
+        return false;
+      }
       const data = {
-        name: fd.get("name").trim(),
+        name,
         role: fd.get("role"),
         part: fd.get("part").trim(),
-        contact: fd.get("contact").trim(),
+        ext,
       };
       if (item) Object.assign(item, data);
       else {

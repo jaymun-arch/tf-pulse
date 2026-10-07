@@ -12370,3 +12370,89 @@ body.view-home .page-hero {
 .save-dot.is-error .api-dot {
   background: #e53935;
 }
+
+/* ── 로그인: 성함 + 내선번호 ── */
+.login-form {
+  display: flex;
+  flex-direction: column;
+  gap: 10px;
+}
+.login-field {
+  display: flex;
+  align-items: center;
+  gap: 12px;
+  min-height: 56px;
+  padding: 4px 16px;
+  border-radius: 14px;
+  background: var(--bg-elevated);
+  box-shadow: 0 2px 8px rgba(0, 0, 0, 0.05);
+  cursor: text;
+  transition: box-shadow 0.2s ease;
+}
+.login-field:focus-within {
+  box-shadow: 0 0 0 2px var(--accent), 0 4px 14px rgba(0, 113, 227, 0.11);
+}
+.login-field-label {
+  flex-shrink: 0;
+  width: 4.5em;
+  font-weight: 700;
+  font-size: 0.88rem;
+  color: var(--ink-soft);
+}
+.login-input {
+  flex: 1;
+  min-width: 0;
+  border: none;
+  outline: none;
+  background: transparent;
+  padding: 10px 0;
+  font-size: 1.05rem;
+  font-weight: 700;
+  color: var(--ink);
+  text-align: right;
+}
+.login-input::placeholder {
+  color: #b0b0b6;
+  font-weight: 600;
+}
+.login-input.is-pin {
+  letter-spacing: 0.4em;
+  font-variant-numeric: tabular-nums;
+}
+.login-input.is-pin::placeholder {
+  letter-spacing: 0;
+}
+.login-error {
+  margin: 0 2px;
+  color: #c62828;
+  font-size: 0.85rem;
+  font-weight: 650;
+}
+.login-submit {
+  margin-top: 4px;
+  min-height: 52px;
+  border: none;
+  border-radius: 14px;
+  background: var(--accent);
+  color: #fff;
+  font-size: 1.05rem;
+  font-weight: 800;
+  cursor: pointer;
+  transition: background 0.2s ease, transform 0.12s ease;
+}
+.login-submit:hover:not(:disabled) {
+  filter: brightness(1.06);
+}
+.login-submit:active:not(:disabled) {
+  transform: scale(0.99);
+}
+.login-submit:disabled {
+  background: #b1cef0;
+  cursor: default;
+}
+.login-help {
+  margin: 2px 0 0;
+  text-align: center;
+  font-size: 0.75rem;
+  color: var(--ink-faint);
+}
