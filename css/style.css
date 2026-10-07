@@ -12456,3 +12456,28 @@ body.view-home .page-hero {
   font-size: 0.75rem;
   color: var(--ink-faint);
 }
+
+/* 관리자: 내 업무 달력 오른쪽 위 「업무 요청」 */
+.mwc-request-btn {
+  margin-left: auto;
+  height: 40px;
+  padding: 0 18px;
+  border: none;
+  border-radius: 980px;
+  background: var(--accent);
+  color: #fff;
+  font-size: 0.92rem;
+  font-weight: 800;
+  cursor: pointer;
+  box-shadow: 0 4px 12px rgba(0, 113, 227, 0.25);
+}
+.mwc-request-btn:hover {
+  filter: brightness(1.06);
+}
+@media (max-width: 560px) {
+  .mwc-request-btn {
+    height: 34px;
+    padding: 0 12px;
+    font-size: 0.8rem;
+  }
+}

@@ -97,7 +97,7 @@ function chipHtml(s, color, dayIso) {
  * @param {boolean}  o.showModeToggle
  */
 export function myWorkCalendarHtml(o) {
-  const { items, allItems, cursor, todayIso, holidays = {}, query = "", dept = "", who = "", showModeToggle = false } = o;
+  const { items, allItems, cursor, todayIso, holidays = {}, query = "", dept = "", who = "", showModeToggle = false, canRequest = false } = o;
   const colors = deptColorMap(allItems.length ? allItems : items);
   const first = parseIso(cursor);
   const months = [new Date(first.getFullYear(), first.getMonth(), 1), new Date(first.getFullYear(), first.getMonth() + 1, 1)];
@@ -178,6 +178,7 @@ export function myWorkCalendarHtml(o) {
     <div class="mwc">
       <div class="mwc-head">
         <h2 class="mwc-title">${esc(who ? `${who}님의 TF 일정` : "TF 일정")}</h2>
+        ${canRequest ? `<button type="button" class="mwc-request-btn" data-mwc-request>＋ 업무 요청</button>` : ""}
         ${
           showModeToggle
             ? `<div class="mwc-mode" role="group" aria-label="보기 방식">

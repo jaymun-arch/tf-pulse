@@ -12198,11 +12198,20 @@ function renderMyWork() {
         dept: myCalDept,
         who,
         showModeToggle: false,
+        canRequest: admin,
       })}
     </div>
   `;
 
   bindModeToggle();
+
+  el.querySelector("[data-mwc-request]")?.addEventListener("click", () => {
+    if (!isAdmin()) {
+      denySchedulePermission("업무 요청은 관리자만 할 수 있습니다.");
+      return;
+    }
+    openScheduleModal();
+  });
 
   el.querySelectorAll("[data-mwc-nav]").forEach((btn) =>
     btn.addEventListener("click", () => {
