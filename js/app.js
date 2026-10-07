@@ -12081,21 +12081,20 @@ let myCalCursor = "";
 let myCalQuery = "";
 let myCalDept = "";
 
-/** 관리자만 달력/목록을 고른다. 참여자는 항상 달력. */
+/** 모두 달력이 기본. 관리자만 필요할 때 목록으로 바꿀 수 있다. */
 function myWorkMode() {
   if (!isAdmin()) return "calendar";
   try {
-    const v = localStorage.getItem("tf-mywork-mode");
-    if (v === "calendar" || v === "list") return v;
+    if (localStorage.getItem("tf-mywork-mode-v2") === "list") return "list";
   } catch {
     /* 저장소를 못 쓰면 기본값 */
   }
-  return "list";
+  return "calendar";
 }
 
 function setMyWorkMode(v) {
   try {
-    localStorage.setItem("tf-mywork-mode", v);
+    localStorage.setItem("tf-mywork-mode-v2", v);
   } catch {
     /* ignore */
   }
