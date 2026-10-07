@@ -105,6 +105,11 @@ export async function planReportDiagram(payload) {
   return callAiApi("/api/plan-diagram", payload);
 }
 
+/** Claude가 보고서 핵심 도식을 SVG로 그린다 → { svg, title, caption, purpose, reasoning, keyMessages } */
+export async function drawReportFigure(payload) {
+  return callAiApi("/api/draw-diagram", payload);
+}
+
 export async function learnStyleFromImage(payload) {
   return callAiApi("/api/learn-style", payload);
 }

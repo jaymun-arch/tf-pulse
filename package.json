@@ -3,7 +3,7 @@
   "version": "1.1.0",
   "private": false,
   "type": "module",
-  "description": "보고서 TF 운영 웹앱 (JSON 기반) + OpenAI 취합분석·그림생성",
+  "description": "보고서 TF 운영 웹앱 (JSON 기반) + OpenAI 취합분석 + Claude 보고서 그림",
   "scripts": {
     "sync-env": "node scripts/sync-openai-env.mjs",
     "prestart": "node scripts/sync-openai-env.mjs",
@@ -13,5 +13,9 @@
   },
   "engines": {
     "node": ">=18"
+  },
+  "dependencies": {
+    "@anthropic-ai/sdk": "^0.131.0",
+    "zod": "^4.1.0"
   }
 }

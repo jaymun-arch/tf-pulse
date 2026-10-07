@@ -81,6 +81,22 @@ export async function downloadReportArtPackagePpt(opts = {}) {
     fontFace: "Malgun Gothic",
   });
 
+  if (opts.figure?.pngDataUrl) {
+    const fig = pptx.addSlide();
+    fig.addShape("rect", { x: 0, y: 0, w: 10, h: 5.625, fill: { color: "FFFFFF" } });
+    // 1600×900(16:9) 그림을 슬라이드 폭에 맞춘다
+    fig.addImage({
+      data: opts.figure.pngDataUrl.replace(/^data:/, ""),
+      x: 0.35,
+      y: 0.25,
+      w: 9.3,
+      h: 5.23,
+    });
+    if (opts.figure.caption) {
+      fig.addNotes(`${opts.figure.caption}\n(Claude가 그린 완성 도식 · 한글 보고서에 그림으로 붙여 넣으세요)`);
+    }
+  }
+
   const flow = pptx.addSlide();
   flow.addShape("rect", { x: 0, y: 0, w: 10, h: 5.625, fill: { color: "FFFFFF" } });
   flow.addText("한눈에 보는 작업 흐름", {

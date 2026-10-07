@@ -196,8 +196,44 @@ export function buildStudioUsageGuide({ layoutIds = [], plan, theme, direction, 
   };
 }
 
-export function studioStageHtml({ layoutIds = [], diagramTypeId = "overview", visibleCount = 0, phase = 0, variant }) {
+/** SVG 문자열 → <img>용 data URL (img로 보여 주면 SVG 안의 스크립트가 실행되지 않음) */
+export function svgDataUrl(svg = "") {
+  return `data:image/svg+xml;charset=utf-8,${encodeURIComponent(svg)}`;
+}
+
+/** SVG → PNG data URL (PPT·한글 삽입용, 기본 2배 해상도) */
+export function svgToPngDataUrl(svg, { scale = 2 } = {}) {
+  return new Promise((resolve, reject) => {
+    const img = new Image();
+    img.onload = () => {
+      const vb = /viewBox="\s*[\d.-]+\s+[\d.-]+\s+([\d.]+)\s+([\d.]+)/.exec(svg);
+      const w = Math.round((Number(vb?.[1]) || img.naturalWidth || 1600) * scale);
+      const h = Math.round((Number(vb?.[2]) || img.naturalHeight || 900) * scale);
+      const canvas = document.createElement("canvas");
+      canvas.width = w;
+      canvas.height = h;
+      const ctx = canvas.getContext("2d");
+      ctx.fillStyle = "#FFFFFF";
+      ctx.fillRect(0, 0, w, h);
+      ctx.drawImage(img, 0, 0, w, h);
+      resolve(canvas.toDataURL("image/png"));
+    };
+    img.onerror = () => reject(new Error("그림을 이미지로 바꾸지 못했습니다."));
+    img.src = svgDataUrl(svg);
+  });
+}
+
+function figureHtml(figure) {
+  return `
+    <figure class="art-ai-figure">
+      <img src="${escapeAttr(svgDataUrl(figure.svg))}" alt="${escapeAttr(figure.title || "Claude가 그린 보고서 도식")}" />
+      ${figure.caption ? `<figcaption>${escapeHtml(figure.caption)}</figcaption>` : ""}
+    </figure>`;
+}
+
+export function studioStageHtml({ layoutIds = [], diagramTypeId = "overview", visibleCount = 0, phase = 0, variant, figure = null }) {
   const layouts = layoutIds.map((id) => layoutById(id)).filter(Boolean);
+  const hasFigure = Boolean(figure?.svg);
   return `
     <div class="art-studio-stage ${phase ? `phase-${phase}` : ""}" id="artStudioStage">
       <div class="art-studio-stage-head">
@@ -216,11 +252,15 @@ export function studioStageHtml({ layoutIds = [], diagramTypeId = "overview", vi
           )
           .join("")}
       </div>
-      <div class="art-studio-diagram-wrap ${visibleCount >= layouts.length ? "is-on" : ""}" id="artStudioDiagramWrap">
-        <p class="art-studio-diagram-label">핵심 도식</p>
-        <div class="art-studio-diagram diagram-canvas ${phase >= 5 ? "is-done" : phase >= 4 ? "is-building phase-4" : ""}" id="artStudioDiagram">
+      <div class="art-studio-diagram-wrap ${visibleCount >= layouts.length || hasFigure ? "is-on" : ""}" id="artStudioDiagramWrap">
+        <p class="art-studio-diagram-label">핵심 도식${hasFigure ? ` <span class="art-ai-badge">Claude</span>` : ""}</p>
+        ${
+          hasFigure
+            ? figureHtml(figure)
+            : `<div class="art-studio-diagram diagram-canvas ${phase >= 5 ? "is-done" : phase >= 4 ? "is-building phase-4" : ""}" id="artStudioDiagram">
           ${diagramPreviewWireHtml(diagramTypeId)}
-        </div>
+        </div>`
+        }
       </div>
     </div>`;
 }
