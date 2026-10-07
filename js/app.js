@@ -12081,14 +12081,8 @@ let myCalCursor = "";
 let myCalQuery = "";
 let myCalDept = "";
 
-/** 모두 달력이 기본. 관리자만 필요할 때 목록으로 바꿀 수 있다. */
+/** 내 업무는 모두(관리자 포함) 달력으로만 본다. 일정 편집은 달력의 「수정」이나 Setting · TF 일정에서. */
 function myWorkMode() {
-  if (!isAdmin()) return "calendar";
-  try {
-    if (localStorage.getItem("tf-mywork-mode-v2") === "list") return "list";
-  } catch {
-    /* 저장소를 못 쓰면 기본값 */
-  }
   return "calendar";
 }
 
@@ -12203,7 +12197,7 @@ function renderMyWork() {
         query: myCalQuery,
         dept: myCalDept,
         who,
-        showModeToggle: admin,
+        showModeToggle: false,
       })}
     </div>
   `;
