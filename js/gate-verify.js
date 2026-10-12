@@ -1,13 +1,13 @@
 /**
  * 포털에서 받은 출입증(#ycs=...) 검증 및 자동 로그인
  * - URL의 #ycs 파라미터를 읽는다
- * - 포털의 공개키로 서명을 검증한다
+ * - 포털의 /api/verify 엔드포인트로 검증한다
  * - 유효하면 출입증의 name으로 자동 로그인한다
  * - 유효하지 않으면 null을 반환한다
  */
 
 const PORTAL_URL = "https://ysu-campus-sync.vercel.app";
-const PORTAL_SSO_KEY_URL = `${PORTAL_URL}/api/sso-key`;
+const PORTAL_VERIFY_URL = `${PORTAL_URL}/api/verify`;
 
 /**
  * URL의 #ycs 티켓을 검증하고 클레임을 반환한다.
@@ -22,72 +22,26 @@ export async function verifyTicketFromUrl() {
   if (!ticket) return null;
 
   try {
-    const keyRes = await fetch(PORTAL_SSO_KEY_URL, {
-      method: "GET",
-      headers: { Accept: "application/json" },
+    const verifyRes = await fetch(PORTAL_VERIFY_URL, {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ ticket, app: "tf" }),
     });
-    if (!keyRes.ok) {
-      console.error("[gate-verify] 공개키 조회 실패:", keyRes.status);
+
+    if (!verifyRes.ok) {
+      console.error("[gate-verify] 검증 요청 실패:", verifyRes.status);
       return null;
     }
 
-    const keyData = await keyRes.json();
-    const jwk = keyData.jwk;
-
-    const publicKey = await crypto.subtle.importKey("jwk", jwk, { name: "Ed25519" }, false, ["verify"]);
-
-    const claims = await verifyToken(ticket, publicKey);
-    if (!claims) {
-      console.warn("[gate-verify] 출입증이 유효하지 않습니다");
+    const data = await verifyRes.json();
+    if (!data.ok) {
+      console.warn("[gate-verify] 출입증이 유효하지 않습니다:", data.error);
       return null;
     }
 
-    if (claims.aud !== "tf") {
-      console.warn("[gate-verify] 이 앱이 아닙니다:", claims.aud);
-      return null;
-    }
-
-    return claims;
+    return data.claims;
   } catch (err) {
     console.error("[gate-verify] 검증 중 오류:", err);
     return null;
   }
-}
-
-async function verifyToken(token, publicKey) {
-  const [body, sig] = String(token || "").split(".");
-  if (!body || !sig) return null;
-
-  try {
-    const bodyBuf = base64urlToBuffer(body);
-    const sigBuf = base64urlToBuffer(sig);
-
-    const isValid = await crypto.subtle.verify("Ed25519", publicKey, sigBuf, bodyBuf);
-
-    if (!isValid) return null;
-
-    const claims = JSON.parse(new TextDecoder().decode(bodyBuf));
-
-    if (claims.iss !== "ysu-campus-sync") return null;
-
-    if (!claims.exp || claims.exp < Math.floor(Date.now() / 1000)) return null;
-
-    if (claims.typ !== "ticket") return null;
-
-    return claims;
-  } catch (err) {
-    console.error("[verifyToken] 오류:", err);
-    return null;
-  }
-}
-
-function base64urlToBuffer(str) {
-  const base64 = str.replace(/-/g, "+").replace(/_/g, "/");
-  const padded = base64 + "==".substring(0, (4 - (base64.length % 4)) % 4);
-  const binaryStr = atob(padded);
-  const bytes = new Uint8Array(binaryStr.length);
-  for (let i = 0; i < binaryStr.length; i++) {
-    bytes[i] = binaryStr.charCodeAt(i);
-  }
-  return bytes;
 }
