@@ -2,7 +2,8 @@
  * 포털에서 받은 출입증(#ycs=...) 검증 및 자동 로그인
  * - URL의 #ycs 파라미터를 읽는다
  * - 포털의 /api/verify 엔드포인트로 검증한다
- * - 유효하면 출입증의 name으로 자동 로그인한다
+ * - 유효하고 권한(level)이 있으면 출입증의 name으로 자동 로그인한다
+ * - 권한이 없으면 포털로 리다이렉트한다
  * - 유효하지 않으면 null을 반환한다
  */
 
@@ -11,6 +12,7 @@ const PORTAL_VERIFY_URL = `${PORTAL_URL}/api/verify`;
 
 /**
  * URL의 #ycs 티켓을 검증하고 클레임을 반환한다.
+ * 권한이 없으면 포털로 리다이렉트한다.
  * 유효하지 않거나 없으면 null을 반환한다.
  */
 export async function verifyTicketFromUrl() {
@@ -39,7 +41,16 @@ export async function verifyTicketFromUrl() {
       return null;
     }
 
-    return data.claims;
+    const claims = data.claims;
+
+    // 권한 확인 (level이 view 또는 edit이어야 함)
+    if (claims.level === "none") {
+      console.warn("[gate-verify] 권한이 없습니다. 포털로 리다이렉트합니다.");
+      location.replace(`${PORTAL_URL}/?app=tf`);
+      return null;
+    }
+
+    return claims;
   } catch (err) {
     console.error("[gate-verify] 검증 중 오류:", err);
     return null;
