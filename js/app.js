@@ -1,3 +1,4 @@
+import { verifyTicketFromUrl } from "./gate-verify.js";
 import {
   extractTextFromFile,
   analyzeReportText,
@@ -14084,11 +14085,23 @@ async function boot() {
     flushServerSyncOnUnload();
   });
 
-  // 링크 접속 시마다 권한(이름) 선택 화면부터 시작
-  sessionUser = null;
-  localStorage.removeItem(USER_KEY);
-  $("#appShell").hidden = true;
-  showLoginGate();
+  // 포털에서 온 출입증(#ycs=...) 검증 및 자동 로그인
+  const claims = await verifyTicketFromUrl();
+  if (claims && claims.name) {
+    // 출입증이 유효하면 자동 로그인
+    enterAs(claims.name);
+    // URL hash에서 #ycs=... 제거 (보안 및 UI)
+    if (window.history.replaceState) {
+      const newUrl = window.location.href.split("#")[0];
+      window.history.replaceState({}, "", newUrl);
+    }
+  } else {
+    // 출입증이 없거나 유효하지 않으면 로그인 화면 표시
+    sessionUser = null;
+    localStorage.removeItem(USER_KEY);
+    $("#appShell").hidden = true;
+    showLoginGate();
+  }
 
   openFoodPollFromLocation();
 
